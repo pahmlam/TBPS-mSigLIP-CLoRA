@@ -23,6 +23,7 @@ deployment/
 │
 ├── docs/                          # Documentation
 │   ├── deployment-plan.md         # ** START HERE ** — full deployment plan, status, next steps
+│   ├── end-to-end-system-design.md # Proposed end-to-end product/system architecture
 │   ├── aihub-experiments.md       # Running log of every qai-hub compile attempt
 │   ├── system.md                  # RB3 Gen2 hardware specifications
 │   ├── experiment.md              # Benchmark step-by-step guide

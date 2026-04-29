@@ -167,6 +167,7 @@ After 9 attempts (see `aihub-experiments.md` for detailed log), we've confirmed:
 | `deployment/docs/system.md` | RB3 hardware specs (verified on-device) |
 | `deployment/docs/experiment.md` | Benchmark methodology for proxy models (MobileNetV2, ResNet18) |
 | `deployment/docs/benchmark-rp.md` | Proxy model results (PyTorch CPU vs ONNX Runtime) + SDK status |
+| `deployment/docs/end-to-end-system-design.md` | Proposed end-to-end product/system architecture after model deployment is complete |
 | `deployment/README.md` | Pipeline quick-reference + AI Hub commands |
 | `docs/knowledge.md` §4, §5 | Vietnamese knowledge base entries on Qualcomm SDK & ONNX format |
 | `deployment/scripts/onnx/to_fp16.py` | Pre-quantizer for FP16 I/O (step 3) |
