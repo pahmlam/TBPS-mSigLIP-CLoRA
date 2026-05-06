@@ -1,7 +1,11 @@
 import logging
+import os
+import random
 from typing import Tuple, Optional, Callable, List
 
+import numpy as np
 import torch
+from loguru import logger
 from prettytable import PrettyTable
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer
@@ -13,7 +17,63 @@ from .augmentation.transform import (
 )
 from utils.iotools import read_image
 
-logger = logging.getLogger(__name__)
+
+def inject_noisy_correspondence(
+    dataset: list[tuple],
+    noisy_rate: float,
+    noisy_file: str | None = None,
+) -> tuple[list[tuple], np.ndarray]:
+    """Inject noisy correspondence by shuffling captions at the given rate.
+
+    For each sample selected as noisy, its caption is replaced with a caption
+    from another noisy sample. The pid stays with the image, creating mismatched
+    (image, caption) pairs that the model treats as positives.
+
+    Args:
+        dataset: list of (pid, image_id, img_path, caption) tuples (mutated in-place).
+        noisy_rate: fraction of samples to corrupt (0.0 = clean, 1.0 = all noisy).
+        noisy_file: path to .npy for persisting/loading the noise index for reproducibility.
+
+    Returns:
+        The mutated dataset and a boolean array (1=clean, 0=noisy).
+    """
+    nums = len(dataset)
+    captions = [i[3] for i in dataset]
+    images = [i[2] for i in dataset]
+    image_ids = [i[1] for i in dataset]
+    pids = [i[0] for i in dataset]
+
+    noisy_inx = np.arange(nums)
+    if noisy_rate > 0:
+        random.seed(123)
+        if noisy_file and os.path.exists(noisy_file):
+            logger.info(f"Loading noisy index from {noisy_file}")
+            noisy_inx = np.load(noisy_file)
+        else:
+            inx = np.arange(nums)
+            np.random.shuffle(inx)
+            c_noisy_inx = inx[: int(noisy_rate * nums)]
+            shuffle_noisy_inx = np.array(c_noisy_inx)
+            np.random.shuffle(shuffle_noisy_inx)
+            noisy_inx[c_noisy_inx] = shuffle_noisy_inx
+            if noisy_file:
+                os.makedirs(os.path.dirname(noisy_file), exist_ok=True)
+                np.save(noisy_file, noisy_inx)
+
+    real_correspondences = np.ones(nums, dtype=np.int32)
+    for i in range(nums):
+        if noisy_inx[i] != i:
+            real_correspondences[i] = 0
+        dataset[i] = (pids[i], image_ids[i], images[i], captions[noisy_inx[i]])
+
+    num_clean = int(np.sum(real_correspondences))
+    num_noisy = nums - num_clean
+    logger.info(
+        f"Noisy correspondence: rate={noisy_rate}, clean={num_clean}, "
+        f"noisy={num_noisy}, total={nums}"
+    )
+
+    return dataset, real_correspondences
 
 
 class BaseDataset(object):

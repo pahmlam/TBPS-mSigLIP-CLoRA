@@ -1,7 +1,10 @@
+import os
 import warnings
 from random import Random
 
+import numpy as np
 import pytorch_lightning as pl
+from hydra.utils import get_original_cwd
 from lightning.pytorch.utilities import CombinedLoader
 from torch.utils.data import DataLoader
 from loguru import logger
@@ -11,6 +14,7 @@ from data.bases import (
     ImageDataset,
     ImageTextDataset,
     TextDataset,
+    inject_noisy_correspondence,
 )
 from data.cuhkpedes import CUHKPEDES
 from data.icfgpedes import ICFGPEDES
@@ -103,6 +107,25 @@ class TBPSDataModule(pl.LightningDataModule):
                 f"Using fold {fold_id}/{num_folds - 1} of the training set, with {len(self.dataset.train)} samples."
             )
 
+        # --- Noisy correspondence injection ---
+        noisy_rate = self.config.dataset.get("noisy_rate", 0.0)
+        if noisy_rate > 0:
+            noisy_file = self.config.dataset.get("noisy_file", None)
+            if noisy_file is None:
+                noiseindex_dir = os.path.join(get_original_cwd(), "noiseindex")
+                os.makedirs(noiseindex_dir, exist_ok=True)
+                noisy_file = os.path.join(
+                    noiseindex_dir,
+                    f"{self.config.dataset.dataset_name}_{noisy_rate}.npy",
+                )
+
+            self.dataset.original_train = list(self.dataset.train)
+            self.dataset.train, self.real_correspondences = inject_noisy_correspondence(
+                dataset=self.dataset.train,
+                noisy_rate=noisy_rate,
+                noisy_file=noisy_file,
+            )
+
         if stage == "fit" or stage is None:
             self.train_set = ImageTextDataset(
                 dataset=self.dataset.train,
@@ -118,6 +141,10 @@ class TBPSDataModule(pl.LightningDataModule):
                 mean=self.mean,
                 std=self.std,
             )
+
+            if noisy_rate > 0:
+                self.train_set.real_correspondences = self.real_correspondences
+                self.train_set.original_dataset = self.dataset.original_train
 
             logger.info("Validation set is available")
 

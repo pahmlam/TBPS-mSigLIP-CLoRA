@@ -35,3 +35,6 @@ reports/
 changelog/
 exported_model/
 venv/
+
+# Generated noise index files
+noiseindex/*.npy
