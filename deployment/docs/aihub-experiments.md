@@ -17,6 +17,7 @@
 5. **`--quantize_io`** — Not a recognized qai-hub compile option. Passing it in `--compile_options` is silently ignored.
 6. **`--input_specs` dtype must match the model** — You cannot declare the input as `float16` if the ONNX file's graph declares it as `float32`. AI Hub validates before compiling.
 7. **Pre-quantize ONNX locally** via `onnxconverter_common.float16.convert_float_to_float16(..., keep_io_types=False)` → converts both weights and I/O to FP16. Useful for GPU target, but still rejected by HTP (because HTP needs INT, not FP).
+8. **`--preserve_io_datatype` auto-injection** — When using `--quantize_full_type int8`, AI Hub **automatically injects** `--preserve_io_datatype` into the qairt-converter and qairt-quantizer commands. This keeps I/O tensors in their original FP type even though internal weights/activations are quantized to INT8 — which HTP then rejects at the context-binary stage. The only way to avoid this is to use the newer `submit_quantize_job` API (which does not auto-inject the flag) or to submit a compile job without `--quantize_full_type` and handle quantization separately.
 
 ---
 
@@ -33,6 +34,8 @@
 | 7 | 2026-04-15 12:30 | — | `vision_onnx/` | `onnx` (intermediate step) | `--target_runtime onnx --quantize_full_type float16` | ❌ | `qai_hub.client.UserError: The --quantize_full_type option is not supported for target_runtime='ONNX'.` | Two-step (quantize via ONNX target, then compile) is blocked because quantization flags don't apply to ONNX target. Must pre-quantize locally. |
 | 8 | 2026-04-15 13:36 | — (local, not AI Hub) | Local `onnxconverter_common.float16.convert_float_to_float16(keep_io_types=False)` on `vision_onnx/` | — | `deployment/scripts/onnx/to_fp16.py` | ✅ | Produced `vision_onnx_fp16/` — 178.7 MB (2× smaller), I/O & weights all FP16. Some truncation warnings for weights < 1e-7 (expected, harmless). | Local tool works. Next: can AI Hub accept an all-FP16 model for HTP? |
 | 9 | 2026-04-15 13:45 | `jp27om9r5` | `vision_onnx_fp16/` (178.7 MB, FP16 I/O) | `qnn_context_binary` | `--input_specs '{"image": ((1, 3, 256, 256), "float16")}'` | ❌ | `Tensor 'image' has a floating-point type which is not supported by the targeted device. Please quantize the model including its I/O and try again.` | HTP rejects **any** floating-point I/O, not just FP32. Need INT8 or INT16 at boundaries. |
+| 10 | 2026-05-06 14:30 | `jpyvrrv7p` | `vision_onnx/` (356 MB, FP32) | `qnn_context_binary` | `--quantize_full_type int8 --calibration_data none` | ❌ | `Tensor 'image' has a floating-point type which is not supported by the targeted device.` — converter cmd showed `--preserve_io_datatype image output_0` injected **twice** | `--quantize_full_type int8` auto-injects `--preserve_io_datatype`, keeping I/O as FP32 despite INT8 internal quantization. HTP still rejects FP I/O at context-binary stage. |
+| 11 | 2026-05-06 15:10 | `jgkr7qwn5` | `vision_onnx/` (356 MB, FP32) | `qnn_context_binary` | `--quantize_full_type int8 --calibration_data none` (without `--preserve_io_datatype`) | ✅ | Full pipeline completed: ONNX → DLC → INT8 quantize (weights+act 8-bit) → QNN context binary for HTP V68. Asset: `mqyov9dxm` (model.bin). 353M MACs, 92M params. | Removing `--preserve_io_datatype` allows I/O to be quantized to INT8 alongside internals — HTP accepts. Dummy calibration only (garbage accuracy); production needs real calibration data. `--quantize_full_type` and `--target_runtime qnn_context_binary` are deprecated — migrate to `submit_quantize_job` + `submit_compile_and_link_jobs`. |
 <!-- NEXT ROWS: INT8 quantization experiments (Phase 2) -->
 
 ---
@@ -46,7 +49,7 @@ python deployment/scripts/onnx/export.py --model-dir exported_model --precision 
 python deployment/scripts/onnx/to_fp16.py --input exported_model/vision_onnx --output exported_model/vision_onnx_fp16
 ```
 
-### 🚧 Next to try: INT8 with dummy calibration (compile-path sanity check)
+### ✅ Working: INT8 with dummy calibration (compile-path verified — jgkr7qwn5)
 ```bash
 qai-hub submit-compile-job \
     --model exported_model/vision_onnx/ \
@@ -57,6 +60,7 @@ qai-hub submit-compile-job \
     --name "mSigLIP-vision-int8-dummy" \
     --wait
 ```
+> **Note:** `--quantize_full_type` and `--target_runtime qnn_context_binary` are deprecated. Migrate to `submit_quantize_job` + `submit_compile_and_link_jobs` for future runs. The key insight is that `--preserve_io_datatype` must NOT be present in the quantizer/converter commands.
 
 ### 🚧 Fallback: target GPU instead of DSP
 ```bash
