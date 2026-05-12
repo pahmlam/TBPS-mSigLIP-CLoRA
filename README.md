@@ -13,6 +13,17 @@ To address this, we propose an efficient optimization framework that integrates 
 
 ---
 
+## Current Status Snapshot
+
+| Track | Current state | Next step |
+|---|---|---|
+| **Main training result** | LoRA + Curriculum Circle Loss reaches **52.28% R@1** on VN3K and **59.35% R@1** on PRW-TPS-CN | Preserve as the reported baseline |
+| **NACIR** | Implemented as an experimental replacement for the auxiliary Circle branch; `run_nacir.sh` is available | Validate in `workspace.ipynb`, then run clean/noisy ablations |
+| **Noisy correspondence** | RDE-style caption-shuffle noise is integrated via `dataset.noisy_rate` and `run_noise_experiments.sh` | Use for robustness experiments, mainly FP/noisy-positive validation |
+| **Deployment** | LoRA merge, FP16/FP32 export, ONNX export, and **vision INT8 HTP compile** are working | Compile text encoder, benchmark on RB3, then repeat with real calibration data |
+
+---
+
 ##  Framework Architecture
 
 We propose a unified framework constructed upon the **mSigLIP** foundation model. To bridge the gap in hard-negative mining, we incorporate an **Auxiliary Cross-Modal Circle Loss** for geometric refinement and utilize **LoRA** on the Transformer backbone (Query, Key, Value, Output projections) to ensure optimization stability and memory efficiency (allowing **3x** larger batch sizes). Only **5.9M / 376M parameters (1.57%)** are trainable.
@@ -213,28 +224,19 @@ The new validation section prints a PASS/FAIL greenlight table. Full training sh
 
 #### Full training
 
-Enable NACIR via Hydra overrides:
+Run the dedicated NACIR script:
 
 ```bash
-uv run trainer.py -cn cir_msiglip \
-    loss.NACIR=true \
-    loss.CIR=true \
-    trainer.max_epochs=60 \
-    trainer.accumulate_grad_batches=3 \
-    +lora=default
+./run_nacir.sh
 ```
 
-Optional robustness experiments with synthetic noisy correspondence:
+If the script is not executable on your machine:
 
 ```bash
-uv run trainer.py -cn cir_msiglip \
-    loss.NACIR=true \
-    dataset.noisy_rate=0.2 \
-    dataset.noisy_file="./noiseindex/VN3K_VI_0.2.npy" \
-    trainer.max_epochs=60 \
-    trainer.accumulate_grad_batches=3 \
-    +lora=default
+bash run_nacir.sh
 ```
+
+For robustness experiments, `run_noise_experiments.sh` runs the RDE-style noisy-correspondence sweep for Circle Loss. To compare NACIR under the same noise setting, keep the same `dataset.noisy_rate` / `dataset.noisy_file` overrides and add `loss.NACIR=true` to the training command or create a NACIR-specific noise sweep script.
 
 Key diagnostics to monitor:
 
@@ -320,66 +322,82 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 ##  Repository Structure
 
 ```
-├── trainer.py                  # Training entry point (Hydra)
-├── lightning_models.py         # LitTBPS (PyTorch Lightning module)
-├── lightning_data.py           # TBPSDataModule (data loading, augmentation)
-├── test.py                     # Evaluation script
-├── workspace.ipynb             # Experiment notebook (embedding analysis, loss playground)
-├── run_cir_loss.sh             # Training script (LoRA + Curriculum Circle Loss)
-├── run_full_finetune.sh        # Training script (full fine-tuning baseline)
+├── trainer.py                         # Training entry point (Hydra)
+├── lightning_models.py                # LitTBPS (PyTorch Lightning module)
+├── lightning_data.py                  # TBPSDataModule, noisy correspondence injection
+├── test.py                            # Evaluation script
+├── workspace.ipynb                    # Notebook lab for embedding/loss/NACIR validation
+├── run_cir_loss.sh                    # LoRA + Curriculum Circle Loss training
+├── run_nacir.sh                       # NACIR training script
+├── run_noise_experiments.sh           # RDE-style noisy-correspondence sweep
+├── run_full_finetune.sh               # Full fine-tuning baseline
+├── noiseindex/                        # Saved caption-shuffle index mappings
 │
-├── model/                      # Model architecture
-│   ├── tbps.py                 # TBPS forward pass & loss routing
-│   ├── objectives.py           # Loss functions (N-ITC, Circle, C-ITC, SimCLR)
-│   ├── reid_objectives.py      # ReID-specific objectives
-│   ├── build.py                # Backbone builder with layer resize
-│   ├── lora.py                 # LoRA integration via PEFT
-│   └── siglip/                 # mSigLIP model implementation
+├── model/                             # Model architecture
+│   ├── tbps.py                        # TBPS forward pass & loss routing
+│   ├── objectives.py                  # N-ITC, Circle, NACIR objective entrypoints
+│   ├── noise_aware.py                 # NACIR state: EMA stats, per-sample loss, GMM
+│   ├── reid_objectives.py             # ReID-specific objectives
+│   ├── build.py                       # Backbone builder with layer resize
+│   ├── lora.py                        # LoRA integration via PEFT
+│   └── siglip/                        # mSigLIP model implementation
 │
-├── data/                       # Dataset classes & augmentation
-│   ├── vn3k_vi.py              # VN3K Vietnamese
-│   ├── vn3k_en.py              # VN3K English
-│   ├── vn3k_mixed.py           # VN3K mixed-language
-│   ├── cuhkpedes.py            # CUHK-PEDES
-│   ├── prw_tps_cn.py           # PRW-TPS-CN (Chinese)
-│   ├── bases.py                # Base dataset classes
-│   ├── sampler.py              # RandomIdentitySampler
-│   └── augmentation/           # Image & text augmentation
+├── data/                              # Dataset classes & augmentation
+│   ├── vn3k_vi.py                     # VN3K Vietnamese
+│   ├── vn3k_en.py                     # VN3K English
+│   ├── vn3k_mixed.py                  # VN3K mixed-language
+│   ├── cuhkpedes.py                   # CUHK-PEDES
+│   ├── prw_tps_cn.py                  # PRW-TPS-CN (Chinese)
+│   ├── bases.py                       # Dataset classes + inject_noisy_correspondence()
+│   ├── sampler.py                     # RandomIdentitySampler
+│   └── augmentation/                  # Image & text augmentation pools
 │
-├── solver/                     # Optimization
-│   ├── build.py                # Optimizer with param groups
-│   └── lr_scheduler.py         # Cosine LR with warmup
+├── solver/                            # Optimization
+│   ├── build.py                       # Optimizer with param groups
+│   └── lr_scheduler.py                # Cosine LR with warmup
 │
-├── config/                     # Hydra configuration
-│   ├── cir_msiglip.yaml        # Main config (composes sub-configs)
-│   ├── loss/                   # Loss flags & weights
-│   ├── backbone/               # Backbone settings
-│   ├── trainer/                # Training hyperparams
-│   ├── optimizer/              # AdamW param groups
-│   ├── scheduler/              # LR schedule
-│   ├── lora/                   # LoRA config
-│   ├── dataset/                # Dataset paths
-│   ├── tokenizer/              # Tokenizer settings
-│   ├── logger/                 # W&B logger config
-│   └── aug/                    # Augmentation settings
+├── config/                            # Hydra configuration
+│   ├── cir_msiglip.yaml               # Main config
+│   ├── loss/cir_msiglip.yaml          # Loss flags, Circle, NACIR config
+│   ├── backbone/                      # Backbone settings
+│   ├── trainer/                       # Training hyperparams
+│   ├── optimizer/                     # AdamW param groups
+│   ├── scheduler/                     # LR schedule
+│   ├── lora/                          # LoRA config
+│   ├── dataset/                       # Dataset configs, noisy_rate/noisy_file defaults
+│   ├── tokenizer/                     # Tokenizer settings
+│   ├── logger/                        # W&B logger config
+│   └── aug/                           # Augmentation settings
 │
-├── utils/                      # Utilities (metrics, visualization, tokenizer)
-├── scripts/                    # Helper scripts (checkpoint prep, extraction)
-├── experiments/                # Experiment logs & ablation notes
-├── knowledge/                  # Research notes & paper drafts
-├── figures/                    # Paper figures
-├── docs/                       # Documentation
-│   ├── ARCHITECTURE.md         # Full architecture with diagrams
-│   ├── EXPERIMENT_SUMMARY.md   # Results table & training config
-│   └── knowledge.md            # Knowledge base (Vietnamese)
+├── utils/                             # Metrics, visualization, tokenizer utilities
+├── scripts/                           # Helper scripts for checkpoints/data preparation
+├── experiments/                       # Experiment logs & ablation notes
+├── knowledge/                         # Research notes & paper drafts
+├── reports/                           # Design notes and implementation plans
+├── changelog/                         # Training/deployment changelogs
+├── figures/                           # Paper figures
+├── docs/                              # Project documentation
+│   ├── ARCHITECTURE.md                # Full architecture with diagrams
+│   ├── EXPERIMENT_SUMMARY.md          # Canonical experiment record
+│   └── knowledge.md                   # Vietnamese knowledge base
 │
-├── deployment/                 # Edge deployment & compression
-│   ├── scripts/                # mSigLIP pipeline (each approach in subfolder)
-│   ├── hardware_profiling/     # RB3 hardware testing (proxy models)
-│   ├── logs/                   # Auto-generated logs (timestamped)
-│   └── docs/                   # Deployment documentation
+├── deployment/                        # Edge deployment & compression
+│   ├── scripts/
+│   │   ├── analyze_checkpoint.py      # Checkpoint size/RAM compatibility
+│   │   ├── inference_test.py          # ONNX/PyTorch inference test
+│   │   ├── lora_fp16/export.py        # Merge LoRA, export FP32/FP16 state dicts
+│   │   └── onnx/
+│   │       ├── export.py              # Export vision/text ONNX with external weights
+│   │       └── to_fp16.py             # Local ONNX FP16 conversion
+│   ├── hardware_profiling/            # RB3 hardware tests with proxy models
+│   ├── docs/
+│   │   ├── deployment-plan.md         # Current deployment status and next steps
+│   │   ├── aihub-experiments.md       # Qualcomm AI Hub compile log
+│   │   ├── system.md                  # RB3 hardware specs
+│   │   └── benchmark-rp.md            # Proxy benchmark results
+│   └── logs/                          # Auto-generated logs
 │
-└── ref/                        # Reference implementations (RDE, etc.)
+└── ref/                               # Reference implementations (RDE, etc.)
 ```
 
 ---
@@ -418,16 +436,40 @@ uv run scripts/prepare_checkpoints.py
 
 ##  Training
 
-To reproduce the results, use the provided scripts. We utilize LoRA to enable large batch sizes (BS=24 on 12GB VRAM).
+Use the provided scripts for normal experiments. The scripts keep the Hydra overrides in one place and avoid long ad-hoc command lines.
 
 ### Train with Curriculum Hard-Mining (Recommended)
 
 This runs the proposed method: LoRA + mSigLIP + Auxiliary Circle Loss with a warm-up schedule.
 
 ```bash
-# Run Circle Loss with LoRA fine-tuning and curriculum scheduling
 ./run_cir_loss.sh
+```
 
+### Train NACIR (Experimental)
+
+This runs the Noise-Aware Circle Loss branch with the current default NACIR configuration.
+
+```bash
+./run_nacir.sh
+```
+
+Run `workspace.ipynb` first if changing NACIR internals. The notebook contains controlled clean/FN/FP validation blocks and should be treated as the gate before full training.
+
+### Run Noisy-Correspondence Sweeps
+
+This runs RDE-style caption-shuffle noisy correspondence over `noisy_rate=0.1..0.8` using the current Circle Loss route.
+
+```bash
+./run_noise_experiments.sh
+```
+
+Noise files are saved under `noiseindex/` so repeated runs reuse the same index mapping.
+
+### Full Fine-Tuning Baseline
+
+```bash
+./run_full_finetune.sh
 ```
 
 ### Train Baseline (mSigLIP)
@@ -439,10 +481,39 @@ uv run trainer.py -cn m_siglip img_size_str="'(256,256)'" dataset=vn3k loss.soft
 
 ---
 
-## Ongoing Work
+## Deployment Status
 
-- **Noise Handling** — Investigating noise-robust learning strategies to improve training stability and robustness against noisy text-image pairs in low-resource settings.
-- **Edge Deployment** — Optimizing and deploying the model on the Qualcomm RB3 Gen2 (QCS6490, 4GB RAM, ARM64) via LoRA merging, FP16/ONNX export, and Qualcomm SNPE acceleration. See [`deployment/`](deployment/) for scripts and documentation.
+Edge deployment targets the **Qualcomm RB3 Gen2 / QCS6490** with local image/text embedding inference.
+
+Current progress:
+
+| Stage | Status | Notes |
+|---|---|---|
+| Checkpoint analysis | Done | `deployment/scripts/analyze_checkpoint.py` |
+| LoRA merge + FP16/FP32 export | Done | `deployment/scripts/lora_fp16/export.py` |
+| ONNX export | Done | `deployment/scripts/onnx/export.py`, external-weight directories for vision/text |
+| Local ONNX FP16 conversion | Done | `deployment/scripts/onnx/to_fp16.py` |
+| AI Hub HTP compile | Vision done | INT8 dummy-calibration compile succeeded for vision encoder, job `jgkr7qwn5` |
+| Text encoder compile | Pending | Needs same INT8 pipeline |
+| On-device RB3 benchmark | Pending | Download compiled `.bin`, run `snpe-throughput-net-run` / `snpe-net-run` |
+| Production calibration | Pending | Replace dummy calibration with real VN3K image/text calibration data |
+| Quantized accuracy check | Pending | Target: R@1 within acceptable drop from FP32 baseline |
+
+Key deployment finding: QCS6490 HTP rejects floating-point I/O. The working path is INT8 I/O and INT8 quantization for HTP context binaries. See [`deployment/docs/deployment-plan.md`](deployment/docs/deployment-plan.md) and [`deployment/docs/aihub-experiments.md`](deployment/docs/aihub-experiments.md) for the detailed status and compile log.
+
+Quick deployment commands:
+
+```bash
+python deployment/scripts/lora_fp16/export.py \
+    --ckpt epoch=56-val_score=52.28.ckpt \
+    --output-dir exported_model
+
+python deployment/scripts/onnx/export.py \
+    --model-dir exported_model \
+    --precision fp32
+```
+
+For Qualcomm AI Hub compile commands and RB3 execution details, use [`deployment/README.md`](deployment/README.md).
 
 ---
 
