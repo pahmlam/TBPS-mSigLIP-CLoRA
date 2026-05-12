@@ -1,9 +1,9 @@
 
 ---
 
-# Hard Negative-Aware Optimization for Multilingual TBPS via Adaptive Cross-Modal Circle Loss
+# A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search
 
-This repository contains the official implementation for the paper: **"Hard Negative-Aware Optimization for Multilingual Text-Based Person Search via Adaptive Cross-Modal Circle Loss"**, along with ongoing work on noise-robust learning and edge deployment on the **Qualcomm RB3 Gen2**.
+This repository contains the official implementation for the paper: **"A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search"**, along with ongoing work on noise-robust learning and edge deployment on the **Qualcomm RB3 Gen2**.
 
 ##  Abstract
 
