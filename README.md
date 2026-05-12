@@ -83,6 +83,197 @@ The curriculum schedule for $\alpha_5(t)$ prevents early disruption of global al
 
 ---
 
+## Experimental Extension: NACIR (Noise-Aware Circle Loss)
+
+> Status: **experimental / results pending**. This section documents ongoing work and does not modify or reinterpret the reported Circle Loss results above.
+
+### Motivation
+
+Cross-modal Circle Loss is effective for hard-negative mining, but its strength can become a weakness under label noise. In TBPS, two noise regimes are especially harmful:
+
+| Noise type | Label says | True relation | Failure mode |
+|---|---|---|---|
+| False Negative (FN) | Negative | Same person / semantically matching | Circle Loss pushes matching embeddings apart |
+| False Positive (FP) | Positive | Different person / wrong caption | Circle Loss pulls mismatched embeddings together |
+
+NACIR is designed as a drop-in replacement for the auxiliary Circle Loss branch. When its detectors are inactive or uncertain, it degenerates exactly to the original Circle Loss; when label noise is detected, it suppresses the corresponding branch-specific gradient.
+
+### Mathematical Formulation
+
+Let $s_{ij}=\mathbf{v}_i^\top\mathbf{u}_j$ be cosine similarity between normalized image and text embeddings. The original Circle Loss uses:
+
+$$\alpha_p^{ij}=[1+m-s_{ij}]_+, \qquad \alpha_n^{ij}=[s_{ij}+m]_+$$
+
+NACIR introduces branch-specific noise-aware weights:
+
+$$\widetilde{\alpha}_n^{ij} = \alpha_n^{ij}\cdot\max(1-P_{\text{FN}}(s_{ij}), \epsilon_n)$$
+
+$$\widetilde{\alpha}_p^{ij} = \alpha_p^{ij}\cdot\max(w_{ij}, \epsilon_p)$$
+
+where:
+
+- $P_{\text{FN}}(s_{ij})$ is the Bayesian posterior that a labeled negative pair is actually a false negative.
+- $w_{ij}$ is the clean-pair probability for a positive pair, computed from per-sample clean weights.
+- $\epsilon_n$ and $\epsilon_p$ are safety floors that prevent total gradient collapse.
+
+The resulting Noise-Aware Circle Loss is:
+
+$$
+\mathcal{L}_{\text{NACIR}} =
+\log\left[
+1+
+\sum_{j\in\mathcal{N}} e^{\gamma\,\widetilde{\alpha}_n^j(s_n^j-m)}
+\cdot
+\sum_{i\in\mathcal{P}} e^{-\gamma\,\widetilde{\alpha}_p^i(s_p^i-(1-m))}
+\right]
+$$
+
+#### False-negative detector
+
+NACIR models positive and negative similarity distributions with running Gaussian statistics:
+
+$$f_+(s)=\mathcal{N}(s;\mu_+,\sigma_+), \qquad f_-(s)=\mathcal{N}(s;\mu_-,\sigma_-)$$
+
+For a labeled negative pair with similarity $s$, the false-negative posterior is:
+
+$$
+P_{\text{FN}}(s)=
+\frac{\pi_{\text{FN}} f_+(s)}
+{\pi_{\text{FN}} f_+(s)+(1-\pi_{\text{FN}})f_-(s)}
+$$
+
+If a negative pair lies in the positive distribution region, NACIR reduces the negative-branch force by scaling $\alpha_n$ with $1-P_{\text{FN}}(s)$.
+
+#### False-positive detector
+
+NACIR tracks an exponential moving average of per-sample Circle Loss values and periodically fits a two-component 1D Gaussian mixture model:
+
+$$p(\ell)=\pi_c\mathcal{N}(\ell;\mu_c,\sigma_c^2)+\pi_n\mathcal{N}(\ell;\mu_n,\sigma_n^2)$$
+
+The lower-loss component is treated as clean. The clean probability is:
+
+$$
+w_i=P(\text{clean}\mid \ell_i)
+$$
+
+For a positive pair $(i,j)$, the implementation uses:
+
+$$w_{ij}=\min(w_i,w_j)$$
+
+If the GMM components are not sufficiently separated, NACIR falls back to $w_i=1$ for all samples, making the FP branch a no-op.
+
+### Curriculum and Safety
+
+NACIR reuses the same Circle Loss curriculum weight:
+
+| Epoch | NACIR weight | FN detector | FP detector | Notes |
+|---|---:|---|---|---|
+| 0-5 | 0 | off | off | Global alignment warmup |
+| 6-10 | ramp | off | off | NACIR behaves as vanilla Circle Loss |
+| 11-14 | ramp | on | off | EMA similarity statistics have stabilized |
+| 15-20 | ramp | on | on | GMM-based FP detection begins |
+| 21-60 | 0.1 | on | on | Stable phase |
+
+Default hyperparameters:
+
+| Parameter | Value |
+|---|---:|
+| `fn_prior` | 0.01 |
+| `epsilon_n` | 0.1 |
+| `epsilon_p` | 0.2 |
+| `ema_beta` | 0.99 |
+| `loss_ema_alpha` | 0.9 |
+| `gmm_refit_interval` | 5 |
+| `gmm_min_separation` | 1.0 |
+| `fn_enable_epoch` | 11 |
+| `fp_enable_epoch` | 15 |
+
+### Validation Protocol
+
+Before launching a full training run, NACIR should be validated in `workspace.ipynb`.
+
+Recommended notebook checks:
+
+1. **Clean no-op:** `NACIR(detectors off)` must match vanilla Circle Loss with absolute difference `< 1e-4`.
+2. **Synthetic FN:** split true PIDs into fake labels and verify that known false negatives receive higher $P_{\text{FN}}$ and lower negative-branch gradient than vanilla Circle Loss.
+3. **Synthetic FP:** replace a controlled fraction of text embeddings with different-PID text embeddings and verify that corrupted samples receive lower clean weights.
+4. **No collapse:** NACIR should preserve at least 30% of the vanilla negative-branch gradient in controlled tests.
+
+### How to Run NACIR
+
+#### Notebook validation
+
+Open `workspace.ipynb` and run:
+
+1. Sections 0-3 to load the checkpoint and build the aligned loss batch.
+2. Section 4.5 for standard NACIR diagnostics.
+3. Section 4.6 for controlled clean/FN/FP validation.
+
+The new validation section prints a PASS/FAIL greenlight table. Full training should only be launched after the controlled checks pass.
+
+#### Full training
+
+Enable NACIR via Hydra overrides:
+
+```bash
+uv run trainer.py -cn cir_msiglip \
+    loss.NACIR=true \
+    loss.CIR=true \
+    trainer.max_epochs=60 \
+    trainer.accumulate_grad_batches=3 \
+    +lora=default
+```
+
+Optional robustness experiments with synthetic noisy correspondence:
+
+```bash
+uv run trainer.py -cn cir_msiglip \
+    loss.NACIR=true \
+    dataset.noisy_rate=0.2 \
+    dataset.noisy_file="./noiseindex/VN3K_VI_0.2.npy" \
+    trainer.max_epochs=60 \
+    trainer.accumulate_grad_batches=3 \
+    +lora=default
+```
+
+Key diagnostics to monitor:
+
+| Metric | Expected behavior |
+|---|---|
+| `nacir_fn_active` | 0 before epoch 11, 1 from epoch 11 onward |
+| `nacir_fp_active` | 0 before epoch 15, 1 from epoch 15 onward |
+| `nacir_alpha_n_scale_mean` | near 1.0 on clean data; lower when FN-like negatives are detected |
+| `nacir_clean_weight_mean` | near 1.0 on clean data; lower under FP/noisy-correspondence settings |
+| `gmm_separation` | should exceed `gmm_min_separation` before FP suppression is trusted |
+| `gmm_fallback` | 1 means FP detector is inactive and safely falls back to uniform weights |
+
+### Results Template (Pending)
+
+#### Clean VN3K
+
+| Method | Seed | R@1 | R@5 | R@10 | mAP | mINP | Notes |
+|---|---:|---:|---:|---:|---:|---:|---|
+| LoRA + Curriculum Circle | 2400 | 52.28 | 79.55 | 88.03 | 57.32 | 50.57 | Existing result |
+| LoRA + NACIR | TBD | TBD | TBD | TBD | TBD | TBD | Pending |
+
+#### Robustness under synthetic noisy correspondence
+
+| Noise rate | Circle R@1 | NACIR R@1 | Delta | `gmm_separation` | `gmm_fallback` | Notes |
+|---:|---:|---:|---:|---:|---:|---|
+| 0.0 | TBD | TBD | TBD | TBD | TBD | Pending |
+| 0.1 | TBD | TBD | TBD | TBD | TBD | Pending |
+| 0.2 | TBD | TBD | TBD | TBD | TBD | Pending |
+| 0.4 | TBD | TBD | TBD | TBD | TBD | Pending |
+
+### Current Conclusion
+
+Pending. NACIR should only replace the auxiliary Circle Loss branch if it satisfies both conditions:
+
+1. **No clean regression:** clean VN3K performance remains within an acceptable tolerance of the existing Circle Loss baseline.
+2. **Noise robustness:** under controlled or real noisy-correspondence settings, NACIR degrades less than vanilla Circle Loss.
+
+---
+
 ##  Experimental Results
 
 We evaluate our method on **3000VnPersonSearch** (Low-resource, Vietnamese), **CUHK-PEDES** (High-resource, English), and **PRW-TPS-CN** (Chinese).
