@@ -1092,6 +1092,60 @@ Phạm vi:
 - 1 text service ngoài board
 - 1 vector DB ngoài board
 
+### Phase 1 implementation scaffold hiện tại
+
+Repo hiện có scaffold demo tại `deployment/demo/` để bắt đầu nối các module theo hướng plug-in:
+
+```text
+deployment/demo/
+  core/       # contracts, shared utilities, pipeline orchestration
+  adapters/   # source/detector/tracker/encoder/store/spool/uploader implementations
+  cli/        # real command implementations
+  tests/      # local preflight tests
+  run_*.py    # compatibility wrappers for python -m deployment.demo.*
+```
+
+Pipeline runtime:
+
+```text
+FrameSource
+  -> PersonDetector
+  -> Tracker
+  -> CropSelector
+  -> ImageEncoder
+  -> DiskSpool
+  -> Uploader / VectorStore
+```
+
+Các adapter v1:
+- `ImageDirectorySource` / `VideoFileSource`: dùng ảnh hoặc video file để phát triển lặp lại trước khi nối camera USB/IP.
+- `FullFramePersonDetector`: coi ảnh crop VN3K là một người, phục vụ smoke test và demo dữ liệu crop.
+- `SimpleTracker`: sinh `track_id` / `episode_id` deterministic.
+- `DefaultCropSelector`: giữ tối đa 3 snapshot mỗi track, không embed mọi frame.
+- `QnnVisionEncoder`: đường chạy thật trên RB3, dùng `qnn-net-run` với `vision_encoder.bin`.
+- `OnnxVisionEncoder` và `FakeVisionEncoder`: chỉ dùng cho preflight/local wiring, không phải tiêu chí deploy.
+- `JsonlVectorStore`, `DiskSpool`, `LocalVectorStoreUploader`: backend local tạm thời để kiểm thử ingest/search/retry trước khi thay bằng Supabase hoặc API thật.
+
+CLI chính vẫn giữ dạng ngắn qua wrapper ở package root:
+
+```bash
+python -m deployment.demo.run_ingest \
+  --source /path/to/images_or_video \
+  --encoder qnn \
+  --vision-bin vision_encoder.bin \
+  --htp-config htp_config_245.json \
+  --board-id qc-rb3g2 \
+  --camera-id cam-lab-01
+
+python -m deployment.demo.run_search \
+  --query "người mặc áo đỏ" \
+  --store deployment/demo_runtime/vectors.jsonl
+
+python -m deployment.demo.health
+```
+
+**Local preflight không được tính là deploy thành công.** Local fake/ONNX chỉ kiểm tra interface, spool, JSONL vector store và result collapsing. Acceptance thật của Phase 1 phải chạy trên RB3 bằng QNN `qnn-net-run`, output 768 chiều finite, L2-normalized, có latency/FPS đo trên board.
+
 ## Phase 2: Stable remote demo
 
 Bổ sung:
@@ -1164,7 +1218,7 @@ Bổ sung:
 - Không lưu mọi frame
 - Lưu **3 snapshot / track**
 - Search trên snapshot
-- Gộp theo `track_id` ở backend/UI
+- Gộp theo `episode_id` ở backend/UI
 
 ### Networking
 

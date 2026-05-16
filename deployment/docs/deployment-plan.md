@@ -123,8 +123,16 @@ After 11 attempts (see `aihub-experiments.md` for detailed log), the root cause 
 2. **Transfer to RB3**: `scp vision_encoder.bin rb3:~/sigm/`
 3. **Benchmark latency & throughput**:
    ```bash
-   snpe-throughput-net-run --container vision_encoder.bin --use_htp --perf_profile high_performance --duration 30
+   $QNN_BIN/qnn-net-run \
+       --backend $QNN_LIB/libQnnHtp.so \
+       --retrieve_context vision_encoder.bin \
+       --config_file htp_config_245.json \
+       --input_list input_list.txt \
+       --output_dir out_qnn_bench \
+       --profiling_level basic \
+       --perf_profile high_performance
    ```
+   `vision_encoder.bin` is a QNN context binary, not an SNPE DLC. Use `qnn-net-run` with the matching QAIRT/QNN 2.45 runtime and HTP skel libraries; `snpe-net-run` will fail with DLC reader errors for this artifact.
 4. **Compile text encoder** — same pipeline as vision:
    ```bash
    qai-hub submit-compile-job \
@@ -136,7 +144,7 @@ After 11 attempts (see `aihub-experiments.md` for detailed log), the root cause 
        --name "mSigLIP-text-int8-dummy" \
        --wait
    ```
-5. **Write an end-to-end retrieval demo** on device: image + text query → embeddings → cosine sim → top-k results.
+5. **Write an RB3-first modular retrieval demo**: `deployment/demo/` provides image/video source adapters, QNN vision encoding on board, local spool/vector-store preflight, and swappable backend/text-service interfaces. Local fake/ONNX checks are preflight only; deployment acceptance must run on RB3 with QNN.
 
 ### Phase 3 — Proper INT8 quantization (after Phase 2)
 
