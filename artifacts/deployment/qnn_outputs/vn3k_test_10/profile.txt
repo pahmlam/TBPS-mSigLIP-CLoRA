@@ -1,0 +1,41 @@
+Input Log File Location: artifacts/deployment/qnn_outputs/vn3k_test_10/qnn-profiling-data_0.log
+Log File Created: Sun May 17 15:25:11 2026
+Time Scale: 1e-06
+Epoch Timestamp: 1779006311224421 Steady Clock Timestamp: 1987790561470
+Generated using: 
+qnn-profile-viewer: v2.45.40.260406130939
+qnn-net-run: v2.45.40.260406130939
+Backend: v2.45.40.260406130939
+
+Qnn Init/Prepare/Finalize/De-Init/Execute/Lib-Load Statistics:
+------------------------------------------------------------
+Init Stats:
+-----------
+    NetRun: 0 us
+
+Compose Graphs Stats:
+--------------
+    NetRun: 0 us
+
+Finalize Stats:
+---------------
+
+De-Init Stats:
+--------------
+    NetRun: 0 us
+
+Execute Stats (Average):
+------------------------
+Total Inference Time: 
+---------------------
+
+Execute Stats (Min):
+------------------------
+Total Inference Time: 
+---------------------
+
+Execute Stats (Max):
+------------------------
+Total Inference Time: 
+---------------------
+

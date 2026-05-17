@@ -1,0 +1,29 @@
+{
+  "output_dir": "/home/ubuntu/sigm/Lam/artifacts/deployment/qnn_outputs/vn3k_test_10",
+  "num_outputs": 10,
+  "bytes_per_output_unique": [
+    3072
+  ],
+  "expected_dim": 768,
+  "all_outputs_byte_identical": false,
+  "norm_min": 11.833055155610195,
+  "norm_max": 13.104341406458671,
+  "norm_mean": 12.469719886071621,
+  "any_nan": false,
+  "any_inf": false,
+  "first_output": {
+    "result_index": 0,
+    "pid": "2000",
+    "dataset_file_path": "TamChuc_01/02001_1.jpg",
+    "output_path": "/home/ubuntu/sigm/Lam/artifacts/deployment/qnn_outputs/vn3k_test_10/Result_0/output_0.raw",
+    "bytes": 3072,
+    "dim": 768,
+    "min": -3.706979274749756,
+    "max": 2.4713196754455566,
+    "mean": -0.03292122456089904,
+    "std": 0.45096144099421637,
+    "norm": 12.530667249865427,
+    "has_nan": false,
+    "has_inf": false
+  }
+}
