@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source "$(dirname "${BASH_SOURCE[0]}")/scripts/training_paths.sh"
+
 uv run trainer.py -cn cir_msiglip \
     trainer.max_epochs=60 \
     trainer.accumulate_grad_batches=3 \

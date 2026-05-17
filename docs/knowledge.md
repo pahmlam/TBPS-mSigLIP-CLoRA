@@ -1886,13 +1886,27 @@ MSIGLIP_PRETRAINED_ROOT=/path/to/pretrained
 MSIGLIP_ARTIFACTS_ROOT=/path/to/artifacts
 ```
 
-Không thêm fallback theo máy local vào `trainer.py`. Trên server training, ví dụ workspace `/mnt/data/user_data/lampt/PS/code`, path thật nên được truyền bằng env var hoặc Hydra override để repo vẫn portable:
+Không thêm fallback theo máy local vào `trainer.py`; wrapper Python vẫn chỉ nạp package và Hydra config. Thay vào đó, các shell wrapper training (`run_cir_loss.sh`, `run_nacir.sh`, `run_noise_experiments.sh`, `run_full_finetune.sh`) source `scripts/training_paths.sh`.
+
+Helper này dùng logic portable:
+- nếu `MSIGLIP_DATA_ROOT` / `MSIGLIP_PRETRAINED_ROOT` đã được set thì giữ nguyên;
+- nếu có layout chuẩn `data/raw/VN3K` và `artifacts/models/pretrained/m_siglip_checkpoints` thì dùng layout chuẩn;
+- nếu server workspace còn layout cũ `VN3K/` và `m_siglip_checkpoints/` ở repo root thì dùng repo root làm data/pretrained root.
+
+Vì vậy trên server `/mnt/data/user_data/lampt/PS/code`, nếu đang chạy qua shell wrapper thì chỉ cần:
+
+```bash
+cd /mnt/data/user_data/lampt/PS/code
+./run_nacir.sh
+```
+
+Nếu gọi trực tiếp `trainer.py` hoặc `uv run trainer.py`, truyền env var rõ ràng:
 
 ```bash
 cd /mnt/data/user_data/lampt/PS/code
 MSIGLIP_DATA_ROOT=/mnt/data/user_data/lampt/PS/code \
 MSIGLIP_PRETRAINED_ROOT=/mnt/data/user_data/lampt/PS/code \
-python trainer.py -cn cir_msiglip
+uv run trainer.py -cn cir_msiglip
 ```
 
 Nếu server đã chuyển dữ liệu/pretrained về layout chuẩn thì không cần override:

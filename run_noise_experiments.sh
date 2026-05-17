@@ -3,6 +3,7 @@
 # Adapted from RDE's train_multiple_noise.sh
 
 set -e
+source "$(dirname "${BASH_SOURCE[0]}")/scripts/training_paths.sh"
 
 NOISY_RATES=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8)
 DATASET_NAME="VN3K_VI"
