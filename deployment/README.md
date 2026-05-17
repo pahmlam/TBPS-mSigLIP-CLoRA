@@ -29,19 +29,19 @@ deployment/
 │   ├── experiment.md              # Benchmark step-by-step guide
 │   └── benchmark-rp.md            # Hardware benchmark results
 │
-├── logs/                          # Auto-generated logs (timestamped)
+├── config/qnn/                    # QNN/HTP runtime config JSON files
 ├── deploy_utils.py                # Shared utilities (TeeLogger)
 └── README.md
 ```
 
-All scripts in `scripts/` and `hardware_profiling/` auto-log terminal output to `logs/`.
+All scripts in `scripts/` and `hardware_profiling/` write generated logs under `artifacts/deployment/`.
 
 ## Deployment Pipeline
 
 ```
 Training          →  Step 1: FP16       →  Step 2: ONNX     →  Step 3: QNN Compile    →  Deploy (RB3 Gen2)
 ━━━━━━━━━━━━━        ━━━━━━━━━━━━━━━       ━━━━━━━━━━━━━       ━━━━━━━━━━━━━━━━━━        ━━━━━━━━━━━━━━━━━━━
-trainer.py           lora_fp16/export.py   onnx/export.py      Qualcomm AI Hub           snpe-net-run
+trainer.py           lora_fp16/export.py   onnx/export.py      Qualcomm AI Hub           qnn-net-run
 epoch=56.ckpt  →     model_fp16.pt   →    *_onnx/        →    *.bin (QNN context)  →   DSP/HTP inference
 (1.4 GB)             (~740 MB)             (dir w/ weights)    (compiled for QCS6490)
 ```
@@ -58,7 +58,7 @@ epoch=56.ckpt  →     model_fp16.pt   →    *_onnx/        →    *.bin (QNN c
 
 ## Usage
 
-All scripts auto-log to `deployment/logs/` with timestamps.
+All scripts auto-log to `artifacts/deployment/logs/` with timestamps.
 
 ### 1. Analyze checkpoint
 ```bash
@@ -68,14 +68,14 @@ python deployment/scripts/analyze_checkpoint.py --ckpt path/to/checkpoint.ckpt
 ### 2. Export to FP16 (merge LoRA + strip optimizer)
 ```bash
 python deployment/scripts/lora_fp16/export.py \
-    --ckpt epoch=56-val_score=52.28.ckpt \
-    --output-dir exported_model
+    --ckpt artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt \
+    --output-dir artifacts/deployment/exports/msiglip_lora
 ```
 
 ### 3. Convert to ONNX
 ```bash
 python deployment/scripts/onnx/export.py \
-    --model-dir exported_model \
+    --model-dir artifacts/deployment/exports/msiglip_lora \
     --precision fp32              # fp32 recommended for ONNX stability
 ```
 
@@ -91,7 +91,7 @@ qai-hub configure --api_token YOUR_TOKEN
 ```bash
 # Vision encoder (pass directory, not .onnx file — includes external weights)
 qai-hub submit-compile-job \
-    --model exported_model/vision_onnx/ \
+    --model artifacts/deployment/exports/msiglip_lora/vision_onnx/ \
     --device "Dragonwing RB3 Gen 2 Vision Kit" \
     --compile_options " --target_runtime qnn_context_binary" \
     --name "mSigLIP-vision" \
@@ -99,7 +99,7 @@ qai-hub submit-compile-job \
 
 # Text encoder
 qai-hub submit-compile-job \
-    --model exported_model/text_onnx/ \
+    --model artifacts/deployment/exports/msiglip_lora/text_onnx/ \
     --device "Dragonwing RB3 Gen 2 Vision Kit" \
     --compile_options " --target_runtime qnn_context_binary" \
     --name "mSigLIP-text" \
@@ -111,18 +111,20 @@ Available `--target_runtime` options: `qnn_context_binary` (DSP/HTP, recommended
 ### 5. Test inference (ONNX Runtime on CPU)
 ```bash
 python deployment/scripts/inference_test.py \
-    --model-dir exported_model \
+    --model-dir artifacts/deployment/exports/msiglip_lora \
     --dtype fp16 \
     --dataset-root /path/to/VN3K
 ```
 
 ### 6. Run on DSP/HTP (on RB3)
 ```bash
-# Transfer compiled models to RB3, then:
-snpe-net-run \
-    --container vision_encoder.bin \
-    --input_list input_list.txt \
-    --use_dsp \
+# Transfer compiled QNN context binary to RB3, then:
+qnn-net-run \
+    --backend "$QNN_LIB/libQnnHtp.so" \
+    --retrieve_context artifacts/deployment/qnn_inputs/vision_encoder.bin \
+    --config_file deployment/config/qnn/htp_config_245.json \
+    --input_list artifacts/deployment/qnn_inputs/vn3k_vision/input_list.txt \
+    --output_dir artifacts/deployment/qnn_runs/vision_results \
     --perf_profile high_performance
 ```
 

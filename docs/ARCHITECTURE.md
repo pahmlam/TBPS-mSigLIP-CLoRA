@@ -43,19 +43,19 @@ A dual-encoder framework built on **mSigLIP** for multilingual Text-Based Person
 
 ```
 trainer.py                          # Entry point (Hydra)
-├── lightning_data.py               # TBPSDataModule (data loading, augmentation)
-│   ├── data/vn3k_vi.py             # VN3K dataset class
-│   ├── data/bases.py               # ImageTextDataset, ImageDataset, TextDataset
-│   ├── data/sampler.py             # RandomIdentitySampler
-│   └── data/augmentation/          # Image & text augmentation pools
+├── src/msiglip/lightning_data.py               # TBPSDataModule (data loading, augmentation)
+│   ├── src/msiglip/data/vn3k_vi.py             # VN3K dataset class
+│   ├── src/msiglip/data/bases.py               # ImageTextDataset, ImageDataset, TextDataset
+│   ├── src/msiglip/data/sampler.py             # RandomIdentitySampler
+│   └── src/msiglip/data/augmentation/          # Image & text augmentation pools
 │
-└── lightning_models.py             # LitTBPS (PyTorch Lightning module)
-    ├── model/build.py              # build_backbone_with_proper_layer_resize()
-    │   └── model/siglip/           # mSigLIP model implementation
-    ├── model/lora.py               # get_lora_model() via PEFT
-    ├── model/tbps.py               # TBPS (forward pass, loss computation)
-    │   └── model/objectives.py     # Loss functions
-    └── solver/
+└── src/msiglip/lightning_models.py             # LitTBPS (PyTorch Lightning module)
+    ├── src/msiglip/model/build.py              # build_backbone_with_proper_layer_resize()
+    │   └── src/msiglip/model/siglip/           # mSigLIP model implementation
+    ├── src/msiglip/model/lora.py               # get_lora_model() via PEFT
+    ├── src/msiglip/model/tbps.py               # TBPS (forward pass, loss computation)
+    │   └── src/msiglip/model/objectives.py     # Loss functions
+    └── src/msiglip/solver/
         ├── build.py                # Optimizer with param groups
         └── lr_scheduler.py         # Cosine LR with warmup
 ```
@@ -301,13 +301,13 @@ Both **text-to-image (t2i)** and **image-to-text (i2t)** directions are evaluate
 | File | Role |
 |---|---|
 | `trainer.py` | Hydra entry point, training orchestration |
-| `lightning_models.py` | LitTBPS: training/val/test loops, metrics, LoRA setup |
-| `lightning_data.py` | TBPSDataModule: data loading, augmentation, samplers |
-| `model/tbps.py` | TBPS: forward pass, loss routing, curriculum schedule |
-| `model/objectives.py` | 4 loss functions: N-ITC, SimCLR, C-ITC, Circle Loss |
-| `model/build.py` | Backbone construction with position embedding interpolation |
-| `model/lora.py` | PEFT LoRA wrapper |
-| `model/siglip/` | mSigLIP model implementation (ViT + BERT) |
-| `solver/build.py` | Optimizer builder with parameter groups |
-| `solver/lr_scheduler.py` | Cosine LR with linear warmup |
-| `config/cir_msiglip.yaml` | Main Hydra config (composes all sub-configs) |
+| `src/msiglip/lightning_models.py` | LitTBPS: training/val/test loops, metrics, LoRA setup |
+| `src/msiglip/lightning_data.py` | TBPSDataModule: data loading, augmentation, samplers |
+| `src/msiglip/model/tbps.py` | TBPS: forward pass, loss routing, curriculum schedule |
+| `src/msiglip/model/objectives.py` | 4 loss functions: N-ITC, SimCLR, C-ITC, Circle Loss |
+| `src/msiglip/model/build.py` | Backbone construction with position embedding interpolation |
+| `src/msiglip/model/lora.py` | PEFT LoRA wrapper |
+| `src/msiglip/model/siglip/` | mSigLIP model implementation (ViT + BERT) |
+| `src/msiglip/solver/build.py` | Optimizer builder with parameter groups |
+| `src/msiglip/solver/lr_scheduler.py` | Cosine LR with linear warmup |
+| `configs/cir_msiglip.yaml` | Main Hydra config (composes all sub-configs) |

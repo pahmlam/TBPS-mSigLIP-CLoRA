@@ -1,0 +1,258 @@
+\documentclass[a4paper,13pt,3p,twoside]{report}
+
+% --- 1. TEXT & FONTS ---
+\usepackage{scrextend}
+\changefontsizes{13pt}
+\usepackage[utf8]{vietnam}
+\usepackage[english]{babel}
+\usepackage{times}       % Chọn font Time New Romans
+\usepackage{indentfirst} % Thụt đầu dòng đoạn đầu tiên
+\usepackage{setspace}
+\usepackage{parskip}
+\usepackage{xcolor}
+
+% --- 2. MATH & SCIENCE ---
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsbsy}
+\usepackage{amsthm}
+\usepackage{latexsym}
+\usepackage[ruled,vlined]{algorithm2e} % Hỗ trợ thuật toán
+
+% --- 3. GRAPHICS & TABLES ---
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage[font=small,labelfont=bf]{caption}
+\usepackage{capt-of}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{pdflscape} % Trang ngang
+\usepackage{afterpage}
+\usepackage{fancybox}
+\usepackage{outlines}
+\usepackage{enumitem}
+
+% --- 4. PAGE LAYOUT & FORMATTING ---
+\usepackage[top=2cm, bottom=2cm, left=3.5cm, right=2.5cm]{geometry}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{titletoc}
+\usepackage{tocbasic}
+\usepackage{chngcntr}
+\usepackage{appendix}
+\usepackage{blindtext}
+
+% --- 5. UTILITIES ---
+\usepackage{subfiles}
+\usepackage{xurl}
+\usepackage{listings}
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{booktabs}   % Tạo đường kẻ ngang đẹp (toprule, midrule...)
+\usepackage{tabularx}   % Tự động căn chỉnh độ rộng cột
+\usepackage{float}      % Cố định vị trí bảng
+\usepackage{caption}
+% --- 6. BIBLIOGRAPHY ---
+% Lưu ý: backend=biber thường nhanh và ít lỗi hơn bibtex, nếu lỗi hãy thử đổi lại
+\usepackage[backend=bibtex,style=ieee]{biblatex}
+\addbibresource{reference.bib}
+
+% --- 7. HYPERLINKS (Load trước Glossaries) ---
+\usepackage{hyperref}
+\def \TITLE{GRADUATION THESIS}
+\def \AUTHOR{Phạm Tùng Lâm}
+\hypersetup{
+    pdfborder = {0 0 0},
+    pdftitle={\TITLE},
+    pdfauthor={\AUTHOR},
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=black,
+    colorlinks=true
+}
+\usepackage[all]{hypcap}
+
+% --- 8. GLOSSARIES (Load sau cùng) ---
+\usepackage[nonumberlist, nopostdot, nogroupskip, acronym]{glossaries}
+\usepackage{glossary-superragged}
+% LƯU Ý: Nếu vẫn chậm, hãy cân nhắc dùng \makeglossaries thay vì \makenoidxglossaries
+\makenoidxglossaries 
+\setglossarystyle{superraggedheaderborder}
+
+% --- INPUT CONFIGURATIONS ---
+% QUAN TRỌNG: Dùng \input ở preamble, KHÔNG dùng \include
+%\input{lstlisting} 
+\input{glossary}
+
+% ================= SETTINGS =================
+
+% Graphic Path
+\graphicspath{{figures/}{../figures/}}
+
+% Header & Footer Style
+\fancypagestyle{plain}{%
+    \fancyhf{}
+    \fancyfoot[RO,RE]{\thepage}
+    \renewcommand{\headrulewidth}{0pt}
+    \renewcommand{\footrulewidth}{0pt}
+}
+\setlength{\headheight}{15pt} % Tăng nhẹ để tránh warning
+
+% Title Formatting (Đã gộp gọn lại)
+\titleformat{\chapter}[hang]{\centering\bfseries}{CHAPTER \thechapter.\ }{0pt}{}[]
+\titlespacing*{\chapter}{0pt}{-20pt}{20pt}
+
+\titleformat{\section}[hang]{\bfseries}{\thechapter.\arabic{section}\ \ \ \ }{0pt}{}[]
+\titlespacing{\section}{0pt}{\parskip}{0.5\parskip}
+
+\titleformat{\subsection}[hang]{\bfseries}{\thechapter.\arabic{section}.\arabic{subsection}\ \ \ \ }{0pt}{}[]
+\titlespacing{\subsection}{30pt}{\parskip}{0.5\parskip}
+
+\renewcommand\thesubsubsection{\alph{subsubsection}}
+\titleformat{\subsubsection}[hang]{\bfseries}{\alph{subsubsection}, \ }{0pt}{}[]
+\titlespacing{\subsubsection}{50pt}{\parskip}{0.5\parskip}
+
+% Metadata
+\title{\bf \TITLE}
+\author{\AUTHOR}
+\setcounter{secnumdepth}{3}
+\counterwithin{figure}{chapter}
+
+% Theorem Styles
+\theoremstyle{definition}
+\newtheorem{example}{Example}[chapter]
+
+% Spacing
+\onehalfspacing
+\setlength{\parskip}{6pt}
+\setlength{\parindent}{15pt}
+
+% ================= BODY =================
+\begin{document}
+
+% --- FRONT MATTER ---
+\subfile{Cover} 
+% \subfile{Cover2}
+
+\newpage
+\pagenumbering{gobble} % Tắt đánh số trang cho phần đầu
+% \subfile{Chapter/0_2_Acknowledgment.tex}
+
+\newpage
+\subfile{Chapter/0_3_Abstract.tex}
+
+% --- TABLE OF CONTENTS ---
+\newpage
+\renewcommand*\contentsname{TABLE OF CONTENTS}
+% Cấu hình hiển thị mục lục
+\titlecontents{chapter}[0.0cm]{\bfseries\vspace{0.3cm}}{{\bfseries{\scshape} CHAPTER \thecontentslabel.\ }}{}{\titlerule*[0.3pc]{.}\contentspage}
+\titlecontents{section}[0.0cm]{\vspace{0.3cm}}{\thecontentslabel \ }{}{\titlerule*[0.3pc]{.}\contentspage}
+\titlecontents{subsection}[1.0cm]{\vspace{0.3cm}}{\thecontentslabel \ }{}{\titlerule*[0.3pc]{.}\contentspage}
+
+\addtocontents{toc}{\protect\thispagestyle{empty}}
+\tableofcontents 
+\thispagestyle{empty}
+\cleardoublepage
+
+% --- LISTS ---
+\pagenumbering{roman} % Đánh số i, ii, iii...
+
+% List of Figures
+\renewcommand{\listfigurename}{LIST OF FIGURES}
+{\let\oldnumberline\numberline
+\renewcommand{\numberline}{Figure~\oldnumberline}
+\listoffigures} 
+\newpage
+
+% List of Tables
+\renewcommand{\listtablename}{LIST OF TABLES}
+{\let\oldnumberline\numberline
+\renewcommand{\numberline}{Table~\oldnumberline}
+\listoftables}
+
+% Acronyms / Glossaries
+\glsaddall 
+\setglossarystyle{long}
+\renewcommand*{\glossaryheader}{%
+     \bfseries Abbreviation & \bfseries Full Term \\ 
+     \endhead
+}
+\setlength{\glsdescwidth}{0.8\textwidth}
+\renewcommand*{\glsgroupskip}{}
+\renewcommand*{\acronymname}{LIST OF ABBREVIATIONS}
+\printnoidxglossaries
+
+% Rename for Appendix
+\renewcommand\appendixname{APPENDIX}
+\renewcommand\appendixpagename{APPENDIX}
+\renewcommand\appendixtocname{APPENDIX}
+\renewcommand{\figurename}{Figure}
+\renewcommand{\tablename}{Table}
+\renewcommand{\chaptername}{CHAPTER}
+
+% --- MAIN CONTENT ---
+\newpage
+\pagenumbering{arabic} % Quay lại đánh số 1, 2, 3...
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[RE, LO]{\leftmark}
+\fancyfoot[RE, LO]{\thepage}
+
+\chapter{INTRODUCTION}
+\subfile{Chapter/1_Introduction}
+
+\newpage
+\chapter{LITERATURE REVIEW}
+\subfile{Chapter/2_Literature_review}
+
+\newpage
+\chapter{METHODOLOGY}
+\subfile{Chapter/3_Methodology}
+
+\newpage
+\chapter{THEORETICAL ANALYSIS}
+\subfile{Chapter/4_Theoretical_analysis}
+
+\newpage
+\chapter{NUMERICAL RESULTS}
+\subfile{Chapter/5_Numerical_results}
+
+\newpage
+\chapter{EDGE DEPLOYMENT AND MODEL COMPRESSION}
+\subfile{Chapter/6_Edge_Deployment}
+
+\newpage
+\chapter{CONCLUSIONS AND FUTURE WORK}
+\subfile{Chapter/7_Conclusions}
+
+\newpage
+% \chapter*{SHORT NOTICES ON REFERENCE} 
+\label{chapter:reference}
+\subfile{Chapter/7_Reference}
+
+% --- REFERENCES ---
+\newpage
+\renewcommand\bibname{REFERENCE}
+\printbibliography
+\phantomsection\addcontentsline{toc}{chapter}{REFERENCE}
+
+% --- APPENDICES ---
+\appendixpage
+\appendix
+\addappheadtotoc
+
+ % Định dạng lại tiêu đề cho Appendix
+\titleformat{\chapter}[hang]{\centering\bfseries}{ \thechapter.\ }{0pt}{}[]
+\titlespacing*{\chapter}{0pt}{-20pt}{20pt}
+\titlecontents{chapter}[0.0cm]{\bfseries\vspace{0.3cm}}{{\bfseries{\scshape} \thecontentslabel.\ }}{}{\titlerule*[0.3pc]{.}\contentspage}
+
+\chapter{CODE IMPLEMENTATION DETAILS}
+\subfile{Chapter/Appendix_A}
+
+\newpage
+\chapter{DEPLOYMENT PIPELINE DETAILS}
+\subfile{Chapter/Appendix_B}
+
+\end{document}

@@ -1,5 +1,0 @@
-type: model.siglip.tokenization_siglip.SiglipTokenizer
-pretrained_model_name_or_path: ./m_siglip_checkpoints
-vocab_size: 250000
-model_max_length: 64
-add_mask_token: false

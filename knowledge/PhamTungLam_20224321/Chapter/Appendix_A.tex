@@ -1,0 +1,192 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Code Implementation Details}
+To ensure reproducibility and clarity, this section details the PyTorch implementation of the proposed Cross-modal Circle Loss and its integration into the training loop with the Curriculum Hard-Mining schedule.
+
+\subsection{Circle Loss Construction}
+\noindent The core mathematical formulation of Circle Loss is encapsulated in the function \texttt{compute\_cross\_modal\_circle}. Unlike standard implementations that operate on a single modality, our implementation explicitly constructs a cross-modal similarity matrix between image embeddings and text embeddings. The implementation follows a vectorized approach for efficiency:
+
+% Thêm tùy chọn itemsep và topsep để danh sách trông thoáng hơn
+\begin{enumerate}[itemsep=0.5em, topsep=0.5em]
+    \item \textbf{Normalization:} Both image and text features are L2-normalized to ensure they lie on the hypersphere.
+    \item \textbf{Similarity Matrix:} I compute the cosine similarity matrix $S = I \cdot T^T$.
+    \item \textbf{Masking:} I utilize the identity labels (PIDs) to create boolean masks for positive pairs ($s_p$) and negative pairs ($s_n$).
+    \item \textbf{Adaptive Re-weighting:} The weighting factors $\alpha_p$ and $\alpha_n$ are computed dynamically based on the deviation of the similarity scores from the optimum boundaries ($1+m$ and $-m$, respectively).
+    \item \textbf{Logit Scaling:} The re-weighted scores are scaled by the inverse temperature $\gamma$ (Gamma) before being passed to the \textbf{Softplus} activation function, which serves as a smooth approximation of the ReLU function in the final loss calculation.
+\end{enumerate}
+
+% --- CODE BLOCK 1 ---
+% Sử dụng basicstyle=\ttfamily\scriptsize để giảm cỡ chữ
+% breaklines=true và breakatwhitespace=false để ép xuống dòng các dòng dài
+\begin{lstlisting}[
+    language=Python, 
+    caption={PyTorch implementation of Cross-modal Circle Loss},
+    label={lst:circle_loss_impl},
+    basicstyle=\ttfamily\scriptsize, % Chữ nhỏ hơn để tránh tràn
+    breaklines=true,                 % Cho phép ngắt dòng
+    breakatwhitespace=false,         % Ngắt cả ở những chỗ không phải khoảng trắng
+    xleftmargin=1.5em,               % Lùi lề trái vào một chút
+    xrightmargin=0.5em               % Lùi lề phải vào một chút
+]
+def compute_cross_modal_circle(image_features, text_features, pids, m=0.25, gamma=128):
+    """
+    Circle Loss between 2 modalities
+    """
+    image_features = F.normalize(image_features, dim=1, p=2)
+    text_features = F.normalize(text_features, dim=1, p=2)
+
+    sim_mat = torch.matmul(image_features, text_features.t())
+
+    pids = pids.view(-1, 1)
+    pos_mask = torch.eq(pids, pids.t()).float()
+    neg_mask = 1 - pos_mask
+
+    s_p = sim_mat[pos_mask.bool()]
+    s_n = sim_mat[neg_mask.bool()]
+
+    if s_p.numel() == 0 or s_n.numel() == 0:
+        # Ensure gradient flow even if no positive/negative pairs exist in batch
+        return torch.tensor(0.0, device=image_features.device, requires_grad=True)
+
+    # Adaptive re-weighting
+    alpha_p = torch.clamp_min(-s_p.detach() + 1 + m, min=0.)
+    alpha_n = torch.clamp_min(s_n.detach() + m, min=0.)
+
+    delta_p = 1 - m
+    delta_n = m
+
+    # Logit scaling
+    logit_p = - gamma * alpha_p * (s_p - delta_p)
+    logit_n = gamma * alpha_n * (s_n - delta_n)
+
+    # Softplus activation as smooth approximation of ReLU
+    soft_plus = torch.nn.Softplus()
+    loss = soft_plus(
+        torch.logsumexp(logit_p, dim=0) +
+        torch.logsumexp(logit_n, dim=0)
+    )
+    return loss
+\end{lstlisting}
+
+\subsection{Circle Loss Implementation to Model}
+The integration of this objective is handled within the \texttt{forward} method of the \textbf{TBPS} class (in \texttt{tbps.py}). This method orchestrates the hybrid optimization strategy, managing the flow of features through the backbone and applying the Curriculum Hard-Mining Schedule.
+
+\noindent \textbf{Curriculum Weight Scheduling:} A critical component of our implementation is the dynamic adjustment of the Circle Loss weight ($\alpha_c$). Instead of a static hyperparameter, I implement a linear warmup logic directly inside the training loop.
+
+\begin{itemize}[itemsep=0.5em, topsep=0.5em]
+    \item \textbf{Warm-up Phase ($t < T_{warm up}$):} The weight is clamped to 0.0, effectively disabling Circle Loss to allow N-ITC to stabilize global alignment.
+    \item \textbf{Ramp-up Phase:} The weight increases linearly from 0.0 to the target value ($\alpha_{target} = 0.1$) over a defined period ($T_{ramp-len}$), allowing the model to gradually adapt to the harder geometric constraints.
+\end{itemize}
+
+\noindent \textbf{Multi-View Supervision (MVS) Integration:} To enforce robustness, the Circle Loss is applied in a dual-branch manner:
+
+\begin{enumerate}[itemsep=0.5em, topsep=0.5em]
+    \item \textbf{Primary Branch:} Computes loss between the original image features and text features.
+    \item \textbf{MVS Branch:} Computes loss between augmented image features (e.g., random erasing, cropping) and text features. The final \texttt{circle\_loss} is the average of these two branches, weighted by the current curriculum factor.
+\end{enumerate}
+
+% --- CODE BLOCK 2 ---
+% Block này rất dài, cần scriptsize và setting ngắt dòng mạnh
+\begin{lstlisting}[
+    language=Python, 
+    caption={Integration of Circle Loss and MVS in training loop},
+    label={lst:training_loop_impl},
+    basicstyle=\ttfamily\scriptsize, % Sử dụng scriptsize để vừa vặn hơn
+    breaklines=true,
+    breakatwhitespace=false,
+    xleftmargin=1.5em, 
+    xrightmargin=0.5em
+]
+# --- E2. AUXILIARY CROSS-MODAL (Combined Static + Curriculum) ---
+if strategy in ["auxiliary_cross", "auxiliary_cross_curriculum"]:
+
+    # 1. Calculate N-ITC Loss first (Global Alignment)
+    if self.config.loss.get("NITC", None):
+        sim_targets = self.prepare_sim_targets(batch["pids"], self.use_sigmoid)
+
+        # Detach features if alpha is 0 to stop gradient backprop
+        image_pooler_output_stopped = (
+            image_pooler_output.clone().detach() if alpha != 0 else None
+        )
+        caption_pooler_output_stopped = (
+            caption_pooler_output.clone().detach() if alpha != 0 else None
+        )
+
+        nitc_loss = objectives.compute_constrative(
+            image_features=image_pooler_output,
+            text_features=caption_pooler_output,
+            image_features_stopped=image_pooler_output_stopped,
+            text_features_stopped=caption_pooler_output_stopped,
+            sim_targets=sim_targets,
+            alpha=alpha,
+            logit_scale=logit_scale,
+            logit_bias=self.backbone.logit_bias,
+            use_sigmoid=self.use_sigmoid,
+            weights=weights,
+        )
+
+        # Apply MVS to N-ITC if enabled
+        if self.config.loss.get("MVS", None):
+            aug_images = batch["aug_images"]
+            aug_images_features = self.encode_image(aug_images)
+            aug_images_features_stopped = (
+                aug_images_features.clone().detach() if alpha != 0 else None
+            )
+            # Compute contrastive loss for augmented view
+            augmented_nitc_loss = objectives.compute_constrative(
+                image_features=image_pooler_output, 
+                text_features=caption_pooler_output,
+                image_features_stopped=aug_images_features_stopped,
+                text_features_stopped=caption_pooler_output_stopped,
+                sim_targets=sim_targets,
+                # ... (other parameters omitted for brevity) ...
+                weights=weights,
+            )
+            # Average primary and augmented losses
+            nitc_loss = (nitc_loss + augmented_nitc_loss) / 2
+        
+        ret.update({"nitc_loss": nitc_loss * self.config.loss.nitc_loss_weight})
+
+    # 2. Calculate Circle Loss (Geometric Constraints) based on schedule
+    if self.config.loss.get("CIR", None) and current_circle_weight > 0:
+        circle_m = self.config.loss.get("circle_margin", 0.25)
+        circle_gamma = self.config.loss.get("circle_gamma", 128)
+
+        # Primary Branch: Cross-Modal Circle Loss
+        cm_circle_loss = objectives.compute_cross_modal_circle(
+            image_features=image_pooler_output,
+            text_features=caption_pooler_output,
+            pids=batch["pids"],
+            m=circle_m,
+            gamma=circle_gamma
+        )
+
+        final_circle_loss = cm_circle_loss
+        
+        # MVS Branch for Circle Loss
+        if self.config.loss.get("MVS", None):
+            # Ensure augmented features are encoded if not already done
+            if 'aug_images_features' not in locals():
+                aug_images = batch["aug_images"]
+                aug_images_features = self.encode_image(aug_images)
+
+            aug_cm_circle_loss = objectives.compute_cross_modal_circle(
+                image_features=aug_images_features,
+                text_features=caption_pooler_output,
+                pids=batch["pids"],
+                m=circle_m,
+                gamma=circle_gamma
+            )
+            # Average the losses
+            final_circle_loss = (cm_circle_loss + aug_cm_circle_loss) / 2
+
+        # Apply curriculum weight
+        ret.update({"circle_loss": final_circle_loss * current_circle_weight})
+
+    elif self.config.loss.get("CIR", None):
+        # If Circle Loss is enabled but weight is 0 (warm-up phase), return 0 loss with grad
+        ret.update({"circle_loss": torch.tensor(0.0, device=image_pooler_output.device, requires_grad=True)})
+\end{lstlisting}
+
+\end{document}

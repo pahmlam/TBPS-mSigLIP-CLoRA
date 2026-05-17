@@ -10,7 +10,7 @@
 
 ## Summary of Learnings (read this first)
 
-1. **Upload format** — `qai-hub` does **NOT** auto-upload the `.onnx.data` companion file. You must pass a **directory** (`--model exported_model/vision_onnx/`), not the `.onnx` file alone. CLI zips and uploads the whole directory.
+1. **Upload format** — `qai-hub` does **NOT** auto-upload the `.onnx.data` companion file. You must pass a **directory** (`--model artifacts/deployment/exports/msiglip_lora/vision_onnx/`), not the `.onnx` file alone. CLI zips and uploads the whole directory.
 2. **Static shapes required** — `qnn_context_binary` target rejects any dynamic axes. Resolve with `--input_specs '{"name": ((dim1, dim2, ...), "dtype")}'` (Python dict literal, eval'd by the CLI).
 3. **No floating-point I/O on HTP** — QCS6490 HTP V68 rejects **any** float type (FP32 **and** FP16) at input/output tensors. Internal FP16 compute is fine, but boundary tensors must be INT8 or INT16.
 4. **`--quantize_full_type`** — Works only with non-ONNX runtimes (`qnn_context_binary`, `tflite`). Not supported with `--target_runtime onnx`. Quantizes weights to the requested type but keeps I/O as FP32 by default (via implicit `--preserve_io_datatype`).
@@ -25,8 +25,8 @@
 
 | # | Date (UTC+7) | Job ID | Model | Target | Key Flags | Result | Error excerpt / outcome | Lesson |
 |---|--------------|--------|-------|--------|-----------|--------|-------------------------|--------|
-| 1 | 2026-04-15 10:25 | — | `exported_model/vision_encoder.onnx` (1.4 MB, graph only) | `qnn_context_binary` | (none) | ❌ | `The uploaded ONNX model is missing its external weights. Please use … ONNX model directory format.` | Uploading the bare `.onnx` file loses the `.onnx.data` companion → upload a **directory** instead. |
-| 2 | 2026-04-15 10:50 | `jgn9139q5` | `exported_model/vision_onnx/` (dir, 356 MB) | `qnn_context_binary` | (none) | ❌ | `Model input 'image' has dynamic shapes. Please use a static shape.` | Upload succeeded (330 MB zip). `qnn_context_binary` requires static shapes — pass `--input_specs`. |
+| 1 | 2026-04-15 10:25 | — | `artifacts/deployment/exports/msiglip_lora/vision_encoder.onnx` (1.4 MB, graph only) | `qnn_context_binary` | (none) | ❌ | `The uploaded ONNX model is missing its external weights. Please use … ONNX model directory format.` | Uploading the bare `.onnx` file loses the `.onnx.data` companion → upload a **directory** instead. |
+| 2 | 2026-04-15 10:50 | `jgn9139q5` | `artifacts/deployment/exports/msiglip_lora/vision_onnx/` (dir, 356 MB) | `qnn_context_binary` | (none) | ❌ | `Model input 'image' has dynamic shapes. Please use a static shape.` | Upload succeeded (330 MB zip). `qnn_context_binary` requires static shapes — pass `--input_specs`. |
 | 3 | 2026-04-15 11:05 | — | `vision_onnx/` | `qnn_context_binary` | `--input_specs "image:1,3,256,256:float32"` | ❌ | `SyntaxError: invalid syntax` — qai-hub does `eval()` on the string | Format must be a Python dict literal, not colon-separated. |
 | 4 | 2026-04-15 11:15 | `j563onvy5` | `vision_onnx/` | `qnn_context_binary` | `--input_specs '{"image": ((1, 3, 256, 256), "float32")}'` | ❌ | `Tensor 'image' has a floating-point type which is not supported by the targeted device. Please quantize the model including its I/O and try again.` | HTP rejects FP32 I/O. Need to quantize or cast I/O. |
 | 5 | 2026-04-15 12:12 | `jp2k1l3xg` (approx) | `vision_onnx/` | `qnn_context_binary` | `--input_specs` FP32 + `--compile_options " --target_runtime qnn_context_binary --quantize_full_type float16 --quantize_io"` | ❌ | Same error — converter cmd still included `--preserve_io_datatype image output_0`; `--quantize_io` silently ignored | `--quantize_io` is not a valid qai-hub compile option. Internal FP16 conversion runs but I/O stays FP32. |
@@ -44,15 +44,15 @@
 
 ### ✅ Working: local ONNX export
 ```bash
-python deployment/scripts/lora_fp16/export.py --ckpt epoch=56-val_score=52.28.ckpt --output-dir exported_model
-python deployment/scripts/onnx/export.py --model-dir exported_model --precision fp32
-python deployment/scripts/onnx/to_fp16.py --input exported_model/vision_onnx --output exported_model/vision_onnx_fp16
+python deployment/scripts/lora_fp16/export.py --ckpt epoch=56-val_score=52.28.ckpt --output-dir artifacts/deployment/exports/msiglip_lora
+python deployment/scripts/onnx/export.py --model-dir artifacts/deployment/exports/msiglip_lora --precision fp32
+python deployment/scripts/onnx/to_fp16.py --input artifacts/deployment/exports/msiglip_lora/vision_onnx --output artifacts/deployment/exports/msiglip_lora/vision_onnx_fp16
 ```
 
 ### ✅ Working: INT8 with dummy calibration (compile-path verified — jgkr7qwn5)
 ```bash
 qai-hub submit-compile-job \
-    --model exported_model/vision_onnx/ \
+    --model artifacts/deployment/exports/msiglip_lora/vision_onnx/ \
     --device "Dragonwing RB3 Gen 2 Vision Kit" \
     --compile_options " --target_runtime qnn_context_binary --quantize_full_type int8" \
     --input_specs '{"image": ((1, 3, 256, 256), "float32")}' \
@@ -65,7 +65,7 @@ qai-hub submit-compile-job \
 ### 🚧 Fallback: target GPU instead of DSP
 ```bash
 qai-hub submit-compile-job \
-    --model exported_model/vision_onnx_fp16/ \
+    --model artifacts/deployment/exports/msiglip_lora/vision_onnx_fp16/ \
     --device "Dragonwing RB3 Gen 2 Vision Kit" \
     --compile_options " --target_runtime qnn_context_binary --compute_unit gpu" \
     --input_specs '{"image": ((1, 3, 256, 256), "float16")}' \
@@ -79,7 +79,7 @@ qai-hub submit-compile-job \
 # 2. Upload to AI Hub: qai-hub upload-dataset ...
 # 3. Compile with calibration:
 qai-hub submit-compile-job \
-    --model exported_model/vision_onnx/ \
+    --model artifacts/deployment/exports/msiglip_lora/vision_onnx/ \
     --device "Dragonwing RB3 Gen 2 Vision Kit" \
     --compile_options " --target_runtime qnn_context_binary --quantize_full_type int8" \
     --input_specs '{"image": ((1, 3, 256, 256), "float32")}' \

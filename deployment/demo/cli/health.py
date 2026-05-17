@@ -14,8 +14,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--board-id", default="local-dev")
     parser.add_argument("--camera-id", default="cam-local-01")
     parser.add_argument("--encoder-runtime", default="unknown")
-    parser.add_argument("--store", default="deployment/demo_runtime/vectors.jsonl")
-    parser.add_argument("--spool", default="deployment/demo_runtime/spool")
+    parser.add_argument("--store", default="artifacts/deployment/runtime/vectors.jsonl")
+    parser.add_argument("--spool", default="artifacts/deployment/runtime/spool")
     return parser.parse_args()
 
 

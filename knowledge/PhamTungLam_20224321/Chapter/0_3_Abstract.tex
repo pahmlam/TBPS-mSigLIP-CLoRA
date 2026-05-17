@@ -1,0 +1,29 @@
+\documentclass[../main.tex]{subfiles}
+
+\begin{document}
+
+\begin{center}
+    \Large\textbf{ABSTRACT}
+\end{center}
+
+\vspace{1cm}
+
+
+\noindent Multilingual Text-Based Person Search (MTBPS) is a critical retrieval task in surveillance and forensics, enabling the identification of persons of interest using natural language descriptions across languages. While state-of-the-art frameworks like TBPS-mSigLIP have achieved success by leveraging the noise-robustness of the Sigmoid loss, this project identifies a fundamental limitation in their optimization dynamics: the lack of explicit hard negative mining. Through theoretical gradient analysis, I demonstrate that Sigmoid-based objectives suffer from vanishing gradients when handling semi-hard negative samples, leading to a suboptimal embedding space with weak inter-class separability in low-resource settings.
+
+\noindent To overcome this bottleneck, I propose \textbf{mSigLIP-CLoRA}, a Hard Negative-Aware Optimization Framework specifically designed for multilingual low-resource adaptation. The framework integrates Cross-modal Circle Loss as an auxiliary objective to enforce fine-grained discrimination via adaptive pair-wise re-weighting. To stabilize the high-variance gradients induced by hard mining and to improve training efficiency, I incorporate Low-Rank Adaptation (LoRA) with rank $r{=}32$ and scaling $\alpha{=}64$, which reduces trainable parameters to only 1.57\% (5.9M of 376M) and enables a 3$\times$ increase in batch size on consumer hardware. I further introduce a Curriculum Hard-Mining Schedule that balances global alignment and local refinement by deferring Circle Loss activation until the embedding space has stabilized.
+
+\noindent Empirical results on the \textit{3000VnPersonSearch} Vietnamese benchmark establish a new state-of-the-art Rank-1 accuracy of \textbf{52.28\%} (best seed), with a mean of \textbf{51.52$\pm$0.68\%} across three random seeds, outperforming the TBPS-mSigLIP baseline by +2.58\%. A full fine-tuning control experiment at the same effective batch size (49.18\%) conclusively rules out batch-size effects as the source of improvement. To validate multilingual generalization, I further evaluate on English CUHK-PEDES (71.85\%, +1.09\%) and Chinese PRW-TPS-CN (\textbf{59.35\%}, +12.57\%), covering three typologically diverse languages across Latin and logographic scripts.
+
+\noindent Beyond training, this project designs and partially validates an edge deployment pipeline targeting the Qualcomm RB3 Gen2 (QCS6490, 4GB RAM, ARM64), comprising LoRA merge, FP16 conversion, ONNX export, and QNN compilation for DSP/HTP acceleration. Memory profiling confirms the FP16 model (709.3~MB on disk) fits comfortably within the 4GB device budget, and proxy-model benchmarks suggest a 18--30$\times$ inference speedup via DSP acceleration (based on Qualcomm documentation). Comprehensive geometric and gradient analyses confirm that the proposed approach successfully constructs a more compact and separable embedding space, with the largest gains observed in multilingual low-resource settings.
+
+\vspace{2cm}
+
+\begin{flushright}
+    \begin{tabular}{l}
+        %\textbf{Student} \\
+        %\textit{(Signature and full name)}
+    \end{tabular}
+\end{flushright}
+
+\end{document}

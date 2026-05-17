@@ -1,0 +1,116 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+
+\section{Why Sigmoid (N-ITC) is Insufficient for Dense Embedding Spaces}
+
+\vspace{0.5cm}
+
+While the Sigmoid-based N-ITC loss effectively handles large-scale data and label noise by decoupling the global normalization factor, its gradient dynamics are suboptimal for fine-grained retrieval tasks where the embedding space is dense. In a dense space, distinct identities often share significant visual similarities (e.g., similar clothing colors or attributes), creating numerous ``hard negative'' samples.
+
+\noindent The core limitation lies in the uniform penalty mechanism of the Sigmoid function. Mathematically, the gradient of the binary cross-entropy loss with respect to the similarity score $s$ for a negative pair is proportional to the sigmoid probability:
+
+\begin{equation*}
+    \frac{\partial L}{\partial s} \approx \sigma(s)
+\end{equation*}
+
+\noindent This near-linear relationship results in a lack of discrimination between ``hard negatives'' (which the model should prioritize) and ``easy negatives'' (which are already well-separated).
+
+\noindent \textbf{Mathematical illustration.} Consider a scenario with a temperature-scaled logit:
+
+\begin{itemize}
+    \item \textbf{Hard negative:} A negative pair with high similarity $s_n = 0.8$ (incorrectly close) yields a gradient magnitude of approximately $\sigma(0.8) \approx 0.69$.
+    \item \textbf{Easy negative:} An easy pair with moderate similarity $s_e = 0.1$ yields a gradient magnitude of $\sigma(0.1) \approx 0.52$.
+\end{itemize}
+
+\noindent The ratio between these gradients is merely $1.3\times$. This implies that the model allocates nearly equal optimization effort to both easy and hard samples. In a dense embedding space, this prevents the optimizer from generating the strong ``pushing'' force required to separate highly similar identities, leading to a high False Positive rate at Rank-1.
+
+\section{How Circle Loss Addresses the Hard-Mining Problem}
+\vspace{1em}
+
+Circle Loss addresses the ``lazy optimization'' of Sigmoid by explicitly amplifying the gradient signals for hard samples through its non-linear re-weighting factors.
+
+\vspace{1em}
+
+\noindent \textbf{Gradient analysis.} When a negative sample is ``hard'' (e.g., $s_n$ with margin $m{=}0.25$), the weighting factor $\alpha_n$ becomes large ($\alpha_n = 0.8 + 0.25 = 1.05$). When multiplied by the scale factor $\gamma$ (e.g., 128), this results in an exponentially larger gradient signal compared to easy samples.
+
+\begin{itemize}
+    \item \textbf{Hard negative ($s_n = 0.8$):} The loss produces a massive gradient (theoretically $\approx 134.4$ in our experimental settings), forcing the model to drastically update weights to push this pair apart.
+    \item \textbf{Easy negative ($s_n = 0.1$):} The term $\alpha_n$ approaches zero, and the gradient vanishes effectively to 0.
+\end{itemize}
+
+\vspace{1em}
+
+\noindent \textbf{Mechanism of action.} By assigning gradients that are orders of magnitude higher to hard negatives than to easy negatives, Circle Loss focuses the majority of the computational budget on resolving the most ambiguous boundaries in the embedding space. This creates a ``spherical'' decision boundary where ambiguous samples are rigorously pushed towards the theoretical margin, significantly enhancing the inter-class separability and Rank-1 accuracy as demonstrated in our experiments.
+
+\begin{figure}[t!]
+    \centering
+    \includegraphics[width=1.0\linewidth]{Figure/grad.png}
+    \caption{Theoretical visualization of gradient magnitude across the similarity range for Sigmoid (N-ITC) vs.\ Circle Loss. Circle Loss produces near-zero gradients for easy negatives and massive gradients for hard negatives, while Sigmoid allocates nearly uniform gradients regardless of hardness.}
+    \label{fig:grad}
+\end{figure}
+
+\section{Instability at Higher Circle Loss Weights}
+\label{sec:instability}
+
+The advantage of Circle Loss---sharp gradient amplification for hard negatives---becomes a liability at higher loss weights. Empirically, doubling the Circle Loss weight from $\alpha_5{=}0.1$ to $\alpha_5{=}0.2$ causes the Rank-1 accuracy to \textbf{degrade below the LoRA-only baseline} (49.83\% vs.\ 49.90\%), a counter-intuitive result that deserves theoretical explanation. Since Low-Rank Adaptation already provides a 3$\times$ increase in batch size (from 8 to 24), one might expect the richer negative pool to stabilize Circle Loss at higher weights. The observation that it does not suggests the root cause is not batch size alone. I attribute this instability to three compounding factors.
+
+\subsection*{Factor 1: Batch Size Remains Small for Contrastive Learning}
+
+Methods such as CLIP operate with batch sizes in the thousands, providing millions of pair comparisons per update. Even with LoRA's 3$\times$ expansion, a batch of 24 yields only $24 \times 23 = 552$ negative pairs per iteration---less than 0.1\% of CLIP's negative pool. The identity of the ``hardest negative'' changes significantly across mini-batches, leading to high gradient variance. Circle Loss, being precisely sensitive to the hardest pair via the $\alpha_n$ re-weighting, amplifies this variance rather than smoothing over it.
+
+\subsection*{Factor 2: Gradient Amplification via $\gamma{=}128$}
+
+The scale factor $\gamma{=}128$ is chosen to produce the sharp gradient profile shown in Figure~\ref{fig:grad}. However, the gradient magnitude scales directly with the product $\alpha_5 \cdot \gamma$. Doubling $\alpha_5$ from 0.1 to 0.2 effectively doubles the Circle Loss gradient contribution, pushing it to the order of $\alpha_5 \cdot \gamma \approx 25.6$ per hard-negative pair---a magnitude that exceeds the implicit regularization capacity of the LoRA low-rank subspace. LoRA constrains updates to $r{=}32$-dimensional projections of the weight matrices; once gradient magnitudes exceed a threshold relative to this subspace dimension, the implicit regularization fails and training becomes unstable.
+
+\subsection*{Factor 3: False-Negative Amplification}
+
+In small batches, some pairs that the model perceives as ``hard negatives'' are in fact \textbf{false negatives}---visually similar persons with different identity labels that co-occur in surveillance footage (e.g., two people in identical uniforms). Circle Loss assigns these pairs \textit{maximal} penalty through the $\alpha_n = [s_n + m]_+$ term, because their similarity is high. At $\alpha_5{=}0.2$, this erroneous gradient signal is amplified, pushing the optimization \textit{away} from the correct solution. This explains the empirical observation that $\alpha_5{=}0.2$ yields R@1=49.83\%, \textit{below} the LoRA-only baseline (49.90\%)---the loss is actively harmful at this weight.
+
+More broadly, our framework addresses label noise at the primary loss level through the Sigmoid-based N-ITC, which treats each pair as an independent binary decision and is inherently noise-tolerant. The auxiliary Circle Loss operates at a deliberately small weight ($\alpha_5{=}0.1$) with curriculum warm-up to limit its exposure to noisy gradients. However, Circle Loss does not \textit{explicitly detect} false negatives---it treats all cross-identity pairs as true negatives. This is the fundamental root cause of the instability at higher weights: the problem is not batch size alone, but that Circle Loss amplifies erroneous gradients from mislabeled pairs. The curriculum schedule mitigates this by deferring hard-mining until the embedding space has stabilized (epoch 5+), but explicit false-negative detection within Circle Loss remains a promising direction for future work (discussed in Chapter~7).
+
+\section{Curriculum Schedule Sensitivity}
+\label{sec:curriculum_sensitivity}
+
+The curriculum strategy modulates $\alpha_5$ over training epochs via three phases: warm-up ($\alpha_5{=}0$ for the first $T_{\text{warmup}}{=}5$ epochs), linear ramp-up ($\alpha_5$ increases linearly over $T_{\text{ramp}}{=}15$ epochs), and stable ($\alpha_5{=}0.1$ for the remaining 40 epochs). This section justifies the choice of each parameter.
+
+\subsection*{Warm-up Duration $T_{\text{warmup}}{=}5$}
+
+LoRA parameters are initialized such that $BA{=}0$ at the start of training, meaning the adaptation contribution is initially zero. Several epochs of pure N-ITC optimization are required to establish a stable cross-modal alignment in the shared embedding space before introducing hard-negative mining. Empirically, the Fixed Weight strategy (which applies $\alpha_5{=}0.1$ from epoch 0, i.e.,\ $T_{\text{warmup}}{=}0$) achieves R@1=50.53\%, while the Curriculum strategy (with $T_{\text{warmup}}{=}5$) reaches 52.28\%---a gap of +1.75\% attributable purely to the warm-up. This confirms that introducing Circle Loss too early disrupts the alignment process.
+
+\subsection*{Linear Ramp $T_{\text{ramp}}{=}15$}
+
+A linear schedule provides a gradual, predictable increase that avoids sudden gradient shocks. Combined with the small target weight ($\alpha_5{=}0.1$), the per-epoch increment is only
+\[
+\Delta \alpha_5 = \frac{\alpha_{\max}}{T_{\text{ramp}}} = \frac{0.1}{15} \approx 0.0067,
+\]
+which we found sufficient for stable integration of Circle Loss into the optimization trajectory without destabilizing the already-converged N-ITC alignment.
+
+\subsection*{On Non-linear Alternatives}
+
+I chose the linear ramp for simplicity and reproducibility---it introduces no additional hyperparameters beyond $T_{\text{warmup}}$ and $T_{\text{ramp}}$. A cosine or exponential schedule could potentially offer smoother transitions, particularly in the early ramp phase where the embedding space is most sensitive. A systematic sensitivity analysis over $T_{\text{warmup}} \in \{0, 3, 5, 8, 10\}$ and ramp shapes (linear, cosine, exponential) is identified as future work in Chapter~7.
+
+\section{Asymmetric Benefit: Low-Resource vs.\ High-Resource Analysis}
+\label{sec:asymmetric_benefit}
+
+The empirical results in Chapter~5 reveal that mSigLIP-CLoRA provides substantially larger gains on low-resource datasets (+2.58\% on Vn3K, +12.57\% on PRW-TPS-CN) than on high-resource CUHK-PEDES (+1.09\%). This section develops a theoretical explanation for this asymmetry, framed around two compounding factors.
+
+\subsection*{Factor 1: Baseline Alignment Quality}
+
+On high-resource CUHK-PEDES (13K identities, 80K text descriptions), the primary N-ITC loss already achieves strong cross-modal alignment. With extensive training data, even the saturation-prone Sigmoid gradient accumulates enough signal across iterations to produce a well-aligned embedding space. The auxiliary Circle Loss, tasked with refining this space further, has comparatively little residual discriminative error to correct.
+
+On low-resource 3000VnPersonSearch (3K identities, 12K descriptions), the baseline alignment is inherently weaker: fewer positive pairs per identity, fewer hard-negative exposures per training epoch, and greater risk of overfitting. In this regime, Circle Loss contributes much more: it explicitly forces geometric separation that N-ITC alone cannot reliably produce with limited data.
+
+\subsection*{Factor 2: False-Negative Collision Rate}
+
+The probability that a batch of size $B$ contains at least one false negative (same person, different PID) depends on the identity count $|\mathcal{I}|$ in the training set. For uniform sampling:
+\[
+P(\text{FN in batch}) \approx 1 - \left(\frac{|\mathcal{I}| - 1}{|\mathcal{I}|}\right)^{\binom{B}{2}}.
+\]
+For Vn3K ($|\mathcal{I}|{=}2000$, $B{=}24$, $\binom{24}{2}{=}276$) the collision rate is approximately 12.9\%, whereas for CUHK-PEDES ($|\mathcal{I}|{=}11000$, $B{=}24$) it drops to approximately 2.5\%. Circle Loss amplifies gradients for the hardest negatives---\textit{including} false negatives---so its benefit is naturally larger in scenarios where such noise is less frequent relative to the useful signal. In Vn3K, despite the higher false-negative rate, the N-ITC primary loss absorbs much of this noise, and the curriculum warm-up delays Circle Loss until the embedding has stabilized enough for the model to correctly identify most cross-identity pairs as hard negatives rather than false negatives.
+
+\subsection*{Implications and Positioning}
+
+This asymmetry has two consequences for how the contribution of this work should be understood. First, mSigLIP-CLoRA is most valuable as a \textit{multilingual low-resource adaptation} technique: it closes the alignment gap that standard N-ITC leaves open when training data is scarce. Second, the margin hyperparameter $m{=}0.25$ was tuned on the Vietnamese benchmark and may be suboptimal on high-resource English, where the embedding space is already well-separated and requires a different margin. A dataset-adaptive margin is another direction for future work.
+
+\end{document}

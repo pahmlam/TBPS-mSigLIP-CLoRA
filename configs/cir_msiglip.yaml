@@ -1,0 +1,26 @@
+defaults:
+  - _self_
+  - paths: default
+  - dataset: vn3k_vi
+  - loss: cir_msiglip
+  - aug: siglip
+  - trainer: best_msiglip
+  - optimizer: cir_test
+  - scheduler: tbps_clip
+  - tokenizer: m_siglip
+  - backbone: m_siglip
+  - logger: default
+
+training: true
+dataset_root_dir: ${paths.data_root}
+distributed: false
+img_size_str: "(256, 256)"
+img_size: ${eval:${img_size_str}}
+seed: 2400
+
+hydra:
+  run:
+    dir: ${paths.artifacts_root}/training/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: ${paths.artifacts_root}/training/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

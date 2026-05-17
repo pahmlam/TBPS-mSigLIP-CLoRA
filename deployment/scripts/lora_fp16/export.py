@@ -4,17 +4,17 @@ Merges LoRA into base model, strips optimizer states, converts to FP16.
 
 Usage:
     python deployment/scripts/lora_fp16/export.py \
-        --ckpt epoch=56-val_score=52.28.ckpt \
-        --output-dir exported_model
+        --ckpt artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt \
+        --output-dir artifacts/deployment/exports/msiglip_lora
 
 Outputs:
-    exported_model/
+    artifacts/deployment/exports/msiglip_lora/
     ├── model_fp16.pt              # PyTorch FP16 state dict (vision + text + logit params)
     ├── model_fp32.pt              # PyTorch FP32 state dict (fallback)
     └── config.yaml                # Resolved Hydra config from checkpoint
 
 Next step:
-    python deployment/scripts/onnx/export.py --model-dir exported_model
+    python deployment/scripts/onnx/export.py --model-dir artifacts/deployment/exports/msiglip_lora
 """
 
 import argparse
@@ -29,8 +29,13 @@ _deployment_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 sys.path.insert(0, _deployment_root)
 from deploy_utils import TeeLogger
 
-# Add project root to path (deployment/ → project root)
-sys.path.insert(0, os.path.dirname(_deployment_root))
+_project_root = os.path.dirname(_deployment_root)
+sys.path.insert(0, os.path.join(_project_root, "src"))
+
+DEFAULT_OUTPUT_DIR = os.path.join(
+    _project_root, "artifacts", "deployment", "exports", "msiglip_lora"
+)
+DEFAULT_LOG_DIR = os.path.join(_project_root, "artifacts", "deployment", "logs")
 
 from omegaconf import OmegaConf
 
@@ -45,7 +50,7 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 def load_model_from_checkpoint(ckpt_path: str):
     """Load Lightning checkpoint and reconstruct model with merged LoRA."""
-    from lightning_models import LitTBPS
+    from msiglip.lightning_models import LitTBPS
 
     print(f"Loading checkpoint: {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
@@ -134,7 +139,7 @@ def export_pytorch(lit_model, config, output_dir: str):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt", required=True)
-    parser.add_argument("--output-dir", default="exported_model")
+    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -147,7 +152,6 @@ def main():
 
 
 if __name__ == "__main__":
-    log_dir = os.path.join(_deployment_root, "logs")
-    logger = TeeLogger(log_dir, "export_lora_fp16")
+    logger = TeeLogger(DEFAULT_LOG_DIR, "export_lora_fp16")
     main()
     logger.close()

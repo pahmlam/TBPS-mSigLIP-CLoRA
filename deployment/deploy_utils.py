@@ -9,7 +9,7 @@ class TeeLogger:
     """Duplicates all stdout/stderr to a timestamped log file.
 
     Usage:
-        logger = TeeLogger("deployment/logs", "export")
+        logger = TeeLogger("artifacts/deployment/logs", "export")
         # ... all print() output is now also written to the log file
         logger.close()  # restore original stdout/stderr
     """

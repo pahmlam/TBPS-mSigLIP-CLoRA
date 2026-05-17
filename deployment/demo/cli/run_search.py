@@ -14,7 +14,7 @@ from ..adapters.vector_store import JsonlVectorStore
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Search the local demo vector store.")
     parser.add_argument("--query", required=True)
-    parser.add_argument("--store", default="deployment/demo_runtime/vectors.jsonl")
+    parser.add_argument("--store", default="artifacts/deployment/runtime/vectors.jsonl")
     parser.add_argument("--text-encoder", choices=["fake"], default="fake")
     parser.add_argument("--top-k-raw", type=int, default=50)
     parser.add_argument("--top-k-final", type=int, default=10)

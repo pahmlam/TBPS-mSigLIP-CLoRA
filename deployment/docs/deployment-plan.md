@@ -1,8 +1,8 @@
 # mSigLIP Edge Deployment Plan — Qualcomm RB3 Gen2
 
 > **Status:** In progress | **Target device:** Qualcomm RB3 Gen2 (QCS6490, HTP V68, 4 GB RAM, Ubuntu 24.04 aarch64)
-> **Source checkpoint:** `epoch=56-val_score=52.28.ckpt` (VN3K R@1 = 52.28%, LoRA + Curriculum Circle Loss, seed 2400)
-> **Last updated:** 2026-05-06
+> **Source checkpoint:** `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` (VN3K R@1 = 52.28%, LoRA + Curriculum Circle Loss, seed 2400)
+> **Last updated:** 2026-05-17
 
 ---
 
@@ -59,7 +59,7 @@ The conversion tool `snpe-onnx-to-dlc` is the missing piece. Options:
 Step 0        Step 1                  Step 2                      Step 3                     Step 4                 Step 5
 ━━━━━━        ━━━━━━                  ━━━━━━                      ━━━━━━                     ━━━━━━                 ━━━━━━
 Train    →   Merge LoRA + FP16   →   Export ONNX (static)    →   Quantize for HTP       →   AI Hub compile    →   Deploy to RB3
-             (local, lora_fp16/)     (local, onnx/export.py)     (local, onnx/to_fp16.py    (cloud)                (snpe-net-run)
+             (local, lora_fp16/)     (local, onnx/export.py)     (local, onnx/to_fp16.py    (cloud)                (qnn-net-run)
                                                                   or INT8 calibration)
 ✅           ✅                       ✅                           ✅ Done (INT8)              ✅ Vision done         ⏭
 epoch=56    model_fp16.pt           vision_onnx/                 INT8-quantized ONNX         vision_encoder.bin     DSP/HTP inference
@@ -79,7 +79,7 @@ epoch=56    model_fp16.pt           vision_onnx/                 INT8-quantized 
 
 **What still needs to be done:**
 - Text encoder: same INT8 compile pipeline on AI Hub
-- Download compiled `.bin` to RB3 device and run `snpe-net-run` benchmarks
+- Download compiled `.bin` to RB3 device and run `qnn-net-run` benchmarks
 - Replace dummy calibration with real VN3K calibration data for production accuracy
 - Accuracy evaluation: target R@1 ≥ 48% (vs FP32 baseline 52.28%)
 
@@ -125,10 +125,10 @@ After 11 attempts (see `aihub-experiments.md` for detailed log), the root cause 
    ```bash
    $QNN_BIN/qnn-net-run \
        --backend $QNN_LIB/libQnnHtp.so \
-       --retrieve_context vision_encoder.bin \
-       --config_file htp_config_245.json \
-       --input_list input_list.txt \
-       --output_dir out_qnn_bench \
+      --retrieve_context artifacts/deployment/qnn_inputs/vision_encoder.bin \
+      --config_file deployment/config/qnn/htp_config_245.json \
+      --input_list artifacts/deployment/qnn_inputs/vn3k_vision/input_list.txt \
+       --output_dir artifacts/deployment/qnn_runs/vision_bench \
        --profiling_level basic \
        --perf_profile high_performance
    ```
@@ -136,7 +136,7 @@ After 11 attempts (see `aihub-experiments.md` for detailed log), the root cause 
 4. **Compile text encoder** — same pipeline as vision:
    ```bash
    qai-hub submit-compile-job \
-       --model exported_model/text_onnx/ \
+       --model artifacts/deployment/exports/msiglip_lora/text_onnx/ \
        --device "Dragonwing RB3 Gen 2 Vision Kit" \
        --compile_options " --target_runtime qnn_context_binary --quantize_full_type int8" \
        --input_specs '{"input_ids": ((1, 64), "int64"), "attention_mask": ((1, 64), "int64")}' \

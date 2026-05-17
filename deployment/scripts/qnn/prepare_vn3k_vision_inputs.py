@@ -186,10 +186,10 @@ cd "$(dirname "$0")"
 
 "$QNN_BIN/qnn-net-run" \\
   --backend "$QNN_LIB/libQnnHtp.so" \\
-  --retrieve_context "${{VISION_BIN:-../vision_encoder.bin}}" \\
-  --config_file "${{HTP_CONFIG:-../htp_config_245.json}}" \\
+  --retrieve_context "${{VISION_BIN:-../../qnn_inputs/vision_encoder.bin}}" \\
+  --config_file "${{HTP_CONFIG:-../../../../deployment/config/qnn/htp_config_245.json}}" \\
   --input_list "{input_list_path.name}" \\
-  --output_dir "${{OUTPUT_DIR:-qnn_results}}" \\
+  --output_dir "${{OUTPUT_DIR:-../../qnn_runs/vision_results}}" \\
   --profiling_level basic \\
   --perf_profile high_performance \\
   --log_level info
@@ -212,7 +212,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("deployment/qnn_inputs/vn3k_vision"),
+        default=Path("artifacts/deployment/qnn_inputs/vn3k_vision"),
         help="Directory for raw files, manifest, and input_list.txt.",
     )
     parser.add_argument(
@@ -307,7 +307,7 @@ def main() -> None:
         print(f"Run script:   {run_script_path}")
     print("\nOn RB3, copy this output dir next to vision_encoder.bin and run:")
     print(f"  cd {output_dir.name}")
-    print("  VISION_BIN=../vision_encoder.bin HTP_CONFIG=../htp_config_245.json ./run_qnn_vision.sh")
+    print("  VISION_BIN=../../qnn_inputs/vision_encoder.bin HTP_CONFIG=../../../../deployment/config/qnn/htp_config_245.json ./run_qnn_vision.sh")
 
 
 if __name__ == "__main__":

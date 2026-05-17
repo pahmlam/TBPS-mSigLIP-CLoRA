@@ -5,19 +5,19 @@ rebuilds the TBPS model, and exports vision & text encoders as separate ONNX gra
 
 Usage:
     python deployment/scripts/onnx/export.py \
-        --model-dir exported_model \
+        --model-dir artifacts/deployment/exports/msiglip_lora \
         --precision fp32              # or: fp16 (default: fp32, use fp32 for ONNX stability)
 
 Inputs (from lora_fp16/export.py):
-    exported_model/
+    artifacts/deployment/exports/msiglip_lora/
     ├── model_fp32.pt
     ├── model_fp16.pt
     └── config.yaml
 
 Outputs:
-    exported_model/
-    ├── vision_encoder.onnx
-    └── text_encoder.onnx
+    artifacts/deployment/exports/msiglip_lora/
+    ├── vision_onnx/vision_encoder.onnx
+    └── text_onnx/text_encoder.onnx
 """
 
 import argparse
@@ -33,8 +33,13 @@ _deployment_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 sys.path.insert(0, _deployment_root)
 from deploy_utils import TeeLogger
 
-# Add project root to path (deployment/ → project root)
-sys.path.insert(0, os.path.dirname(_deployment_root))
+_project_root = os.path.dirname(_deployment_root)
+sys.path.insert(0, os.path.join(_project_root, "src"))
+
+DEFAULT_MODEL_DIR = os.path.join(
+    _project_root, "artifacts", "deployment", "exports", "msiglip_lora"
+)
+DEFAULT_LOG_DIR = os.path.join(_project_root, "artifacts", "deployment", "logs")
 
 from omegaconf import OmegaConf
 
@@ -49,8 +54,8 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 def load_model_from_exported(model_dir: str, precision: str = "fp32"):
     """Rebuild TBPS model from exported state dict + config."""
-    from model.build import build_backbone_with_proper_layer_resize
-    from model.tbps import TBPS
+    from msiglip.model.build import build_backbone_with_proper_layer_resize
+    from msiglip.model.tbps import TBPS
 
     config_path = os.path.join(model_dir, "config.yaml")
     print(f"Loading config: {config_path}")
@@ -119,7 +124,7 @@ def export_onnx(model, config, output_dir: str):
 
     Each encoder is saved in its own subdirectory (vision_onnx/, text_onnx/)
     so that Qualcomm AI Hub can upload the .onnx + .onnx.data pair together
-    via the directory format: --model exported_model/vision_onnx/
+    via the directory format: --model artifacts/deployment/exports/msiglip_lora/vision_onnx/
     """
     image_size = config.backbone.vision_config.image_size
     try:
@@ -173,7 +178,11 @@ def export_onnx(model, config, output_dir: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-dir", required=True, help="Directory from lora_fp16/export.py")
+    parser.add_argument(
+        "--model-dir",
+        default=DEFAULT_MODEL_DIR,
+        help="Directory from lora_fp16/export.py",
+    )
     parser.add_argument("--precision", choices=["fp32", "fp16"], default="fp32",
                         help="Which state dict to load (default: fp32 for ONNX stability)")
     args = parser.parse_args()
@@ -186,11 +195,10 @@ def main():
     print(f"  Text:   {args.model_dir}/text_onnx/")
     print("\nFor Qualcomm AI Hub, pass the directory (not the .onnx file):")
     print(f"  qai-hub submit-compile-job --model {args.model_dir}/vision_onnx/ ...")
-    print("\nNext: run deployment/scripts/inference_test.py or convert to SNPE")
+    print("\nNext: run deployment/scripts/inference_test.py or compile to QNN")
 
 
 if __name__ == "__main__":
-    log_dir = os.path.join(_deployment_root, "logs")
-    logger = TeeLogger(log_dir, "export_onnx")
+    logger = TeeLogger(DEFAULT_LOG_DIR, "export_onnx")
     main()
     logger.close()

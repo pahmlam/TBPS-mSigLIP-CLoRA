@@ -1,0 +1,115 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Summary}
+
+\noindent This thesis has addressed the critical optimization \textit{and} deployment challenges in Multilingual Text-Based Person Search (MTBPS), with a primary focus on the low-resource context of the Vietnamese language and real-world deployment on edge hardware. The central contribution, named \textbf{mSigLIP-CLoRA}, synergizes Cross-modal Circle Loss, Low-Rank Adaptation (LoRA), and a Curriculum Hard-Mining Schedule into a unified framework, and extends this research artifact through a partially validated deployment pipeline for the Qualcomm RB3 Gen2 Vision Development Kit.
+
+\noindent Through a rigorous analysis of the gradient dynamics of the standard Sigmoid loss (N-ITC), Chapter~4 identified a vanishing-gradient problem for semi-hard negative samples, which hinders the model's discriminative power. A further theoretical contribution characterized the \textit{instability regime} of Circle Loss at higher weights: once the product $\alpha_5 \cdot \gamma$ exceeds the implicit regularization capacity of the LoRA low-rank subspace, false-negative amplification dominates and training becomes actively harmful (e.g., $\alpha_5{=}0.2$ yields R@1=49.83\%, below the LoRA-only baseline 49.90\%). This theoretical characterization provides principled guidance for hyperparameter selection and motivates the noise-aware future-work directions discussed below.
+
+\noindent The key findings of this thesis are summarized as follows:
+
+\begin{itemize}
+    \item \textbf{Geometric refinement via Circle Loss.} The integration of Cross-modal Circle Loss successfully reshapes the embedding space, enforcing a spherical geometry with clear margins between identities, as evidenced by the geometric visualization (Chapter~5). This is theoretically grounded in the adaptive re-weighting mechanism $\alpha_n = [s_n + m]_+$ (Chapter~4) and empirically confirmed through consistent mINP improvements across all datasets.
+
+    \item \textbf{Computational efficiency via LoRA.} LoRA with $r{=}32$ and $\alpha{=}64$ on the attention projections reduces trainable parameters from 376M to 5.9M (a 98.4\% reduction) while enabling a 3$\times$ increase in batch size (from 8 to 24) on the same 12\,GB consumer GPU. A full fine-tuning control at matched effective batch size (49.18\% vs.\ LoRA's 49.90\%) conclusively demonstrates that the improvement is not a batch-size artifact but a principled consequence of low-rank regularization.
+
+    \item \textbf{State-of-the-art performance in multilingual low-resource adaptation.} The curriculum-based strategy achieves a best-seed Rank-1 accuracy of \textbf{52.28\%} on 3000VnPersonSearch (+2.58\% over baseline), stable at \textbf{51.52$\pm$0.68\%} across three random seeds. The framework generalizes strongly across typologically diverse languages: \textbf{+12.57\%} on Chinese PRW-TPS-CN, \textbf{+10.37\%} on 10\% CUHK-PEDES (data-scarce regime), and \textbf{+1.09\%} on high-resource English CUHK-PEDES---demonstrating that the benefit is largest in low-resource settings while remaining non-harmful elsewhere.
+
+    \item \textbf{Edge deployment pipeline design.} A complete LoRA-merge $\to$ FP16 $\to$ ONNX $\to$ QNN deployment pipeline was designed and partially validated against the Qualcomm RB3 Gen2 target (QCS6490, 4\,GB RAM, ARM64). Checkpoint analysis confirms the FP16 model (709.3\,MB on disk) fits comfortably within the 4\,GB device budget; proxy-model benchmarks measure 3.72$\times$ speedup on ONNX Runtime vs.\ PyTorch CPU (MobileNetV2, batch 1) and project 18--30$\times$ speedup via DSP/HTP acceleration based on Qualcomm documentation.
+\end{itemize}
+
+\section{Limitations}
+
+\noindent Despite these findings, the current framework retains several technical limitations that the thesis explicitly acknowledges:
+
+\begin{itemize}
+    \item \textbf{Fixed input aspect ratio.} All input images are resized to $256 \times 256$ to match the mSigLIP pre-training protocol. Pedestrian images are naturally rectangular (tall and narrow); forcing a square aspect ratio distorts the human body proportions and may lose morphological details relevant for re-identification.
+
+    \item \textbf{Limited feature plasticity under LoRA.} LoRA constrains adaptation to a rank-$r{=}32$ subspace. This limits the model's ability to adapt to severe domain shifts or highly idiosyncratic linguistic attributes; the trade-off between parameter efficiency and maximum theoretical plasticity is unavoidable.
+
+    \item \textbf{Suboptimal batch size for contrastive learning.} Although LoRA enables batch size 24 (and effective batch 72 with accumulation), this is still small relative to the thousands-to-millions used by CLIP-class pretraining. This limits the diversity of hard negatives available per iteration and contributes to the Circle Loss instability at $\alpha_5 \geq 0.2$ analyzed in Chapter~4.
+
+    \item \textbf{No explicit noise handling in Circle Loss.} Circle Loss assumes all cross-identity pairs are true negatives. In practice, a fraction of hard negatives are \textit{false negatives}---same person, different PID---and Circle Loss amplifies their erroneous gradients via the $\alpha_n = [s_n + m]_+$ weighting. The curriculum schedule partially mitigates this by deferring mining, but explicit false-negative detection is absent from the current framework.
+
+    \item \textbf{Deployment pipeline not yet validated end-to-end on DSP/HTP.} Chapter~6 reports the design of the pipeline and the completion of Steps 1--2 (LoRA merge, FP16, ONNX export); Steps 3--4 (QNN compilation and on-device inference benchmarking) are in progress. INT8 quantization and GStreamer integration for live surveillance video are identified but not yet implemented.
+\end{itemize}
+
+\section{Future Work}
+
+\noindent The limitations above directly motivate five strategic directions for future development. Each is framed as a natural next step that builds on the foundation established in this thesis.
+
+\subsection{Noise-Robust Circle Loss}
+\label{sec:fw_noise_robust}
+
+\noindent The most direct extension of this thesis is to explicitly address the false-negative amplification problem identified in Section~4.3. I have identified three candidate integrations, ordered by implementation complexity:
+
+\begin{enumerate}
+    \item \textbf{Idea D -- Distribution Separation (low effort, medium impact).} Introduce a lightweight regularizer that maximizes the separation between positive and negative similarity distributions:
+    \[
+    L_{\text{sep}} = -\frac{\mu_p - \mu_n}{\sigma_p + \sigma_n},
+    \]
+    where $\mu_p, \sigma_p$ are the running mean and standard deviation of positive similarities (and analogously for negatives). This provides implicit noise resistance by discouraging both-tail overlap, requires only $\sim$10 lines of code, and has no additional infrastructure requirements.
+
+    \item \textbf{Idea A -- FNM-Lite for Circle Loss (medium effort, high impact).} Adapt FNM's Bayesian false-negative detection specifically for Circle Loss. The core modification is to scale the negative weighting factor:
+    \[
+    \alpha_n^{(\text{FNM})} = \alpha_n \cdot (1 - P(\text{FN} | s)),
+    \]
+    where $P(\text{FN}|s)$ is estimated from a simplified similarity queue (avoiding FNM's full momentum encoder) via EMA statistics. This directly addresses the root cause of the Circle Loss instability characterized in Chapter~4 and is estimated at 5--10 lines of code in \texttt{model/objectives.py}.
+
+    \item \textbf{Idea C -- Unified Noise-Aware Circle Loss (high effort, very high impact).} Combine FNM's FN detection (on the negative branch) with RDE's FP detection via per-sample GMM (on the positive branch) into a single Circle Loss variant:
+    \[
+    \alpha_p \leftarrow \alpha_p \cdot \max(w_i, \varepsilon_p), \quad \alpha_n \leftarrow \alpha_n \cdot \max(1 - P(\text{FN}|s), \varepsilon_n),
+    \]
+    where $w_i$ is the GMM posterior probability of sample $i$ being clean, and $\varepsilon_p{=}0.2, \varepsilon_n{=}0.1$ are safety floors. An extended curriculum activates FN detection at epoch 11 and FP detection at epoch 15, giving the EMA and GMM statistics time to stabilize.
+\end{enumerate}
+
+\noindent All three ideas can be validated cheaply in \texttt{workspace.ipynb} on frozen embeddings before committing to a full training run, following the research cycle established in this thesis (Ideate $\to$ Implement $\to$ Validate $\to$ Train $\to$ Analyze).
+
+\subsection{Completing the Edge Deployment Pipeline}
+\label{sec:fw_deployment}
+
+\noindent The deployment pipeline (Chapter~6) is partially validated. The remaining work is concrete and scoped:
+
+\begin{itemize}
+    \item \textbf{Receive QNN compilation output} from Qualcomm AI Hub for both vision and text encoders and measure end-to-end DSP/HTP latency on the RB3 Gen2.
+    \item \textbf{INT8 quantization with calibration} on a 256-pair subset of VN3K, targeting $\leq$1\% absolute accuracy degradation vs.\ FP16.
+    \item \textbf{GStreamer integration} to wire the compiled model into a live surveillance pipeline: video decoder $\to$ detector $\to$ crop $\to$ mSigLIP-CLoRA encoder $\to$ retrieval, all running on-device.
+    \item \textbf{Accuracy preservation validation:} end-to-end comparison of PyTorch FP32, PyTorch FP16, ONNX FP32, and QNN FP16/INT8 outputs on the VN3K test set to confirm retrieval metrics are preserved within tolerance.
+\end{itemize}
+
+\subsection{Richer Training Dynamics}
+
+\noindent Several improvements to the training pipeline warrant exploration:
+
+\begin{itemize}
+    \item \textbf{Adaptive resolution strategy.} Replace the fixed $256 \times 256$ crop with a dynamic resolution mechanism or a patch-keeping strategy that preserves the original aspect ratio of pedestrian images, preventing distortion of fine-grained morphological details.
+
+    \item \textbf{Scaling batch size via gradient cache or gradient accumulation.} Combine LoRA with gradient caching to simulate an effective batch size of 128 or 256, providing a richer negative pool for Circle Loss and potentially closing the stability gap at higher $\alpha_5$ values.
+
+    \item \textbf{Non-linear curriculum schedules.} The linear ramp was chosen for simplicity. Cosine, exponential, and piecewise-polynomial schedules may offer smoother transitions; a systematic sensitivity analysis over $T_{\text{warmup}} \in \{0, 3, 5, 8, 10\}$ and ramp shapes is a natural extension.
+
+    \item \textbf{Dataset-adaptive margin.} The margin $m{=}0.25$ was tuned on Vn3K. For high-resource English, a smaller margin (e.g., $m{=}0.15$) may be more appropriate; for extremely low-resource settings, a larger margin (e.g., $m{=}0.35$) may provide more aggressive hard-negative separation. A learnable or dataset-size-conditioned margin would remove this hyperparameter-tuning burden.
+\end{itemize}
+
+\subsection{Advanced Parameter-Efficient Fine-Tuning Methods}
+
+\noindent Beyond LoRA, several emerging PEFT methods offer potentially better efficiency-plasticity trade-offs:
+
+\begin{itemize}
+    \item \textbf{DoRA (Weight-Decomposed Low-Rank Adaptation)} decomposes the adaptation into magnitude and direction components, yielding better performance than LoRA at comparable parameter counts.
+    \item \textbf{AdapterFusion} combines multiple task-specific adapters, potentially enabling multi-dataset training where each language gets its own adapter and a fusion layer learns the optimal combination.
+    \item \textbf{LoRA+} uses different learning rates for the $A$ and $B$ matrices, which has been shown to accelerate convergence.
+\end{itemize}
+
+\subsection{Extending to Video-Based Retrieval}
+
+\noindent Given the temporal nature of surveillance data, extending mSigLIP-CLoRA to support video-to-text retrieval is a natural direction. This would leverage temporal attention mechanisms to aggregate identity cues across multiple frames, potentially improving robustness to single-frame occlusions, viewpoint variations, and motion blur. The edge deployment pipeline would need to be extended to handle temporal aggregation efficiently on the DSP/HTP---likely via a sliding-window buffer and periodic encoding.
+
+\section{Closing Remarks}
+
+\noindent This thesis demonstrates that \textit{training-time optimization} and \textit{deployment-time compression} are mutually reinforcing concerns when addressing multilingual low-resource text-based person search on edge hardware. LoRA is simultaneously an optimization enabler (via larger batches for Circle Loss) and a deployment asset (via easy merge-to-base before compression); the curriculum schedule prevents training pathologies that would otherwise necessitate complex noise-handling infrastructure; and the FP16 precision choice is justified both by training-time numerical stability and by the 4\,GB memory constraint of the target device. Approaching the problem holistically---rather than treating accuracy and deployment as separable concerns---yielded measurable benefits: state-of-the-art Vietnamese accuracy (R@1=52.28\%), strong generalization across three languages, and a deployment path with clearly identified next steps.
+
+\noindent The noise-aware extensions outlined above are expected to lift multilingual TBPS accuracy further by addressing the final structural weakness of Circle Loss, while completion of the QNN/HTP pipeline will close the loop from research to deployment. These directions form the foundation for continued work beyond this graduation thesis.
+
+\end{document}

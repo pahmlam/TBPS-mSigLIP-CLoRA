@@ -1,0 +1,105 @@
+\documentclass[../main.tex]{subfiles}
+\usepackage{amsmath}
+\usepackage{graphicx}
+
+\begin{document}
+
+\section{Problem Statement}
+\label{sec:problem_statement}
+
+The exponential growth of multimedia data in the digital era has catalyzed the evolution of Multilingual Text-Based Person Search (MTBPS). Extending the capabilities of traditional TBPS \cite{Li_2017_CVPR}, this task enables the retrieval of specific individuals across visual data (images or videos) using natural language descriptions in multiple languages. This capability is paramount for applications in globalized surveillance, border security, and forensic investigations, where identifying information is often provided in diverse languages depending on the regional context or the speaker's native tongue.
+
+\noindent The pragmatic urgency of MTBPS is exemplified in time-sensitive scenarios, such as an international airport where a missing child alert might be issued with witness descriptions in both English (``A man with short black hair, wearing a yellow short-sleeved T-shirt\ldots'') and Vietnamese (``Nam tóc ngắn màu đen, mặc áo phông cổ tròn cộc tay màu vàng\ldots''). A conventional, monolingual system would fail to process these heterogeneous inputs simultaneously, leading to critical delays in response time. Beyond this linguistic challenge, real-world deployment introduces a second constraint: the retrieval system must often run \textit{on-device}, at the network edge---on resource-constrained surveillance cameras, mobile devices, or embedded platforms---where latency, privacy, and intermittent connectivity preclude reliance on cloud inference.
+
+\noindent Formally, the TBPS task of identifying a person in images based on textual descriptions can be formulated as a cross-modal retrieval problem. The objective is to map input data into a shared embedding space to minimize the distance between embeddings of the same identity. This is defined by the following equation:
+
+\begin{equation}
+G^{*}=\{g_{i}|d(F_{q}^{L},F_{g_{i}})<\theta\}
+\label{eq:1.1}
+\end{equation}
+
+Where $L$ denotes the query language (e.g., English, Vietnamese), $F_{q}^{L}$ is the feature embedding of the query text, $F_{g_{i}}$ is the feature embedding of the $i$-th gallery image, $d(\cdot)$ is the distance metric (typically Cosine distance), $\theta$ is the similarity threshold, and $G^{*}$ is the retrieved set of gallery images satisfying the constraint. The ultimate goal is to learn a language-agnostic space where distance is minimized for positive pairs regardless of the language $L$.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\linewidth]{Figure/framework.png}
+    \caption{Illustration of a text-based person search system.}
+    \label{fig:tbps_illustration}
+\end{figure}
+
+\section{Background and Problems of Research}
+\label{sec:background_problems}
+
+Despite the theoretical promise, existing systems face three critical dimensions of failure when deployed for low-resource languages like Vietnamese:
+
+\noindent \textbf{1. The Multilingual Generalization Gap.} Current architectures are predominantly English-centric. They struggle to generalize to multilingual settings due to the scarcity of high-quality parallel training data and the inability to model complex linguistic nuances (e.g., Vietnamese syntax and abstract semantics).
+
+\noindent \textbf{2. The Optimization Objective Gap.} Most state-of-the-art models, including TBPS-mSigLIP, rely on the Noise-robust Image-Text Contrastive (N-ITC) loss, which utilizes a Sigmoid function for memory efficiency. However, theoretical analysis indicates that the Sigmoid function lacks the necessary ``sharpness'' for hard-negative mining. In dense retrieval scenarios where distinct identities share similar attributes (e.g., similar clothing colors), the standard N-ITC loss generates weak gradient signals, failing to distinguish between easy negatives and hard negatives. This results in an embedding space with poor intra-class compactness and inter-class separability, ultimately degrading retrieval accuracy (Rank-1) in real-world deployments.
+
+\noindent \textbf{3. The Edge Deployment Gap.} Surveillance and forensics applications increasingly require on-device inference to preserve privacy, reduce latency, and operate without reliable network connectivity. However, modern Vision-Language Models such as mSigLIP contain hundreds of millions of parameters and exceed the memory and compute budget of representative edge platforms (e.g., 4GB-class embedded SoCs). Bridging the gap from a research checkpoint to a deployable artifact---via LoRA merging, FP16/INT8 compression, ONNX conversion, and runtime compilation for hardware accelerators---is non-trivial and has received limited attention in the TBPS literature.
+
+\noindent Consequently, addressing these three gaps to construct a robust, discriminative, and deployable MTBPS framework is not merely a technical necessity but a critical research imperative for human-centric AI safety.
+
+\subsection{Motivation}
+
+The fundamental efficacy of Cross-modal Retrieval systems hinges upon the geometric properties of the learned embedding space. Ideally, this high-dimensional manifold should exhibit high intra-class compactness and large inter-class separability, ensuring that visual and textual representations of the same identity are tightly clustered while distinct identities are pushed far apart.
+
+\noindent In the context of Multilingual Text-Based Person Search (MTBPS), particularly for low-resource languages like Vietnamese, achieving this geometry is exceptionally challenging due to the semantic sparsity of descriptions and the fine-grained nature of pedestrian attributes. While the current state-of-the-art framework, TBPS-mSigLIP, successfully mitigates label noise through the Sigmoid-based Noise-robust Image-Text Contrastive (N-ITC) loss, relying solely on this objective creates an optimization bottleneck. Theoretical analysis reveals that the standard Sigmoid function suffers from gradient saturation, tending to penalize easy negatives and hard negatives with disproportionately similar gradients. This leads to an ``ambiguous convergence'' where the model fails to explicitly distinguish between semantically similar but distinct identities (e.g., different individuals wearing identical uniforms), resulting in an embedding space with weak discriminative power and high False Positive rates.
+
+\noindent To transcend these limitations, Circle Loss offers a superior geometric solution via its adaptive re-weighting mechanism, which dynamically amplifies gradients for the hardest samples. However, integrating such metric learning objectives introduces a secondary, yet critical, challenge: the Computational Constraint.
+
+\noindent The effectiveness of Contrastive Learning, and Circle Loss in particular, is intrinsically linked to the batch size. A larger batch size provides a richer pool of negative samples, which is mathematically requisite for the loss function to identify and penalize ``hard negatives'' effectively. Yet, foundation models like mSigLIP (based on Vision Transformers) possess a massive number of parameters. Performing full fine-tuning with large batch sizes demands GPU memory (VRAM) that far exceeds the capacity of standard consumer hardware. Constraining the model to small batch sizes to fit memory limits would severely compromise the ``hard-mining'' capability, rendering the geometric improvements of Circle Loss ineffective.
+
+\noindent Therefore, the motivation of this research extends beyond merely refining the objective function; it seeks to solve the computational feasibility of such refinement. I propose integrating Low-Rank Adaptation (LoRA) into the training pipeline. LoRA not only drastically reduces memory overhead by freezing the pre-trained backbone and optimizing only low-rank decomposition matrices, but more importantly, it acts as an enabler for geometric optimization. By reducing the memory footprint, LoRA allows for a significant increase in batch size (e.g., from 8 to 24) on the same hardware constraints. This expanded batch size provides the necessary negative sample diversity for Circle Loss to function optimally.
+
+\noindent Beyond the training phase, this research is additionally motivated by the practical requirement of \textit{deploying} the resulting model on edge hardware. The Qualcomm RB3 Gen2 Vision Development Kit (QCS6490, 4GB RAM, ARM64) represents a realistic target for surveillance deployment: sufficient compute for vision-language inference via its Hexagon 770 DSP, yet tightly memory-constrained. A complete pipeline must therefore handle LoRA merging into the base model, FP16 quantization to halve the memory footprint, ONNX export for runtime portability, and QNN/SNPE compilation for DSP acceleration. Designing this pipeline, validating it against memory and latency constraints, and identifying the remaining gaps forms the second major contribution of this work.
+
+\noindent In summary, this research is driven by the hypothesis that the synergistic combination of Circle Loss's geometric superiority, LoRA's parameter efficiency, and a carefully designed edge deployment pipeline will resolve the current optimization \textit{and} deployment stagnation. This approach aims to construct a robust, discriminative, and implementation-friendly MTBPS framework specifically tailored for multilingual low-resource adaptation and real-world edge deployment.
+
+\section{Research Objectives and Conceptual Framework}
+\label{sec:objectives}
+
+The overarching objective of this study is to ameliorate the retrieval performance of Multilingual Text-Based Person Search (MTBPS) systems, specifically within the low-resource context of the Vietnamese language, while simultaneously delivering a deployable artifact for edge hardware. This is achieved by refining the geometric integrity of the shared embedding space, addressing critical computational constraints, and designing a compression-and-deployment pipeline. To realize this goal, the research focuses on the following four specific objectives:
+
+\begin{enumerate}
+    \item \textbf{To conduct a rigorous theoretical analysis of optimization dynamics in Cross-modal Retrieval.} This objective aims to mathematically quantify the limitations of the prevalent Noise-robust Image-Text Contrastive (N-ITC) loss function based on the Sigmoid kernel. Specifically, the study seeks to demonstrate---through gradient analysis---that the uniform penalty mechanism of the Sigmoid function leads to gradient saturation for semi-hard negative samples, thereby hindering the model's ability to distinguish between semantically similar but distinct identities. Concurrently, the research theoretically justifies the adoption of Circle Loss for its adaptive re-weighting mechanism, characterizes its instability regime at higher weights, and derives the asymmetric benefit observed between low-resource and high-resource datasets.
+
+    \item \textbf{To formulate a parameter-efficient optimization framework integrating Cross-modal Circle Loss with Low-Rank Adaptation (LoRA).} The second objective is to propose a novel, hard-negative-aware optimization strategy that is computationally feasible for large-scale contrastive learning. Instead of standard full fine-tuning, this study designs an architecture that integrates Low-Rank Adaptation with rank $r{=}32$ and scaling $\alpha{=}64$ on the attention projections of both encoders. This approach constrains the optimization to a low-rank subspace, reducing trainable parameters to 1.57\% of the total (5.9M of 376M) and enabling a 3$\times$ increase in batch size on consumer hardware---a prerequisite for the effective operation of Circle Loss. Furthermore, the research develops a Curriculum Hard-Mining Schedule to dynamically modulate the Circle Loss weight, ensuring the model achieves stable global alignment before being subjected to rigorous local discrimination constraints.
+
+    \item \textbf{To systematically validate the proposed method across multiple languages, data regimes, and random seeds.} The third objective is to provide empirical evidence of the proposed method's efficacy across three typologically diverse languages (Vietnamese, English, Chinese), two data regimes (full and 10\% training set), and multiple random seeds (to report confidence intervals). This includes quantitative evaluation via standard metrics (Rank-k, mAP, mINP), a full fine-tuning control experiment to isolate the Circle Loss contribution from batch-size effects, and geometric visualization to demonstrate improved embedding space properties.
+
+    \item \textbf{To design and partially validate an edge deployment pipeline for the Qualcomm RB3 Gen2.} The fourth objective is to bridge the gap from research artifact to deployable system. This includes: (a) checkpoint analysis and memory estimation under the 4GB RAM constraint of the target device; (b) a LoRA merge procedure that eliminates adapter overhead and produces a standard-format model; (c) FP16 conversion with weight deduplication for shared tensors; (d) ONNX export for vision and text encoders; (e) QNN compilation via Qualcomm AI Hub for DSP/HTP acceleration; and (f) benchmarking on proxy models to establish expected end-to-end performance.
+\end{enumerate}
+
+\section{Contributions}
+\label{sec:contributions}
+
+Based on the research objectives and methodology, this project makes the following key contributions:
+
+\begin{enumerate}
+    \item The study provides a rigorous theoretical analysis demonstrating the limitations of the Sigmoid-based N-ITC loss, specifically its gradient saturation for hard negatives, and justifies the geometric superiority of Circle Loss for multilingual TBPS. A further theoretical contribution characterizes the \textit{instability regime} of Circle Loss at higher weights (attributed to false-negative amplification and gradient-magnitude scaling with $\alpha_5 \cdot \gamma$), providing principled guidance for weight selection.
+
+    \item The project formulates \textbf{mSigLIP-CLoRA}, a novel parameter-efficient optimization framework that synergistically integrates Cross-modal Circle Loss with Low-Rank Adaptation (LoRA) and a Curriculum Hard-Mining Schedule. This integration reduces trainable parameters to 1.57\% (5.9M of 376M), enables a 3$\times$ larger batch size for hard-mining on consumer hardware, and stabilizes the high-variance Circle Loss gradients via implicit low-rank regularization.
+
+    \item The proposed method is systematically validated across three typologically diverse languages and multiple data regimes: Vietnamese 3000VnPersonSearch (R@1=52.28\%, +2.58\% over baseline, best seed; 51.52$\pm$0.68\% across three seeds), English CUHK-PEDES (71.85\%, +1.09\%), Chinese PRW-TPS-CN (59.35\%, +12.57\%), and 10\% CUHK-PEDES (57.10\%, +10.37\%). A full fine-tuning control at matched effective batch size (49.18\%) conclusively rules out batch-size effects as the source of improvement.
+
+    \item The study designs and partially validates a complete edge deployment pipeline targeting the Qualcomm RB3 Gen2. Checkpoint analysis confirms the FP16 model (709.3~MB on disk) fits comfortably within the 4GB device memory budget; proxy-model benchmarks on the device measure 3.72$\times$ speedup via ONNX Runtime over PyTorch CPU (MobileNetV2, batch 1) and an expected 18--30$\times$ speedup via DSP/HTP acceleration (per Qualcomm documentation). This is, to my knowledge, the first documented deployment design for an mSigLIP-class model on a 4GB-class edge device.
+\end{enumerate}
+
+
+\section{Organization of Thesis}
+\label{sec:organization}
+
+The remainder of this thesis is structured into seven chapters. \textbf{Chapter~2 (Literature Review)} provides a comprehensive review of the foundational knowledge required for this research: the evolution of Text-Based Person Search, Vision-Language Models and the mSigLIP architecture, Deep Metric Learning objectives (Sigmoid vs.\ Softmax vs.\ Circle Loss), Parameter-Efficient Fine-Tuning (LoRA), noise-aware contrastive learning methods (FNM, RDE), and prior work on edge deployment of Vision-Language Models.
+
+\textbf{Chapter~3 (Methodology)} details the proposed mSigLIP-CLoRA framework, including the datasets (CUHK-PEDES, 3000VnPersonSearch, PRW-TPS-CN, 10\% CUHK-PEDES), the training configuration (input pipeline, optimizer, LoRA configuration with precise parameter counts, loss weights, curriculum schedule), the integration strategies for Circle Loss, and a brief overview of the deployment pipeline (fully elaborated in Chapter~6).
+
+\textbf{Chapter~4 (Theoretical Analysis)} presents the mathematical foundation of the work: the gradient saturation analysis of the Sigmoid-based N-ITC loss, the adaptive re-weighting mechanism of Circle Loss, the instability regime at higher Circle Loss weights (attributed to false-negative amplification), a sensitivity analysis of the curriculum schedule parameters, and a theoretical explanation of the asymmetric benefit observed across low-resource and high-resource regimes.
+
+\textbf{Chapter~5 (Numerical Results)} presents the empirical validation: state-of-the-art comparisons on all three language benchmarks, multi-seed confidence analysis, the full fine-tuning control experiment, ablation studies on LoRA and Circle Loss, parameter-efficiency quantification, and geometric/qualitative visualization of the learned embedding space.
+
+\textbf{Chapter~6 (Edge Deployment and Model Compression)} describes the full deployment pipeline for the Qualcomm RB3 Gen2: target device specifications, LoRA merging and FP16 conversion, ONNX export, hardware benchmarks (PyTorch CPU vs.\ ONNX Runtime on proxy models), memory estimation against the 4GB constraint, and QNN/SNPE compilation status.
+
+\textbf{Chapter~7 (Conclusions and Future Work)} summarizes the key findings, acknowledges current limitations, and outlines four strategic directions for future development: noise-robust Circle Loss (leveraging FNM and RDE ideas to address false-negative amplification), completing the edge deployment pipeline (INT8 quantization and DSP/HTP benchmarking), advanced PEFT methods (DoRA, AdapterFusion), and video-based retrieval. Full code listings are provided in Appendix~A (training pipeline) and Appendix~B (deployment pipeline).
+
+\end{document}

@@ -7,8 +7,9 @@ set -e
 NOISY_RATES=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8)
 DATASET_NAME="VN3K_VI"
 
-# Ensure noiseindex directory exists
-mkdir -p ./noiseindex
+# Ensure noiseindex directory exists under the shared artifacts tree.
+NOISEINDEX_DIR="${MSIGLIP_ARTIFACTS_ROOT:-artifacts}/training/noiseindex"
+mkdir -p "$NOISEINDEX_DIR"
 
 for noisy_rate in "${NOISY_RATES[@]}"; do
     echo "=========================================="
@@ -17,7 +18,7 @@ for noisy_rate in "${NOISY_RATES[@]}"; do
 
     uv run trainer.py -cn cir_msiglip \
         dataset.noisy_rate=$noisy_rate \
-        dataset.noisy_file="./noiseindex/${DATASET_NAME}_${noisy_rate}.npy" \
+        dataset.noisy_file="${NOISEINDEX_DIR}/${DATASET_NAME}_${noisy_rate}.npy" \
         trainer.max_epochs=60 \
         trainer.accumulate_grad_batches=3 \
         ++trainer.precision=16-mixed \

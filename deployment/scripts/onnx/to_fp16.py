@@ -12,8 +12,8 @@ can then be compiled to QNN context binary without any quantization flags.
 
 Usage:
     python deployment/scripts/onnx/to_fp16.py \
-        --input exported_model/vision_onnx/ \
-        --output exported_model/vision_onnx_fp16/
+        --input artifacts/deployment/exports/msiglip_lora/vision_onnx/ \
+        --output artifacts/deployment/exports/msiglip_lora/vision_onnx_fp16/
 
 Each *_onnx/ directory is expected to contain one .onnx file (+ its .onnx.data
 companion for external weights). The output directory mirrors this layout.
@@ -29,6 +29,9 @@ from onnxconverter_common import float16
 _deployment_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, _deployment_root)
 from deploy_utils import TeeLogger
+
+_project_root = os.path.dirname(_deployment_root)
+DEFAULT_LOG_DIR = os.path.join(_project_root, "artifacts", "deployment", "logs")
 
 
 def find_onnx(directory: str) -> str:
@@ -81,7 +84,11 @@ def convert(input_dir: str, output_dir: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--input", required=True, help="Directory with FP32 ONNX (e.g. exported_model/vision_onnx/)")
+    parser.add_argument(
+        "--input",
+        required=True,
+        help="Directory with FP32 ONNX (e.g. artifacts/deployment/exports/msiglip_lora/vision_onnx/)",
+    )
     parser.add_argument("--output", required=True, help="Output directory for FP16 ONNX")
     args = parser.parse_args()
 
@@ -97,7 +104,6 @@ def main():
 
 
 if __name__ == "__main__":
-    log_dir = os.path.join(_deployment_root, "logs")
-    logger = TeeLogger(log_dir, "to_fp16")
+    logger = TeeLogger(DEFAULT_LOG_DIR, "to_fp16")
     main()
     logger.close()

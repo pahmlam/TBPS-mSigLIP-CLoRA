@@ -4,13 +4,13 @@ Tests model loading, single-sample inference, latency, and memory usage.
 
 Usage (PyTorch FP16):
     python deployment/scripts/inference_test.py \
-        --model-dir exported_model \
+        --model-dir artifacts/deployment/exports/msiglip_lora \
         --dtype fp16 \
         --dataset-root /path/to/VN3K
 
 Usage (ONNX):
     python deployment/scripts/inference_test.py \
-        --model-dir exported_model \
+        --model-dir artifacts/deployment/exports/msiglip_lora \
         --backend onnx \
         --dataset-root /path/to/VN3K
 
@@ -26,11 +26,17 @@ import gc
 import numpy as np
 
 # Add deployment root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_deployment_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_project_root = os.path.dirname(_deployment_root)
+sys.path.insert(0, _deployment_root)
 from deploy_utils import TeeLogger
 
-# Add project root to path (deployment/scripts/ → project root)
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.join(_project_root, "src"))
+
+DEFAULT_MODEL_DIR = os.path.join(
+    _project_root, "artifacts", "deployment", "exports", "msiglip_lora"
+)
+DEFAULT_LOG_DIR = os.path.join(_project_root, "artifacts", "deployment", "logs")
 
 
 def get_memory_mb():
@@ -84,8 +90,8 @@ def test_pytorch(model_dir: str, dtype: str, dataset_root: str = None, num_sampl
     OmegaConf.register_new_resolver("tuple", resolve_tuple, replace=True)
     OmegaConf.register_new_resolver("eval", eval, replace=True)
 
-    from model.build import build_backbone_with_proper_layer_resize
-    from model.tbps import TBPS
+    from msiglip.model.build import build_backbone_with_proper_layer_resize
+    from msiglip.model.tbps import TBPS
 
     omegaconf = OmegaConf.create(config)
     backbone = build_backbone_with_proper_layer_resize(omegaconf.backbone)
@@ -174,7 +180,7 @@ def test_pytorch_with_dataset(model, config, dataset_root, dtype, num_samples):
     import torch
     import torch.nn.functional as F
 
-    from lightning_data import TBPSDataModule
+    from msiglip.lightning_data import TBPSDataModule
 
     torch_dtype = torch.float16 if dtype == "fp16" else torch.float32
 
@@ -263,7 +269,7 @@ def test_onnx(model_dir: str, dataset_root: str = None, num_samples: int = 5):
     session_opts.intra_op_num_threads = 4  # Use performance cores
 
     # --- Vision encoder ---
-    vision_path = os.path.join(model_dir, "vision_encoder.onnx")
+    vision_path = os.path.join(model_dir, "vision_onnx", "vision_encoder.onnx")
     print(f"\nLoading vision encoder: {vision_path}")
     vision_session = ort.InferenceSession(vision_path, session_opts, providers=["CPUExecutionProvider"])
 
@@ -286,7 +292,7 @@ def test_onnx(model_dir: str, dataset_root: str = None, num_samples: int = 5):
     print(f"  Latency: {np.mean(latencies):.3f}s +/- {np.std(latencies):.3f}s")
 
     # --- Text encoder ---
-    text_path = os.path.join(model_dir, "text_encoder.onnx")
+    text_path = os.path.join(model_dir, "text_onnx", "text_encoder.onnx")
     print(f"\nLoading text encoder: {text_path}")
     text_session = ort.InferenceSession(text_path, session_opts, providers=["CPUExecutionProvider"])
 
@@ -322,7 +328,11 @@ def test_onnx(model_dir: str, dataset_root: str = None, num_samples: int = 5):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-dir", required=True, help="Directory with exported model files")
+    parser.add_argument(
+        "--model-dir",
+        default=DEFAULT_MODEL_DIR,
+        help="Directory with exported model files",
+    )
     parser.add_argument("--backend", choices=["pytorch", "onnx"], default="pytorch")
     parser.add_argument("--dtype", choices=["fp16", "fp32"], default="fp16")
     parser.add_argument("--dataset-root", default=None, help="Path to VN3K dataset root (optional)")
@@ -365,7 +375,6 @@ def main():
 
 
 if __name__ == "__main__":
-    log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
-    logger = TeeLogger(log_dir, "inference")
+    logger = TeeLogger(DEFAULT_LOG_DIR, "inference")
     main()
     logger.close()

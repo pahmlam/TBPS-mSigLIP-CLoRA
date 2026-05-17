@@ -12,8 +12,9 @@ import numpy as np
 from pathlib import Path
 
 # Configuration
-MODELS_DIR = Path("dlc_models")
-RESULTS_FILE = "snpe_benchmark_results.json"
+ARTIFACT_DIR = Path("artifacts/deployment/hardware_profiling")
+MODELS_DIR = ARTIFACT_DIR / "dlc_models"
+RESULTS_FILE = ARTIFACT_DIR / "snpe_benchmark_results.json"
 
 def check_snpe_tools():
     """Check if SNPE tools are available"""
@@ -40,8 +41,9 @@ def check_runtimes():
         runtimes["dsp"] = True
     return runtimes
 
-def create_input_raw(shape=(1, 3, 224, 224), output_dir="."):
+def create_input_raw(shape=(1, 3, 224, 224), output_dir=ARTIFACT_DIR / "snpe_inputs"):
     """Create raw input file for SNPE"""
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
     data = np.random.randn(*shape).astype(np.float32)
     filepath = Path(output_dir) / "input.raw"
     data.tofile(filepath)
@@ -110,7 +112,7 @@ def main():
 
     # Check for DLC models
     print("\n[3] Checking for DLC models...")
-    MODELS_DIR.mkdir(exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
     dlc_files = list(MODELS_DIR.glob("*.dlc"))
 
     if not dlc_files:
@@ -148,7 +150,8 @@ Option 2: Install Full SNPE SDK
                 if "latency_ms" in result:
                     print(f"    Latency: {result['latency_ms']:.2f} ms")
 
-    with open(RESULTS_FILE, "w") as f:
+    RESULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with RESULTS_FILE.open("w") as f:
         json.dump(results, f, indent=2)
     print(f"\nResults saved to {RESULTS_FILE}")
 

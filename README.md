@@ -18,7 +18,7 @@ To address this, we propose an efficient optimization framework that integrates 
 | Track | Current state | Next step |
 |---|---|---|
 | **Main training result** | LoRA + Curriculum Circle Loss reaches **52.28% R@1** on VN3K and **59.35% R@1** on PRW-TPS-CN | Preserve as the reported baseline |
-| **NACIR** | Implemented as an experimental replacement for the auxiliary Circle branch; `run_nacir.sh` is available | Validate in `workspace.ipynb`, then run clean/noisy ablations |
+| **NACIR** | Implemented as an experimental replacement for the auxiliary Circle branch; `run_nacir.sh` is available | Validate in `notebooks/workspace.ipynb`, then run clean/noisy ablations |
 | **Noisy correspondence** | RDE-style caption-shuffle noise is integrated via `dataset.noisy_rate` and `run_noise_experiments.sh` | Use for robustness experiments, mainly FP/noisy-positive validation |
 | **Deployment** | LoRA merge, FP16/FP32 export, ONNX export, and **vision INT8 HTP compile** are working | Compile text encoder, benchmark on RB3, then repeat with real calibration data |
 
@@ -201,7 +201,7 @@ Default hyperparameters:
 
 ### Validation Protocol
 
-Before launching a full training run, NACIR should be validated in `workspace.ipynb`.
+Before launching a full training run, NACIR should be validated in `notebooks/workspace.ipynb`.
 
 Recommended notebook checks:
 
@@ -214,7 +214,7 @@ Recommended notebook checks:
 
 #### Notebook validation
 
-Open `workspace.ipynb` and run:
+Open `notebooks/workspace.ipynb` and run:
 
 1. Sections 0-3 to load the checkpoint and build the aligned loss batch.
 2. Section 4.5 for standard NACIR diagnostics.
@@ -322,54 +322,31 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 ##  Repository Structure
 
 ```
-├── trainer.py                         # Training entry point (Hydra)
-├── lightning_models.py                # LitTBPS (PyTorch Lightning module)
-├── lightning_data.py                  # TBPSDataModule, noisy correspondence injection
-├── test.py                            # Evaluation script
-├── workspace.ipynb                    # Notebook lab for embedding/loss/NACIR validation
+├── src/msiglip/                       # Python package: training, data, model, solver, utils
+│   ├── train.py                       # Training entry point implementation
+│   ├── evaluate.py                    # Evaluation entry point implementation
+│   ├── lightning_models.py            # LitTBPS (PyTorch Lightning module)
+│   ├── lightning_data.py              # TBPSDataModule, noisy correspondence injection
+│   ├── model/                         # TBPS + mSigLIP + losses
+│   ├── data/                          # Dataset classes & augmentation
+│   ├── solver/                        # Optimizer and LR scheduler
+│   └── utils/                         # Metrics, visualization, tokenizer utilities
+├── trainer.py                         # Backward-compatible wrapper
+├── test.py                            # Backward-compatible wrapper
+├── notebooks/workspace.ipynb          # Notebook lab for embedding/loss/NACIR validation
 ├── run_cir_loss.sh                    # LoRA + Curriculum Circle Loss training
 ├── run_nacir.sh                       # NACIR training script
 ├── run_noise_experiments.sh           # RDE-style noisy-correspondence sweep
 ├── run_full_finetune.sh               # Full fine-tuning baseline
-├── noiseindex/                        # Saved caption-shuffle index mappings
-│
-├── model/                             # Model architecture
-│   ├── tbps.py                        # TBPS forward pass & loss routing
-│   ├── objectives.py                  # N-ITC, Circle, NACIR objective entrypoints
-│   ├── noise_aware.py                 # NACIR state: EMA stats, per-sample loss, GMM
-│   ├── reid_objectives.py             # ReID-specific objectives
-│   ├── build.py                       # Backbone builder with layer resize
-│   ├── lora.py                        # LoRA integration via PEFT
-│   └── siglip/                        # mSigLIP model implementation
-│
-├── data/                              # Dataset classes & augmentation
-│   ├── vn3k_vi.py                     # VN3K Vietnamese
-│   ├── vn3k_en.py                     # VN3K English
-│   ├── vn3k_mixed.py                  # VN3K mixed-language
-│   ├── cuhkpedes.py                   # CUHK-PEDES
-│   ├── prw_tps_cn.py                  # PRW-TPS-CN (Chinese)
-│   ├── bases.py                       # Dataset classes + inject_noisy_correspondence()
-│   ├── sampler.py                     # RandomIdentitySampler
-│   └── augmentation/                  # Image & text augmentation pools
-│
-├── solver/                            # Optimization
-│   ├── build.py                       # Optimizer with param groups
-│   └── lr_scheduler.py                # Cosine LR with warmup
-│
-├── config/                            # Hydra configuration
+├── configs/                           # Hydra configuration
 │   ├── cir_msiglip.yaml               # Main config
+│   ├── paths/default.yaml             # Centralized data/artifact paths
 │   ├── loss/cir_msiglip.yaml          # Loss flags, Circle, NACIR config
-│   ├── backbone/                      # Backbone settings
-│   ├── trainer/                       # Training hyperparams
-│   ├── optimizer/                     # AdamW param groups
-│   ├── scheduler/                     # LR schedule
-│   ├── lora/                          # LoRA config
-│   ├── dataset/                       # Dataset configs, noisy_rate/noisy_file defaults
-│   ├── tokenizer/                     # Tokenizer settings
-│   ├── logger/                        # W&B logger config
-│   └── aug/                           # Augmentation settings
-│
-├── utils/                             # Metrics, visualization, tokenizer utilities
+│   └── ...                            # backbone, trainer, optimizer, dataset, tokenizer, logger, aug
+├── artifacts/                         # Ignored generated outputs
+│   ├── training/                      # Hydra runs, multirun, noisy index files
+│   ├── models/                        # Local checkpoints/pretrained model files
+│   └── deployment/                    # Exports, QNN inputs/runs/logs/runtime state
 ├── scripts/                           # Helper scripts for checkpoints/data preparation
 ├── experiments/                       # Experiment logs & ablation notes
 ├── knowledge/                         # Research notes & paper drafts
@@ -395,7 +372,7 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 │   │   ├── aihub-experiments.md       # Qualcomm AI Hub compile log
 │   │   ├── system.md                  # RB3 hardware specs
 │   │   └── benchmark-rp.md            # Proxy benchmark results
-│   └── logs/                          # Auto-generated logs
+│   └── config/qnn/                    # QNN/HTP runtime config JSON files
 │
 └── ref/                               # Reference implementations (RDE, etc.)
 ```
@@ -454,7 +431,7 @@ This runs the Noise-Aware Circle Loss branch with the current default NACIR conf
 ./run_nacir.sh
 ```
 
-Run `workspace.ipynb` first if changing NACIR internals. The notebook contains controlled clean/FN/FP validation blocks and should be treated as the gate before full training.
+Run `notebooks/workspace.ipynb` first if changing NACIR internals. The notebook contains controlled clean/FN/FP validation blocks and should be treated as the gate before full training.
 
 ### Run Noisy-Correspondence Sweeps
 
@@ -464,7 +441,7 @@ This runs RDE-style caption-shuffle noisy correspondence over `noisy_rate=0.1..0
 ./run_noise_experiments.sh
 ```
 
-Noise files are saved under `noiseindex/` so repeated runs reuse the same index mapping.
+Noise files are saved under `artifacts/training/noiseindex/` so repeated runs reuse the same index mapping.
 
 ### Full Fine-Tuning Baseline
 
@@ -495,7 +472,7 @@ Current progress:
 | Local ONNX FP16 conversion | Done | `deployment/scripts/onnx/to_fp16.py` |
 | AI Hub HTP compile | Vision done | INT8 dummy-calibration compile succeeded for vision encoder, job `jgkr7qwn5` |
 | Text encoder compile | Pending | Needs same INT8 pipeline |
-| On-device RB3 benchmark | Pending | Download compiled `.bin`, run `snpe-throughput-net-run` / `snpe-net-run` |
+| On-device RB3 benchmark | Pending | Download compiled `.bin`, run `qnn-net-run` with QAIRT/QNN |
 | Production calibration | Pending | Replace dummy calibration with real VN3K image/text calibration data |
 | Quantized accuracy check | Pending | Target: R@1 within acceptable drop from FP32 baseline |
 
@@ -505,11 +482,11 @@ Quick deployment commands:
 
 ```bash
 python deployment/scripts/lora_fp16/export.py \
-    --ckpt epoch=56-val_score=52.28.ckpt \
-    --output-dir exported_model
+    --ckpt artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt \
+    --output-dir artifacts/deployment/exports/msiglip_lora
 
 python deployment/scripts/onnx/export.py \
-    --model-dir exported_model \
+    --model-dir artifacts/deployment/exports/msiglip_lora \
     --precision fp32
 ```
 

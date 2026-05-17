@@ -1,0 +1,375 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\noindent The previous chapters established mSigLIP-CLoRA as an effective training-time framework for multilingual low-resource text-based person search. This chapter addresses the complementary question: \textit{can the trained model actually be deployed on representative surveillance edge hardware?} Real-world forensic and surveillance applications increasingly require on-device inference to preserve privacy, reduce latency, and maintain operation under intermittent connectivity. Cloud-only deployment is both cost-prohibitive and legally problematic for surveillance data in many jurisdictions. I therefore designed and partially validated a full deployment pipeline for the Qualcomm RB3 Gen2 Vision Development Kit---a platform representative of next-generation AI-capable surveillance devices.
+
+\section{Target Device: Qualcomm RB3 Gen2}
+\label{sec:rb3_target}
+
+\noindent The Qualcomm RB3 Gen2 Vision Development Kit pairs the Qualcomm QCS6490 system-on-chip with peripherals (camera interface, wireless, storage) engineered for robotics and computer-vision deployments. Table~\ref{tab:rb3_specs} summarizes the hardware specifications relevant to ML inference.
+
+\begin{table}[htbp]
+\centering
+\caption{Qualcomm RB3 Gen2 Vision Development Kit specifications.}
+\label{tab:rb3_specs}
+\renewcommand{\arraystretch}{1.3}
+% l: short component label; X: wrapping specification text
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Component} & \textbf{Specification} \\
+\midrule
+SoC        & Qualcomm QCS6490 \\
+CPU        & 4$\times$ Cortex-A78 @ 2.7\,GHz + 4$\times$ Cortex-A55 @ 1.9\,GHz \\
+GPU        & Adreno 643 (OpenCL, limited) \\
+DSP        & Hexagon 770 with HTP (Hexagon Tensor Processor) \\
+NPU        & Qualcomm AI Engine \\
+RAM        & 5.2\,GiB total; $\sim$4.0\,GiB available for inference \\
+Storage    & 58\,GB root (22\% used) \\
+OS / Arch  & Ubuntu 24.04.3 LTS (aarch64, ARM64) \\
+SIMD/accel & NEON/ASIMD, FP16 support (\texttt{fphp}, \texttt{asimdhp}) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent Two constraints from Table~\ref{tab:rb3_specs} drive the deployment design:
+
+\begin{itemize}
+    \item \textbf{Memory budget.} With only $\sim$4.0\,GiB available for inference (after OS, GStreamer pipeline, and associated services), the compressed mSigLIP model plus its activation memory must occupy no more than $\sim$2\,GB to leave headroom for concurrent video decoding and application logic.
+    \item \textbf{Accelerator targeting.} CPU-only inference is workable but slow ($\sim$100\,ms per image on proxy models). The Hexagon DSP/HTP is the primary accelerator on the QCS6490 SoC and, per Qualcomm's published benchmarks on comparable models, delivers 18--30$\times$ speedup over CPU. The deployment pipeline must therefore produce a model format compatible with the QNN runtime.
+\end{itemize}
+
+\section{Deployment Pipeline Architecture}
+\label{sec:pipeline_arch}
+
+\noindent The pipeline proceeds through four stages, transforming a PyTorch Lightning checkpoint into a Qualcomm-compiled artifact executable on the Hexagon DSP/HTP:
+
+\begin{center}
+\footnotesize
+\texttt{epoch=56-val\_score=52.28.ckpt}\hspace{0.3em}(1482.5\,MB, Lightning)\\
+$\downarrow$ \textbf{Step 1: LoRA merge + FP16}\\
+\texttt{exported\_model/model\_fp16.pt}\hspace{0.3em}(709.3\,MB)\\
+$\downarrow$ \textbf{Step 2: ONNX conversion}\\
+\texttt{vision\_onnx/} ($\sim$356\,MB) + \texttt{text\_onnx/} ($\sim$1061\,MB), FP32 graph\\
+$\downarrow$ \textbf{Step 3: QNN compilation (Qualcomm AI Hub)}\\
+\texttt{vision.bin} + \texttt{text.bin}\hspace{0.3em}(QNN context binaries, in progress)\\
+$\downarrow$ \textbf{Step 4: On-device inference (\texttt{qnn-net-run})}\\
+DSP/HTP inference
+\end{center}
+
+\noindent Each step is treated as an independent, auditable unit: the output of each step can be validated (accuracy, size, forward-pass equivalence) before progressing to the next. This staged design simplifies debugging and allows partial deployment---for instance, the Step 2 ONNX artifacts can be served via ONNX Runtime on the RB3 CPU as a fallback while Step 3 QNN compilation is finalized.
+
+\section{Model Analysis and Memory Estimation}
+\label{sec:memory_analysis}
+
+\noindent Before committing to the full deployment pipeline, a checkpoint-level analysis determines which precision settings are feasible on the 4\,GB device. I implemented a dedicated script (\texttt{deployment/scripts/analyze\_checkpoint.py}) that:
+
+\begin{enumerate}
+    \item Loads the Lightning checkpoint and extracts the state dictionary.
+    \item \textbf{Deduplicates shared tensors} via \texttt{data\_ptr()}: in mSigLIP, the vision and text towers share substantial backbone weights, and naive counting would double-count these parameters.
+    \item Categorizes parameters by module (vision encoder, text encoder, LoRA adapters, SimCLR MLP, logit scale/bias).
+    \item Reports storage size under three precisions: FP32 (baseline), FP16 (halved), INT8 (quartered).
+    \item Applies an activation-memory heuristic (activation memory $\approx 0.5 \times$ model size for single-sample inference) to produce a conservative total memory estimate.
+\end{enumerate}
+
+\noindent Table~\ref{tab:model_breakdown} reports the parameter breakdown for the best checkpoint (seed 2400, epoch 56).
+
+\begin{table}[htbp]
+\centering
+\caption{Parameter breakdown of the best checkpoint (\texttt{epoch=56-val\_score=52.28.ckpt}), after deduplication of shared tensors. Values are from \texttt{deployment/logs/analyze\_20260414\_164509.log}.}
+\label{tab:model_breakdown}
+\renewcommand{\arraystretch}{1.3}
+% X: module name (wrapping); r: right-aligned numeric columns
+\begin{tabularx}{\textwidth}{Xrrr}
+\toprule
+\textbf{Module} & \textbf{Parameters} & \textbf{FP32 (MB)} & \textbf{FP16 (MB)} \\
+\midrule
+Text encoder (multilingual, 250K vocab)  & 277,695,744 & 1059.3 & 529.7 \\
+Vision encoder (ViT-B/16)                & 92,930,304  & 354.5  & 177.3 \\
+LoRA adapters (merged into base)$^{*}$   & 4,767,744   & 18.2   & 9.1 \\
+SimCLR MLP (deployment-discardable)      & 1,181,184   & 4.5    & 2.3 \\
+logit\_scale, logit\_bias                & 2           & $<$\,0.01 & $<$\,0.01 \\
+\midrule
+\textbf{TOTAL (deduplicated)}            & \textbf{376,574,978} & \textbf{1436.5} & \textbf{718.3} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent \footnotesize{$^{*}$ The Lightning training log reports 5.9M trainable parameters ($\approx$1.57\% of 376M). This aggregates the two unfrozen components in the table above: the LoRA adapters (4,767,744) \textit{plus} the SimCLR MLP (1,181,184), totalling 5,948,928. The SimCLR MLP is structurally outside the PEFT-wrapped backbone, so PEFT's own \texttt{print\_trainable\_parameters()} method (used by the export script) reports only the 4.77M adapter figure --- the two counts measure different scopes, not different realities. LoRA adapters are merged into the base weights before deployment; the SimCLR MLP is dropped entirely at inference since it plays no role in retrieval.}
+\normalsize
+
+\noindent {\footnotesize * LoRA adapters are merged into the base weights before deployment; the 5.9M row indicates the training-time adapter size, not an additional deployment-time cost.}
+
+\vspace{0.5em}
+
+\noindent Table~\ref{tab:memory_budget} then projects these sizes against the 4\,GB available RAM.
+
+\begin{table}[htbp]
+\centering
+\caption{Memory budget analysis for single-sample inference on RB3 Gen2 (4\,GB available).}
+\label{tab:memory_budget}
+\renewcommand{\arraystretch}{1.3}
+% l: precision label; r: numeric columns; X: wrapping verdict text
+\begin{tabularx}{\textwidth}{lrrrrX}
+\toprule
+\textbf{Precision} & \textbf{Weights} & \textbf{Activations} & \textbf{Total} & \textbf{Headroom} & \textbf{Verdict} \\
+ & \textbf{(MB)} & \textbf{(MB)} & \textbf{(MB)} & \textbf{(MB)} & \\
+\midrule
+FP32 & 1437 & 718 & 2155 & 1845 & OK, tight \\
+\textbf{FP16} & \textbf{718} & \textbf{359} & \textbf{1077} & \textbf{2923} & \textbf{Comfortable} \\
+INT8 (future) & 359 & 180 & 539 & 3461 & Very comfortable \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent The FP16 configuration offers a comfortable 2.9\,GB of headroom after accounting for model weights and single-sample activations. This margin is essential because a deployed surveillance application will also run a video decoder (GStreamer pipeline), an indexing layer (gallery embeddings), and the OS itself. FP16 is therefore selected as the primary deployment precision. INT8 quantization would provide additional headroom and latency benefits but introduces calibration complexity; it is identified as a natural next step (Chapter~7).
+
+\section{Step 1: LoRA Merge and FP16 Export}
+\label{sec:step1_lora_merge}
+
+\noindent The first pipeline step transforms the PyTorch Lightning checkpoint into a standard PyTorch state dictionary with LoRA adapters merged into the base weights and floating-point tensors converted to FP16. The implementation lives in \texttt{deployment/scripts/lora\_fp16/export.py}.
+
+\subsection{Why Merge LoRA Before Deployment?}
+
+During training, LoRA introduces adapter matrices $B \in \mathbb{R}^{d \times r}$ and $A \in \mathbb{R}^{r \times k}$ into each attention projection, so the forward pass computes $h = W_0 x + (BA) x$. This requires two matrix multiplications and one addition per adapted projection. Across both encoder towers combined (12 layers each, 24 layers total, with 4 attention projections per layer), roughly $96 \times$ extra matmuls accumulate per forward pass. Merging eliminates this by precomputing $W_{\text{merged}} = W_0 + \alpha \cdot (BA) / r$ once, after which inference uses only the single matmul $h = W_{\text{merged}} x$. Mathematically identical; measurably faster on CPU.
+
+\subsection{Implementation Details}
+
+\noindent The merge procedure is straightforward thanks to PEFT's built-in \texttt{merge\_and\_unload()} method:
+
+\begin{enumerate}
+    \item \textbf{Reconstruct the training-time model.} Load the Hydra config from \texttt{hyper\_parameters[\textquotesingle config\textquotesingle]} in the checkpoint, instantiate the \texttt{LitTBPS} Lightning module, and load the state\_dict with \texttt{strict=False}.
+    \item \textbf{Merge.} Call \texttt{backbone.merge\_and\_unload()}, which iterates through all LoRA-adapted layers and replaces them with standard \texttt{nn.Linear} modules containing $W_{\text{merged}}$.
+    \item \textbf{Strip deployment-irrelevant parameters.} Remove optimizer state, LR scheduler state, and Lightning bookkeeping (the Lightning checkpoint is 1482.5\,MB on disk; after stripping these and serializing just the state dict, \texttt{model\_fp32.pt} is 1418.5\,MB --- a 64\,MB saving). Optionally, the SimCLR MLP (used only at training time) can also be dropped for an additional 4.5\,MB FP32 saving.
+    \item \textbf{Deduplicate and convert to FP16.} Iterate through the state dict, tracking each tensor's \texttt{data\_ptr()}. Tensors sharing memory (the SigLIP shared embeddings) are stored once and referenced by all keys sharing that pointer. Each unique tensor is converted via \texttt{.half()} for floating-point types; integer types (token IDs, masks) are preserved.
+    \item \textbf{Save.} Serialize the FP16 state dict via \texttt{torch.save()}, which detects object identity and writes shared tensors only once. The result is \texttt{model\_fp16.pt} at 709.3\,MB on disk (\texttt{deployment/logs/export\_lora\_fp16\_20260414\_185032.log}).
+\end{enumerate}
+
+\noindent The corresponding Hydra configuration is serialized to \texttt{config.yaml} with all interpolations resolved, enabling the downstream ONNX export step to reconstruct the model without access to the original Hydra config tree.
+
+\section{Step 2: ONNX Conversion}
+\label{sec:step2_onnx}
+
+\noindent The second step converts the FP16 PyTorch state dictionary into the ONNX intermediate format, decoupled from Qualcomm-specific tooling. The implementation lives in \texttt{deployment/scripts/onnx/export.py}.
+
+\subsection{Dual-Encoder Export}
+
+\noindent The mSigLIP architecture is naturally dual-encoder: the vision and text towers produce independent embeddings that are compared only via a similarity score. I exploit this by exporting \textbf{two separate ONNX models}, one per tower:
+
+\begin{itemize}
+    \item \texttt{vision\_onnx/vision\_encoder.onnx}: input shape \texttt{(batch, 3, 256, 256)}, output shape \texttt{(batch, 768)}.
+    \item \texttt{text\_onnx/text\_encoder.onnx}: inputs \texttt{input\_ids (batch, seq\_len)} and \texttt{attention\_mask (batch, seq\_len)}, output shape \texttt{(batch, 768)}.
+\end{itemize}
+
+\noindent This separation allows the two encoders to be compiled, optimized, and scheduled independently on the target hardware. For a retrieval workflow, the gallery images can be encoded offline (once), while only the query text needs to be encoded at inference time.
+
+\subsection{Wrapper Modules and Export Parameters}
+
+\noindent Each encoder is wrapped into a minimal \texttt{nn.Module} exposing a clean forward signature for \texttt{torch.onnx.export}. The export parameters are:
+
+\begin{itemize}
+    \item \textbf{opset version 18}: supports all operators used in mSigLIP (multi-head attention, LayerNorm, GELU, Conv2d for the patch embedding).
+    \item \textbf{Dynamic axes}: the batch dimension is marked dynamic via \texttt{dynamic\_axes}, enabling batch-size flexibility at inference time.
+    \item \textbf{External data format}: because each encoder exceeds the 2\,GB single-file ONNX limit when weights are inlined, weights are automatically split into a separate \texttt{.onnx.data} file.
+\end{itemize}
+
+\subsection{Output Structure}
+
+\noindent The export produces the following directory structure:
+
+% --- CODE BLOCK: Exported artifact layout ---
+% basicstyle=\ttfamily\scriptsize to fit; breaklines and breakatwhitespace preserve tree drawing.
+\begin{lstlisting}[
+    caption={Directory layout of exported\_model/ after Step 2},
+    label={lst:exported_layout},
+    basicstyle=\ttfamily\scriptsize,
+    breaklines=true,
+    breakatwhitespace=false,
+    xleftmargin=1.5em,
+    xrightmargin=0.5em
+]
+exported_model/
+|-- model_fp32.pt                (1418.5 MB)  # baseline state dict
+|-- model_fp16.pt                (709.3 MB)   # deployed precision
+|-- config.yaml                               # resolved Hydra config
+|-- vision_onnx/
+|   |-- vision_encoder.onnx      (1.44 MB)    # graph protobuf
+|   `-- vision_encoder.onnx.data (354.6 MB)   # external weights
+`-- text_onnx/
+    |-- text_encoder.onnx        (1.36 MB)    # graph protobuf
+    `-- text_encoder.onnx.data   (1059.3 MB)  # external weights (250K vocab)
+\end{lstlisting}
+
+\noindent The text encoder is substantially larger than the vision encoder because its 250,000-token multilingual vocabulary contributes a \mbox{$250\text{K} \times 768 \times 4\,\text{bytes} \approx 730\,\text{MB}$} embedding table. This asymmetry is intrinsic to multilingual models and cannot be reduced without vocabulary pruning.
+
+\subsection{Critical: Directory Submission to Qualcomm AI Hub}
+
+\noindent A subtle pitfall uncovered during pipeline development: Qualcomm AI Hub rejects single-file \texttt{.onnx} submissions when external weights are referenced. The correct submission format is the \textit{directory} containing both the \texttt{.onnx} graph and the \texttt{.onnx.data} weights. The correct compile-job invocation is:
+
+% --- CODE BLOCK: Correct AI Hub compile-job invocation ---
+\begin{lstlisting}[
+    language=bash,
+    caption={Correct Qualcomm AI Hub compile-job invocation (directory model)},
+    label={lst:aihub_correct},
+    basicstyle=\ttfamily\scriptsize,
+    breaklines=true,
+    breakatwhitespace=false,
+    xleftmargin=1.5em,
+    xrightmargin=0.5em
+]
+qai-hub submit-compile-job \
+    --model exported_model/vision_onnx/ \
+    --device "Dragonwing RB3 Gen 2 Vision Kit" \
+    --compile_options "--target_runtime qnn_context_binary" \
+    --name "mSigLIP-vision" --wait
+\end{lstlisting}
+
+\noindent Omitting the directory and passing only the \texttt{.onnx} file produces a cryptic shape-mismatch error at compile time, not a missing-weights error. This discovery motivated a corresponding update to the deployment README to document the correct usage.
+
+\section{Step 3: QNN Compilation Status}
+\label{sec:qnn_compilation}
+
+\noindent The third step compiles the ONNX encoders into QNN context binaries runnable on the Hexagon DSP/HTP. At the time of this thesis's submission, this step is \textbf{in progress}; the remainder of this section documents the current status, the expected outcome, and the \textit{placeholders} that remain for future completion.
+
+\subsection{Compilation via Qualcomm AI Hub}
+
+\noindent The Qualcomm AI Hub is a cloud compilation service that accepts ONNX (or other source formats) and produces target-specific binaries for a range of Qualcomm SoCs. It is the practical compilation path for this project because the full AI Engine Direct SDK (including \texttt{snpe-onnx-to-dlc} and related tools) requires an x86\_64 Linux host; the development machine for this project is a Mac.
+
+\noindent The AI Hub workflow:
+\begin{enumerate}
+    \item Submit the \texttt{vision\_onnx/} and \texttt{text\_onnx/} directories as separate compile jobs.
+    \item Specify target device: \texttt{``Dragonwing RB3 Gen 2 Vision Kit''}.
+    \item Specify target runtime: \texttt{qnn\_context\_binary} (pre-compiled, loads directly on the DSP without on-device compilation).
+    \item Receive compiled \texttt{.bin} files after a few minutes of cloud compilation.
+\end{enumerate}
+
+\subsection{[PLACEHOLDER] End-to-End DSP Latency}
+
+\noindent \textbf{Status: not yet measured on mSigLIP.} Once the QNN context binaries are received from AI Hub and transferred to the RB3 Gen2, end-to-end inference latency will be measured using \texttt{qnn-net-run} with representative input shapes. Expected latency based on proxy benchmarks (Section~\ref{sec:hardware_benchmarks}):
+
+\begin{itemize}
+    \item Vision encoder on DSP: \textbf{[PLACEHOLDER -- expected $\sim$5--15\,ms per image]}
+    \item Text encoder on DSP: \textbf{[PLACEHOLDER -- expected $\sim$10--25\,ms per query]}
+\end{itemize}
+
+\subsection{[PLACEHOLDER] INT8 Quantization}
+
+\noindent \textbf{Status: not yet executed.} The FP16 pipeline is validated; INT8 quantization is the natural next step to further reduce memory and latency:
+
+\begin{itemize}
+    \item Calibration: 256 randomly sampled image-text pairs from the VN3K training set, run through the ONNX encoders to collect activation statistics.
+    \item Quantization: via \texttt{snpe-dlc-quantize} (full SDK) or the \texttt{--quantize\_full\_type int8} AI Hub compile option.
+    \item Validation: compare Rank-1 accuracy of INT8 vs.\ FP16 on VN3K test set; accept INT8 only if accuracy degradation $\leq 1\%$ absolute.
+\end{itemize}
+
+\subsection{[PLACEHOLDER] Accuracy Preservation Validation}
+
+\noindent \textbf{Status: pipeline verified locally; on-device validation pending.} The full pipeline is validated by an equivalence check: the PyTorch FP32 model, the PyTorch FP16 model, the ONNX FP32 model, and the expected QNN binary should all produce the same embedding (within tolerance) for a given input. The FP32 $\to$ FP16 $\to$ ONNX chain has been locally verified (no visible Rank-1 degradation on a development split); the end-to-end check against the QNN binary awaits receipt of the compiled artifact.
+
+\section{Hardware Benchmarking (Proxy Models)}
+\label{sec:hardware_benchmarks}
+
+\noindent In parallel with the mSigLIP deployment work, I conducted hardware profiling on the RB3 Gen2 using standard proxy models. These benchmarks establish the raw inference capability of the device and provide a basis for projecting mSigLIP performance.
+
+\subsection{Benchmark Methodology}
+
+\noindent Three proxy models were selected to span a range of architectural complexities:
+
+\begin{itemize}
+    \item \textbf{MobileNetV2} (3.4M params): a lightweight mobile-oriented CNN.
+    \item \textbf{ResNet18} (11.7M params): a classic depth-18 residual CNN.
+    \item \textbf{EfficientNet-B0} (5.3M params): a compound-scaled efficient CNN.
+\end{itemize}
+
+\noindent All models use ImageNet-standard input ($224 \times 224 \times 3$) and FP32 precision. Measurements were taken on the RB3 Gen2 running Ubuntu 24.04.3 aarch64 with PyTorch 2.10.0+cpu and ONNX Runtime 1.23.2, using all 8 CPU cores and 5 warmup iterations before a 50-iteration measurement window.
+
+\subsection{CPU Benchmark Results}
+
+\noindent Table~\ref{tab:proxy_benchmark} reports latency at batch size 1 for both PyTorch CPU and ONNX Runtime CPU execution paths.
+
+\begin{table}[htbp]
+\centering
+\caption{Proxy model benchmarks on RB3 Gen2 (batch 1, FP32, CPU only).}
+\label{tab:proxy_benchmark}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{Xrrr}
+\toprule
+\textbf{Model} & \textbf{PyTorch CPU (ms)} & \textbf{ONNX Runtime (ms)} & \textbf{Speedup} \\
+\midrule
+MobileNetV2     & 92.0  & 24.7 & \textbf{3.72$\times$} \\
+ResNet18        & 99.4  & 84.4 & 1.18$\times$ \\
+EfficientNet-B0 & 126.2 & N/A  & N/A \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent The ONNX Runtime delivers a substantial speedup on MobileNetV2 (3.72$\times$) and more modest gains on ResNet18 (1.18$\times$). The difference reflects ONNX Runtime's mature optimization for depthwise-separable convolutions (heavily used in MobileNet and EfficientNet) compared to standard Conv2d (used in ResNet). For mSigLIP---a Transformer-based architecture dominated by matrix multiplications and LayerNorm---I expect an intermediate speedup of roughly 2--3$\times$ from ONNX Runtime over PyTorch CPU, though this prediction is \textbf{[PLACEHOLDER]} until direct measurement is completed.
+
+\subsection{Expected DSP/HTP Performance}
+
+\noindent The Hexagon DSP/HTP is the primary ML accelerator on the QCS6490 SoC. According to the proxy-model benchmark report (\texttt{deployment/docs/benchmark-rp.md}, Section~6), Qualcomm's published estimates on QCS6490-class hardware project DSP latencies of 3--5\,ms for MobileNetV2, 8--12\,ms for ResNet18, and 5--8\,ms for EfficientNet-B0, corresponding to 18--30$\times$, 8--12$\times$, and 16--25$\times$ speedup over PyTorch CPU respectively. The mSigLIP vision encoder (92.9M parameters, per Table~\ref{tab:model_breakdown}) is roughly 27$\times$ larger than MobileNetV2 (3.4M), so the end-to-end mSigLIP latency is expected to be correspondingly higher than these proxy figures. Projected latencies are therefore reported as \textbf{[PLACEHOLDER]} pending direct on-device measurement:
+
+\begin{table}[htbp]
+\centering
+\caption{Expected vs.\ measured inference latency (values marked [PLACEHOLDER] await on-device validation).}
+\label{tab:expected_latency}
+\renewcommand{\arraystretch}{1.3}
+% All columns stretch equally so PLACEHOLDER text wraps cleanly.
+\begin{tabularx}{\textwidth}{XXXX}
+\toprule
+\textbf{Component} & \textbf{PyTorch CPU} & \textbf{ONNX Runtime} & \textbf{QNN DSP (FP16)} \\
+\midrule
+Vision encoder (mSigLIP) & [PLACEHOLDER $\sim$300\,ms] & [PLACEHOLDER $\sim$100\,ms] & [PLACEHOLDER $\sim$10\,ms] \\
+Text encoder (mSigLIP)   & [PLACEHOLDER $\sim$200\,ms] & [PLACEHOLDER $\sim$80\,ms]  & [PLACEHOLDER $\sim$15\,ms] \\
+End-to-end query         & [PLACEHOLDER $\sim$500\,ms] & [PLACEHOLDER $\sim$180\,ms] & [PLACEHOLDER $\sim$25\,ms] \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent A $\sim$25\,ms end-to-end query latency on DSP would enable approximately 40 retrieval queries per second on a single RB3 Gen2 device---more than sufficient for the target surveillance workflow (typically 1--10 queries per second in practice).
+
+\section{Accelerator Validation}
+\label{sec:accelerator_validation}
+
+\noindent Before beginning mSigLIP deployment, I validated that all four hardware accelerators on the RB3 Gen2 are functional and correctly configured:
+
+\begin{itemize}
+    \item \textbf{CPU (NEON)}: 8 cores accessible via \texttt{torch.set\_num\_threads(8)}; NEON/ASIMD SIMD extensions confirmed via \texttt{/proc/cpuinfo}.
+    \item \textbf{GPU (Adreno 643)}: OpenCL runtime present but limited; ONNX Runtime's OpenCL execution provider is not enabled by default due to driver maturity issues, and the DSP path is preferred.
+    \item \textbf{DSP (Hexagon 770 HTP)}: \texttt{libsnpe1} (v2.40.0) and \texttt{libqnn1} (v2.40.0) installed; \texttt{snpe-platform-validator} confirms the HTP V68 runtime initializes successfully.
+    \item \textbf{NPU (Qualcomm AI Engine)}: available as a target for QNN context binaries; not directly benchmarked in this study.
+\end{itemize}
+
+\noindent All runtimes are installed and functional; the remaining gap is the production of compiled mSigLIP-specific binaries (Section~\ref{sec:qnn_compilation}).
+
+\section{Deployment Readiness Summary}
+\label{sec:deployment_summary}
+
+\noindent Table~\ref{tab:deployment_status} summarizes the deployment pipeline status at the time of this thesis submission.
+
+\begin{table}[htbp]
+\centering
+\caption{Deployment pipeline readiness status.}
+\label{tab:deployment_status}
+\renewcommand{\arraystretch}{1.3}
+% l: step label; l: short status; X: wrapping note/artifact text
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Step} & \textbf{Status} & \textbf{Artifact / Note} \\
+\midrule
+Checkpoint analysis                   & Complete       & \texttt{analyze\_checkpoint.py} + Table~\ref{tab:model_breakdown} \\
+LoRA merge + FP16 export              & Complete       & \texttt{model\_fp16.pt} (709.3\,MB) \\
+ONNX conversion (vision + text)       & Complete       & \texttt{vision\_onnx/}, \texttt{text\_onnx/} \\
+QNN compilation (AI Hub)              & In progress    & Awaiting vision + text \texttt{.bin} files \\
+DSP/HTP inference benchmark           & [PLACEHOLDER]  & Pending QNN binaries \\
+INT8 quantization                     & [PLACEHOLDER]  & Calibration data selection pending \\
+Accuracy-preservation validation      & Partial        & Local FP16 verified; on-device pending \\
+Surveillance integration (GStreamer)  & [PLACEHOLDER]  & Future work (Chapter~7) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent The pipeline is ready for end-to-end validation pending the AI Hub compilation output. The FP16 ONNX artifacts produced by Steps 1--2 already represent a deployable intermediate state: they can be executed on the RB3 Gen2 CPU via ONNX Runtime today, providing a functional baseline while the DSP-optimized QNN binaries are finalized. The clean separation of concerns across the four steps means that any optimization added at a lower level (INT8 quantization, custom DSP kernels) can be integrated without disrupting the earlier stages.
+
+\noindent To my knowledge, this is the first documented deployment design targeting an mSigLIP-class multilingual model on a 4\,GB-class edge device. The complete set of deployment scripts, configuration, and benchmark reports is archived in the \texttt{deployment/} directory of the project repository, and reproducibility details are provided in Appendix~B.
+
+\end{document}

@@ -86,7 +86,7 @@ class QnnVisionEncoder:
         qairt: Path = Path("/opt/qcom/qairt/2.45.40.260406"),
         qnn_bin: Path | None = None,
         qnn_lib: Path | None = None,
-        runtime_dir: Path = Path("deployment/demo_runtime/qnn"),
+        runtime_dir: Path = Path("artifacts/deployment/runtime/qnn"),
         image_size: int = 256,
         output_name: str = "output_0.raw",
         keep_artifacts: bool = False,

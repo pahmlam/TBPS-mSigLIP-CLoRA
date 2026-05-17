@@ -13,8 +13,12 @@ import sys
 import torch
 
 # Add deployment root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_deployment_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_project_root = os.path.dirname(_deployment_root)
+sys.path.insert(0, _deployment_root)
 from deploy_utils import TeeLogger
+
+DEFAULT_LOG_DIR = os.path.join(_project_root, "artifacts", "deployment", "logs")
 
 
 def analyze(ckpt_path: str):
@@ -125,7 +129,7 @@ def analyze(ckpt_path: str):
     print("RECOMMENDATIONS")
     print(f"{'='*60}")
     print("1. Export to FP16 (safest for 4GB RAM): run deployment/scripts/lora_fp16/export.py")
-    print("2. Convert to ONNX: run deployment/scripts/onnx/export.py --model-dir exported_model")
+    print("2. Convert to ONNX: run deployment/scripts/onnx/export.py --model-dir artifacts/deployment/exports/msiglip_lora")
     print("3. LoRA weights should be merged into base model before export (step 1 does this)")
     print("4. On RB3: set CPU governor to 'performance' for best speed")
     print("   sudo cpupower frequency-set -g performance")
@@ -136,7 +140,6 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt", required=True, help="Path to Lightning checkpoint")
     args = parser.parse_args()
 
-    log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
-    logger = TeeLogger(log_dir, "analyze")
+    logger = TeeLogger(DEFAULT_LOG_DIR, "analyze")
     analyze(args.ckpt)
     logger.close()

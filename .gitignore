@@ -1,40 +1,45 @@
-# ignore all __pycache__ directories regardless of position in the tree
-**/__pycache__
+.DS_Store
+**/__pycache__/
+.ruff_cache/
+.venv/
+venv/
+
+# Generated artifacts and runtime outputs
+artifacts/
+outputs/
+multirun/
+tb_logs/
+lightning_logs/
+wandb/
+
+# Local datasets and pretrained blobs
 VN3K
 CUHK-PEDES
-tb_logs
-CUHK-PEDES
-clip_checkpoints
-siglip_checkpoints
-m_siglip_checkpoints
-!.gitignore
-notebooks
-*.ipynb
-outputs
-multirun
-experiments
-*.safetensors
+datasets/
+data/raw/
+clip_checkpoints/
+siglip_checkpoints/
+m_siglip_checkpoints/
 cuhk_test_original_clip
 cuhk_test_original_m_siglip
-lightning_logs
 
+# Large model/data artifacts
 *.ckpt
 *.pth
 *.pt
 *.safetensors
 *.csv
 
+# Local/generated directories kept out of git
 checkpoints/
-datasets/
-run_cir_loss.sh
 .claude/
 ref/
-knowledge/
-knowledge.md
-reports/
-changelog/
+experiments/
 exported_model/
-venv/
-
-# Generated noise index files
-noiseindex/*.npy
+noiseindex/
+Log/
+out_qnn*/
+input_list.txt
+image_*_float32.raw
+deployment/logs/
+deployment/qnn_inputs/

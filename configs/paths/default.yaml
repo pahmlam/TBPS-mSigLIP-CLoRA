@@ -1,0 +1,5 @@
+artifacts_root: ${oc.env:MSIGLIP_ARTIFACTS_ROOT,artifacts}
+data_root: ${oc.env:MSIGLIP_DATA_ROOT,data/raw}
+pretrained_root: ${oc.env:MSIGLIP_PRETRAINED_ROOT,artifacts/models/pretrained}
+checkpoint_root: ${oc.env:MSIGLIP_CHECKPOINT_ROOT,artifacts/models/checkpoints}
+deployment_root: ${oc.env:MSIGLIP_DEPLOYMENT_ROOT,artifacts/deployment}

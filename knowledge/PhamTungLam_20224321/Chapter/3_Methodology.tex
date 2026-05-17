@@ -1,0 +1,277 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Overview}
+
+To address the gradient saturation issue inherent in Sigmoid-based loss functions and to improve retrieval accuracy under the constraint of limited Vietnamese-language data, this project proposes a novel hybrid optimization framework. Instead of relying solely on conventional contrastive learning mechanisms, the system is explicitly designed to identify and penalize hard negative pairs by incorporating a Cross-modal Circle Loss.
+
+The proposed approach follows the principle of “Global Alignment, Local Refinement.” Specifically, the mSigLIP architecture serves as the backbone to preserve robust multilingual semantic alignment, while Circle Loss acts as an auxiliary optimization branch that restructures the embedding space, enforcing tighter clustering among samples sharing the same identity. To ensure practical feasibility when training with large batch sizes under constrained hardware resources, the framework integrates Low-Rank Adaptation (LoRA) as an efficient parameter-fine-tuning strategy.
+
+The proposed system is built upon a Dual-Encoder architecture, a standard design for multimodal retrieval tasks in which two encoders operate in parallel. Unlike conventional approaches that rely on full fine-tuning, our architecture integrates Low-Rank Adaptation (LoRA) together with a multi-objective loss optimization framework.
+
+\begin{figure}[htbp]
+    \centering
+    % Thay 'figure1.png' bằng tên file ảnh thực tế của bạn
+    % width=1\linewidth nghĩa là ảnh sẽ rộng bằng chiều ngang văn bản
+    \includegraphics[width=1\linewidth]{Figure/framework-2.png} 
+    \caption{The overall architecture of the proposed Multilingual Text-Based Person Search framework with LoRA and Circle Loss.}
+    \label{fig:}
+\end{figure}
+
+The full implementation code is provided in Appendix A.
+\section{Experimental Setup}
+To rigorously evaluate the proposed method, particularly its effectiveness in low-resource and multilingual scenarios, I conducted experiments on two benchmark datasets: CUHK-PEDES (English, High-resource) and 3000VnPersonSearch(Vietnamese, Low-resource). The experiments were designed to verify the hypothesis that the integration of Circle Loss and LoRA improves fine-grained retrieval performance compared to the baseline.
+
+\subsection{Datasets}
+
+\subsubsection{CUHK-PEDES (English Benchmark)}
+
+\noindent The CUHK-PEDES dataset is currently the most widely used benchmark for Text-Based Person Search (TBPS). It serves as the primary reference for evaluating a model's generalization capability in a high-resource language setting.
+
+\begin{itemize}
+    \item \textbf{Scale:} The dataset comprises 40,206 images corresponding to 13,000 distinct pedestrian identities.
+    
+    \item \textbf{Annotations:} Each image is manually annotated with two natural language descriptions in English, resulting in a total of 80,440 textual captions. The descriptions are rich in appearance details, including clothing styles, colors, accessories, and human actions.
+    
+    \item \textbf{Data Split:} Following the standard evaluation protocol, the dataset is partitioned into:
+    \begin{itemize}
+        \item \textit{Training set:} 34,054 images of 11,000 identities.
+        \item \textit{Validation set:} 3,078 images of 1,000 identities.
+        \item \textit{Test set:} 3,074 images of 1,000 identities.
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{3000VnPersonSearch (Vietnamese Low-Resource Benchmark)}
+
+\noindent The 3000VnPersonSearch dataset (denoted as \textbf{Vn3K}) is the primary focus of this research. It represents a challenging low-resource scenario for the Vietnamese language, which is characterized by linguistic complexity and limited annotated training data.
+
+\begin{itemize}
+    \item \textbf{Scale:} The dataset consists of 6,302 images covering 3,000 pedestrian identities. Compared to CUHK-PEDES, Vn3K is significantly smaller, making it more susceptible to overfitting and optimization instability.
+    
+    \item \textbf{Annotations:} Each image is annotated with two textual descriptions in Vietnamese. These captions reflect distinctive linguistic properties of Vietnamese, such as compound word formation and adjective--noun ordering, and often contain noisy or sparse information typical of real-world surveillance reports.
+    
+    \item \textbf{Data Split:} To ensure a fair comparison with the baseline model TBPS-mSigLIP, we adopt the standard split:
+    \begin{itemize}
+        \item \textit{Training set:} 4,302 images of 2,000 identities.
+        \item \textit{Test set:} 2,000 images of the remaining 1,000 identities.
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Evaluation Protocol}
+
+The person retrieval task is conducted in a cross-modal setting. For each textual query in the test set, the system ranks all pedestrian images in the gallery according to their similarity scores. The final performance is reported by averaging the retrieval metrics over all queries.
+
+\subsection{Training Configurations}
+The proposed framework was implemented using the PyTorch deep learning library. All experiments were conducted on a workstation equipped with a single NVIDIA RTX 3060 GPU (12GB VRAM).
+
+\subsubsection{Input Pipeline and Augmentation}
+
+\begin{itemize}
+    \item \textbf{Image Preprocessing:} All input images were resized to a resolution of $256 \times 256$ pixels. This square aspect ratio aligns with the pre-training protocol of the mSigLIP backbone.
+    \item \textbf{Data Augmentation:} To mitigate overfitting on the small Vn3K dataset and support the \textit{Matching Verification Signal (MVS)} loss, I applied a suite of random augmentations during training:
+    \begin{itemize}
+        \item \textit{Random Horizontal Flip} (p=0.5).
+        \item \textit{Random Erasing} (simulating occlusion).
+        \item \textit{Color Jitter} (brightness, contrast, saturation).
+        \item \textit{Random Grayscale}....
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Optimization Hyperparameters}
+Unlike the baseline which relies on Full Fine-tuning, our training strategy leverages Low-Rank Adaptation (LoRA) to optimize memory usage, allowing for a larger batch size—a critical factor for Contrastive Learning and Circle Loss effectiveness.
+
+\begin{itemize}
+    \item \textbf{Optimizer:} I utilized the \textbf{AdamW} optimizer, known for its decoupled weight decay handling, which is beneficial for Transformer-based models.
+    \item \textbf{Learning Rate (LR):} The base learning rate was set to $\mathbf{1e-4}$.
+    \item \textbf{LR Scheduler:} A cosine decay schedule was employed with a linear warmup for the first 5 epochs. The LR for the backbone and the auxiliary heads was decayed by a factor of 0.1 at specific milestones to stabilize convergence.
+    \item \textbf{Batch Size:} By freezing the backbone and training only LoRA parameters, I increased the batch size from the baseline's \textbf{8} to \textbf{24} on the same 12GB GPU.
+    \item \textbf{Epochs:} The model was trained for a total of \textbf{60 epochs}.
+\end{itemize}
+
+\subsubsection{LoRA Configuration}
+\noindent Low-Rank Adaptation was applied to the attention mechanism of the Vision Transformer (ViT) and Text Transformer.
+
+\begin{table}[htbp]
+    \centering
+    \caption{LoRA configuration for the proposed model}
+    \label{tab:lora_config}
+    % X: Cột tự động co giãn và xuống dòng. l: Căn trái.
+    \begin{tabularx}{\textwidth}{lX}
+        \toprule
+        \textbf{Component} & \textbf{Configuration / Description} \\
+        \midrule
+        \textbf{Target Modules} & Query ($W_q$), Key ($W_k$), Value ($W_v$), and Output ($W_o$) projection matrices \\
+        \textbf{LoRA Rank ($r$)} & 32 \\
+        \textbf{Scaling Factor ($\alpha$)} & 64 \\
+        \textbf{LoRA Dropout} & 0.05 \\
+        \textbf{Trainable Parameters} & \textbf{5.9M / 376M = 1.57\%} of total model parameters (98.4\% reduction). $\sim$11\,GB VRAM at batch size 24, compared to $\sim$11\,GB at batch size 8 for full fine-tuning on the same 12\,GB RTX 3060. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+
+\subsubsection{Loss Function Weights}
+\noindent The total objective function is a weighted sum of the baseline losses and the proposed Circle Loss. The weights were configured as follows:
+
+\begin{table}[htbp]
+    \centering
+    \caption{Loss Weight Configuration}
+    \label{tab:loss_config}
+    % X: Căn trái tự động. c: Căn giữa.
+    \begin{tabularx}{\textwidth}{Xcc}
+        \toprule
+        \textbf{Loss Component} & \textbf{Symbol} & \textbf{Weight / Configuration} \\
+        \midrule
+        N-ITC Loss & $\alpha_1$ & 1.0 \\
+        Multi-View Supervision (MVS) & $\alpha_2$ & 1.0 \\
+        Cross-modal ITC (C-ITC) & $\alpha_3$ & 0.1 \\
+        Self-Supervised Loss (SS) & $\alpha_4$ & 0.4 \\
+        Circle Loss (Proposed) & $\alpha_5$ & Optimized via Curriculum Schedule \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\begin{table}[htbp]
+    \centering
+    \caption{Curriculum Strategy}
+    \label{tab:curr_config}
+    \begin{tabularx}{\textwidth}{cccX}
+        \toprule
+        \textbf{Training Phase} & \textbf{Epoch Range} & \textbf{($\alpha_5$) Value} & \textbf{Purpose} \\
+        \midrule
+        Warm-up Phase & 0--5 & 0.0 (disabled) & Establish global alignment \\
+        Ramp-up Phase & 6--20 & Linear 0.0 $\to$ 0.1 & Gradual hard-negative mining \\
+        Stable Phase & 20--60 & 0.1 (fixed) & Fine-grained discrimination \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\begin{table}[htbp]
+    \centering
+    \caption{Circle Loss Hyperparameters}
+    \label{tab:cir_config}
+    % Dùng tabular thường vì bảng này nhỏ, không cần giãn hết trang
+    \begin{tabular}{ccc}
+        \toprule
+        \textbf{Parameter} & \textbf{Symbol} & \textbf{Value} \\
+        \midrule
+        Margin & ($m$) & 0.25 \\
+        Scale Factor & ($\gamma$) & 128 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Input and Data Augmentation Module}
+To improve robustness to real-world variations and to support Multi-View Supervision (MVS), the input data are processed through two parallel branches:
+
+\noindent Image Branch - Given an input image $I$, two views are generated: an original view and an augmented view. Data augmentation techniques such as Random Erasing, Color Jitter, and Random Resized Crop are applied to simulate occlusion, illumination changes, and background noise commonly encountered in surveillance scenarios.
+
+\noindent Text Branch - The textual query $T$, in either Vietnamese or English, is optionally subjected to lightweight augmentation strategies such as Random Deletion. This encourages robustness in the language encoder and improves generalization under noisy or incomplete textual descriptions.
+
+\section{Parameter-Efficient Feature Extraction with LoRA}
+
+This module forms the core of the proposed framework and employs mSigLIP (Multilingual Sigmoid Loss for Language–Image Pre-training) as the backbone network.
+
+\noindent Image Encoder - The image encoder is based on Vision Transformer ViT-B/16, where each input image is divided into 16×16 patches. These patches are linearly projected, combined with positional embeddings, and processed through stacked Transformer layers. Text Encoder - The text encoder is a multilingual Transformer capable of directly handling Vietnamese without translation, thereby preserving the semantic integrity of language-specific concepts (e.g., “áo dài”, “xe ôm”).
+
+\noindent Low-Rank Adaptation (LoRA)  - To address the computational and memory bottlenecks of contrastive learning, I integrate Low-Rank Adaptation (LoRA) into the Transformer attention blocks. Instead of updating all dense parameters, the pretrained backbone weights $W_0$ are frozen, and trainable low-rank matrices are injected into the Query ($W_q$), Key ($W_k$), and Value ($W_v$) projections.
+
+\noindent Training Stability - Cross-modal Circle Loss is known to generate high-variance gradients when encountering hard negatives. Directly applying these gradients to the full backbone can lead to catastrophic forgetting. LoRA acts as a gradient buffer, constraining optimization to a low-rank subspace. This stabilizes training and enables fine-grained discrimination while preserving the general multilingual alignment learned during pre-training. In practice, this design reduces GPU memory consumption and enables up to a threefold increase in batch size, which is crucial for effective hard-negative mining
+
+\section{Circle loss}
+To overcome the limitations of fixed-margin or probability-based losses, I adopt Circle Loss , which offers a unified perspective on pair similarity optimization. Unlike Sigmoid, which treats the optimization of positive and negative pairs with a rigid penalty, Circle Loss introduces a dynamic relaxation to the optimization target.
+
+\vspace{0.5cm}
+
+\noindent The loss function is derived by generalizing the target from a single point to a circle in the decision space, formulated as:
+
+\begin{equation}
+    \mathcal{L}_{\text{circle}} = \log \left[ 1 + \sum_{j \in \mathcal{N}} e^{\gamma \alpha_n^j (s_n^j - m)} \cdot \sum_{i \in \mathcal{P}} e^{-\gamma \alpha_p^i (s_p^i - (1-m))} \right]
+\end{equation}
+
+\noindent Where:
+\begin{itemize}
+    \item $s_n$ and $s_p$ are the cosine similarities of positive and negative pairs.
+    \item $\gamma$ is a scaling factor (inverse temperature).
+    \item $m$ is the relaxation margin.
+\end{itemize}
+
+\vspace{0.5cm}
+
+\noindent The critical innovation of Circle Loss is the Adaptive Re-weighting Mechanism, represented by the coefficients $\alpha_p$ and $\alpha_n$. These weights are self-paced and determined by the current optimization status of each pair:
+
+\begin{equation}
+    \alpha_p^i = [1 + m - s_p^i]_+, \quad \alpha_n^j = [s_n^j + m]_+
+\end{equation}
+
+\noindent This formulation ensures that the penalty strength is not uniform but is instead a function of the sample's ``hardness'' (deviation from the optimum).
+
+
+
+\section{Curriculum Hard-Negative Mining Schedule}
+
+\noindent Applying strong hard-negative penalties at the early stages of training can disrupt initial alignment. To mitigate this, I introduce a Curriculum Hard-Mining Schedule that gradually increases the contribution of Circle Loss.
+
+\vspace{0.5cm}
+
+\noindent Let $\alpha_5(t)$ denote the weight of the Circle Loss at training step $t$. It is modulated using a linear warmup strategy:
+
+\begin{equation}
+    \alpha_5(t) = 
+    \begin{cases} 
+        0, & t < T_{\text{warmup}} \\
+        \frac{t - T_{\text{warmup}}}{T_{\text{ramp}}} \cdot \alpha_{\text{max}}, & T_{\text{warmup}} \le t < T_{\text{warmup}} + T_{\text{ramp}} \\
+        \alpha_{\text{max}}, & \text{otherwise}
+    \end{cases}
+\end{equation}
+
+\noindent where $\alpha_{max} = 0.1$
+
+\vspace{0.5cm}
+
+\noindent This curriculum allows the model to first learn global semantic alignment via N-ITC before progressively focusing on fine-grained discrimination through hard-negative mining.
+
+\section{Circle loss Integration Strategies}
+
+To incorporate the geometric advantages of Circle Loss into the mSigLIP backbone, we investigate four distinct integration strategies. These strategies are designed based on the trade-off between optimization stability and discriminative power.
+
+\paragraph{Strategy 1: In-modal Auxiliary Optimization}
+This strategy applies Circle Loss independently to the Image Encoder and the Text Encoder branches. The objective is to encourage images belonging to the same identity and textual descriptions of the same entity to form compact clusters within their respective modalities prior to cross-modal alignment.
+
+\textit{Limitation.} Although this approach mitigates \emph{feature drift} within each modality, it does not directly optimize the alignment between image and text representations, which is the core objective of the TBPS task.
+
+\paragraph{Strategy 2: Intrinsic N-ITC}
+In this approach, the original N-ITC loss is modified by embedding the Circle Loss re-weighting mechanism directly into the Sigmoid logits, thereby altering the intrinsic optimization behavior of the contrastive objective.
+
+\textit{Limitation.} Modifying the fundamental pre-training objective of mSigLIP may introduce training instability, as the model is required to adapt pre-trained weights to a substantially different decision boundary.
+
+\paragraph{Strategy 3: Pure Cross-modal Circle Loss}
+This strategy completely replaces the N-ITC loss with a Cross-modal Circle Loss, reformulating the problem as a purely geometric embedding optimization task across modalities.
+
+\textit{Limitation.} In the absence of the global alignment regularization provided by N-ITC, the model is prone to converging toward a \emph{collapsed} solution, where embeddings are well separated but lack semantic coherence, particularly during the early stages of training.
+
+\paragraph{Strategy 4: Hybrid N-ITC + Cross-modal Auxiliary with MVS (Selected)}
+We propose a hybrid framework that optimizes two parallel streams:
+
+\begin{itemize}
+    \item \textbf{Main Stream (Stability):} Retains the original N-ITC loss to preserve robust global alignment and exploit the noise-robust properties of the pre-trained mSigLIP backbone.
+    \item \textbf{Auxiliary Stream (Discrimination):} Introduces an additional Cross-modal Circle Loss branch that explicitly targets hard negative pairs which are insufficiently separated by N-ITC alone.
+\end{itemize}
+
+\textit{Rationale for Selection.} This hybrid strategy combines the strengths of both objectives. While N-ITC prevents the model from deviating excessively from the pre-trained semantic space, Circle Loss functions as a \emph{fine-grained discriminator}, sharpening decision boundaries for challenging samples. Furthermore, Multi-View Supervision (MVS) is applied to both streams to enhance robustness against visual augmentations.
+
+\section{Deployment Pipeline Overview}
+\label{sec:deployment_methodology}
+
+\noindent Training the proposed mSigLIP-CLoRA framework produces a PyTorch Lightning checkpoint that is inherently unsuitable for direct deployment on the Qualcomm RB3 Gen2 target: the checkpoint contains optimizer states, configuration metadata, and a LoRA-adapted model structure that requires PEFT-aware loading. Bridging the gap to a deployable artifact is itself a methodological contribution. The deployment pipeline comprises four sequential steps, each discussed briefly here and elaborated in Chapter~6.
+
+\begin{enumerate}
+    \item \textbf{LoRA merge.} The trained checkpoint is loaded with PEFT-aware model construction, and the LoRA adapters are merged into the base weights via $W_{\text{merged}} = W_0 + \alpha \cdot (BA)$. The result is a standard PyTorch model free of adapter overhead.
+    \item \textbf{FP16 conversion.} All floating-point weights are converted from FP32 to FP16, reducing the on-disk footprint from 1418.5\,MB to 709.3\,MB (measured on the best checkpoint). Tensor deduplication via \texttt{data\_ptr()} preserves the shared-weight structure of mSigLIP (the vision and text towers share substantial parameters), preventing file-size bloat from duplicate storage.
+    \item \textbf{ONNX export.} The vision and text encoders are wrapped into separate \texttt{nn.Module} classes exposing clean forward signatures (image $\to$ embedding; tokens/mask $\to$ embedding) and exported to ONNX opset 18 with dynamic batch axes. Because the model exceeds the 2\,GB ONNX single-file limit, weights are stored externally (\texttt{.onnx.data}) alongside the graph (\texttt{.onnx}).
+    \item \textbf{QNN compilation.} The ONNX encoders are submitted to the Qualcomm AI Hub for compilation targeting the QCS6490 SoC, producing QNN context binary files that run directly on the Hexagon DSP/HTP. A local fallback via ONNX Runtime on the device CPU provides a baseline for comparison.
+\end{enumerate}
+
+\noindent This pipeline is designed to be reproducible, hardware-agnostic at the LoRA-merge and FP16-conversion steps, and targeted at the Qualcomm platform only at the final QNN step. The full implementation, benchmark results, and memory analysis are presented in Chapter~6.
+
+\end{document}

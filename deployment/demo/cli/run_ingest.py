@@ -19,20 +19,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--board-id", default="local-dev")
     parser.add_argument("--camera-id", default="cam-local-01")
     parser.add_argument("--model-version", default="msiglip-demo-wiring")
-    parser.add_argument("--store", default="deployment/demo_runtime/vectors.jsonl")
-    parser.add_argument("--spool", default="deployment/demo_runtime/spool")
-    parser.add_argument("--crops", default="deployment/demo_runtime/crops")
+    parser.add_argument("--store", default="artifacts/deployment/runtime/vectors.jsonl")
+    parser.add_argument("--spool", default="artifacts/deployment/runtime/spool")
+    parser.add_argument("--crops", default="artifacts/deployment/runtime/crops")
     parser.add_argument("--upload-mode", choices=["local", "fail"], default="local")
     parser.add_argument("--tracker-mode", choices=["per_frame", "single"], default="per_frame")
 
     parser.add_argument("--encoder", choices=["fake", "onnx", "qnn"], default="fake")
-    parser.add_argument("--onnx-model", default="exported_model/vision_onnx/vision_encoder.onnx")
-    parser.add_argument("--vision-bin", default="vision_encoder.bin")
-    parser.add_argument("--htp-config", default="htp_config_245.json")
+    parser.add_argument(
+        "--onnx-model",
+        default="artifacts/deployment/exports/msiglip_lora/vision_onnx/vision_encoder.onnx",
+    )
+    parser.add_argument("--vision-bin", default="artifacts/deployment/qnn_inputs/vision_encoder.bin")
+    parser.add_argument("--htp-config", default="deployment/config/qnn/htp_config_245.json")
     parser.add_argument("--qairt", default="/opt/qcom/qairt/2.45.40.260406")
     parser.add_argument("--qnn-bin")
     parser.add_argument("--qnn-lib")
-    parser.add_argument("--runtime-dir", default="deployment/demo_runtime/qnn")
+    parser.add_argument("--runtime-dir", default="artifacts/deployment/runtime/qnn")
     parser.add_argument("--adsp-library-path")
     parser.add_argument("--keep-qnn-artifacts", action="store_true")
 

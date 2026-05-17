@@ -16,6 +16,7 @@ BENCHMARK_RUNS = 50
 BATCH_SIZES = [1, 4, 8]
 INPUT_SIZE = (3, 224, 224)
 NUM_THREADS = 8
+ARTIFACT_DIR = Path("artifacts/deployment/hardware_profiling")
 
 def benchmark_pytorch(model_name, batch_sizes=BATCH_SIZES):
     """Benchmark PyTorch model"""
@@ -58,7 +59,7 @@ def benchmark_pytorch(model_name, batch_sizes=BATCH_SIZES):
 
     return results
 
-def export_onnx(model_name, output_dir="onnx_models"):
+def export_onnx(model_name, output_dir=ARTIFACT_DIR / "onnx_models"):
     """Export PyTorch model to ONNX"""
     import torch
     import timm
@@ -153,9 +154,11 @@ def main():
         print(f"  Latency: {results['onnx'][model_name]['latency_ms']} ms")
 
     # Save results
-    with open("benchmark_results.json", "w") as f:
+    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+    results_path = ARTIFACT_DIR / "benchmark_results.json"
+    with results_path.open("w") as f:
         json.dump(results, f, indent=2)
-    print(f"\nResults saved to benchmark_results.json")
+    print(f"\nResults saved to {results_path}")
 
     # Print summary
     print("\n" + "=" * 60)

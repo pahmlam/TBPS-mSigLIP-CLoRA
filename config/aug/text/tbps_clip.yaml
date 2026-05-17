@@ -1,3 +1,0 @@
-augment_cfg:
-  data.augmentation.text_transform.random_deletion:
-    p: 0.05

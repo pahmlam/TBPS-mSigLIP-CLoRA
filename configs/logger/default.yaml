@@ -1,0 +1,25 @@
+# configs/logger/default.yaml
+experiment_name: null # Will be dynamically set in the Python script
+
+# Checkpoint settings
+checkpoint:
+  monitor: "val_score"
+  mode: "max"
+  save_top_k: 3
+  save_last: true
+  filename: "{epoch}-{val_score:.2f}"
+
+# # TensorBoard specific settings
+# tensorboard: {}
+  # flush_secs: 120
+  # max_queue: 10
+logger_type: "wandb"
+logger_addtional_args:
+  group: null
+
+# Logging settings
+console:
+  level: "INFO"
+file:
+  level: "DEBUG"
+  filename: "train.log"

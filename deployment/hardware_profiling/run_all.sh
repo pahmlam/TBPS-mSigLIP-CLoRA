@@ -4,13 +4,14 @@
 # All terminal output is automatically logged with timestamp
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="$SCRIPT_DIR/../logs"
+ARTIFACT_DIR="${MSIGLIP_DEPLOYMENT_ARTIFACTS:-artifacts/deployment/hardware_profiling}"
 
 cd ~/sigm
 source venv/bin/activate
 
 # Setup logging — tee all stdout+stderr to timestamped log file
-mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/hardware_profiling_$(date +%Y%m%d_%H%M%S).log"
+mkdir -p "$ARTIFACT_DIR/logs"
+LOG_FILE="$ARTIFACT_DIR/logs/hardware_profiling_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo "=========================================="

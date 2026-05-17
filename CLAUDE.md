@@ -20,31 +20,31 @@ Workspace consists of 2 parts:
 
 ```
 trainer.py                          # Entry point (Hydra)
-├── lightning_data.py               # TBPSDataModule (data loading, augmentation)
-│   ├── data/vn3k_vi.py             # VN3K Vietnamese dataset
-│   ├── data/vn3k_en.py             # VN3K English dataset
-│   ├── data/vn3k_mixed.py          # VN3K mixed-language dataset
-│   ├── data/cuhkpedes.py           # CUHK-PEDES dataset
-│   ├── data/prw_tps_cn.py          # PRW-TPS-CN (Chinese) dataset
-│   ├── data/cuhk_10_percent_vn3k_mix.py  # 10% CUHK + VN3K mix
-│   ├── data/bases.py               # ImageTextDataset, ImageDataset, TextDataset
-│   ├── data/sampler.py             # RandomIdentitySampler
-│   └── data/augmentation/          # Image & text augmentation pools
+├── src/msiglip/lightning_data.py               # TBPSDataModule (data loading, augmentation)
+│   ├── src/msiglip/data/vn3k_vi.py             # VN3K Vietnamese dataset
+│   ├── src/msiglip/data/vn3k_en.py             # VN3K English dataset
+│   ├── src/msiglip/data/vn3k_mixed.py          # VN3K mixed-language dataset
+│   ├── src/msiglip/data/cuhkpedes.py           # CUHK-PEDES dataset
+│   ├── src/msiglip/data/prw_tps_cn.py          # PRW-TPS-CN (Chinese) dataset
+│   ├── src/msiglip/data/cuhk_10_percent_vn3k_mix.py  # 10% CUHK + VN3K mix
+│   ├── src/msiglip/data/bases.py               # ImageTextDataset, ImageDataset, TextDataset
+│   ├── src/msiglip/data/sampler.py             # RandomIdentitySampler
+│   └── src/msiglip/data/augmentation/          # Image & text augmentation pools
 │
-├── lightning_models.py             # LitTBPS (PyTorch Lightning module)
-│   ├── model/build.py              # build_backbone_with_proper_layer_resize()
-│   │   └── model/siglip/           # mSigLIP model implementation
-│   ├── model/lora.py               # get_lora_model() via PEFT
-│   ├── model/tbps.py               # TBPS (forward pass, loss computation)
-│   │   ├── model/objectives.py     # Loss functions (N-ITC, Circle, C-ITC, SimCLR)
-│   │   └── model/reid_objectives.py # ReID-specific objectives
-│   └── solver/
+├── src/msiglip/lightning_models.py             # LitTBPS (PyTorch Lightning module)
+│   ├── src/msiglip/model/build.py              # build_backbone_with_proper_layer_resize()
+│   │   └── src/msiglip/model/siglip/           # mSigLIP model implementation
+│   ├── src/msiglip/model/lora.py               # get_lora_model() via PEFT
+│   ├── src/msiglip/model/tbps.py               # TBPS (forward pass, loss computation)
+│   │   ├── src/msiglip/model/objectives.py     # Loss functions (N-ITC, Circle, C-ITC, SimCLR)
+│   │   └── src/msiglip/model/reid_objectives.py # ReID-specific objectives
+│   └── src/msiglip/solver/
 │       ├── build.py                # Optimizer with param groups
 │       └── lr_scheduler.py         # Cosine LR with warmup
 │
 ├── test.py                         # Evaluation script
-├── workspace.ipynb                 # Experiment notebook (analysis, loss playground)
-├── utils/                          # Metrics, visualization, tokenizer utils
+├── notebooks/workspace.ipynb                 # Experiment notebook (analysis, loss playground)
+├── src/msiglip/utils/                          # Metrics, visualization, tokenizer utils
 ├── scripts/                        # Helper scripts (checkpoint prep, extraction)
 ├── experiments/                    # Experiment logs & ablation notes
 └── knowledge/                      # Research notes & paper drafts
@@ -71,9 +71,11 @@ deployment/
 │   ├── system.md                       # RB3 hardware specifications
 │   ├── experiment.md                   # Benchmark guide
 │   └── benchmark-rp.md                # Benchmark results
-├── logs/                               # Auto-generated logs (timestamped)
+├── config/qnn/                         # QNN/HTP runtime config JSON files
 └── deploy_utils.py                     # Shared utilities (TeeLogger)
 ```
+
+Generated deployment outputs and logs belong under `artifacts/deployment/`.
 
 ## Loss Functions
 
@@ -88,34 +90,34 @@ Total loss = `1.0*N-ITC + curriculum*Circle + 0.1*C-ITC + 0.4*SimCLR`
 
 **Curriculum schedule**: epoch 0-5 weight=0, epoch 6-20 linear ramp to 0.1, epoch 21-60 stable at 0.1.
 
-All loss functions live in `model/objectives.py`. Loss routing and curriculum logic in `model/tbps.py`. Config flags in `config/loss/cir_msiglip.yaml`.
+All loss functions live in `src/msiglip/model/objectives.py`. Loss routing and curriculum logic in `src/msiglip/model/tbps.py`. Config flags in `configs/loss/cir_msiglip.yaml`.
 
 ## Configuration System (Hydra)
 
-Main config: `config/cir_msiglip.yaml` composes sub-configs:
-- `config/loss/cir_msiglip.yaml` — loss flags and weights
-- `config/backbone/m_siglip.yaml` — backbone settings
-- `config/trainer/best_msiglip.yaml` — training hyperparams (60 epochs, bf16-mixed)
-- `config/optimizer/cir_test.yaml` — AdamW with param groups
-- `config/scheduler/tbps_clip.yaml` — cosine LR + warmup
-- `config/lora/default.yaml` — LoRA config
-- `config/dataset/vn3k_vi.yaml` — dataset paths (also: vn3k_en, vn3k_mixed, cuhk_pedes, cuhk_pedes_10_percent, prw_tps_cn)
-- `config/tokenizer/m_siglip.yaml` — tokenizer settings
-- `config/logger/default.yaml` — W&B logger config
-- `config/aug/siglip.yaml` — augmentation settings
+Main config: `configs/cir_msiglip.yaml` composes sub-configs:
+- `configs/loss/cir_msiglip.yaml` — loss flags and weights
+- `configs/backbone/m_siglip.yaml` — backbone settings
+- `configs/trainer/best_msiglip.yaml` — training hyperparams (60 epochs, bf16-mixed)
+- `configs/optimizer/cir_test.yaml` — AdamW with param groups
+- `configs/scheduler/tbps_clip.yaml` — cosine LR + warmup
+- `configs/lora/default.yaml` — LoRA config
+- `configs/dataset/vn3k_vi.yaml` — dataset paths (also: vn3k_en, vn3k_mixed, cuhk_pedes, cuhk_pedes_10_percent, prw_tps_cn)
+- `configs/tokenizer/m_siglip.yaml` — tokenizer settings
+- `configs/logger/default.yaml` — W&B logger config
+- `configs/aug/siglip.yaml` — augmentation settings
 
 ## Critical Workflow Rule
 
-**Training costs hours. Always validate ideas in `workspace.ipynb` first.**
+**Training costs hours. Always validate ideas in `notebooks/workspace.ipynb` first.**
 
 Research cycle:
 1. **Ideate** — propose loss/architecture change
-2. **Implement** — modify code (objectives.py, tbps.py, config)
-3. **Validate** — test in workspace.ipynb on frozen embeddings (seconds, not hours)
+2. **Implement** — modify code (objectives.py, tbps.py, configs)
+3. **Validate** — test in notebooks/workspace.ipynb on frozen embeddings (seconds, not hours)
 4. **Train** — only when good signs are confirmed (run_cir_loss.sh)
 5. **Analyze** — compare results against `EXPERIMENT_SUMMARY.md`
 
-## workspace.ipynb Conventions
+## notebooks/workspace.ipynb Conventions
 
 The notebook operates on `W` — a dict of extracted embeddings from a checkpoint:
 - `W['image_feats']`, `W['text_feats']` — L2-normalized embeddings (N × 768)
@@ -183,5 +185,5 @@ When making significant architectural decisions (new dependencies, pattern chang
 - Hydra for config management
 - W&B for experiment tracking
 - `ruff` for linting and formatting
-- All losses in `model/objectives.py` take L2-normalized features and return scalar tensor
-- New loss integration: add to `objectives.py` → add routing in `tbps.py` forward() → add config flag in `config/loss/`
+- All losses in `src/msiglip/model/objectives.py` take L2-normalized features and return scalar tensor
+- New loss integration: add to `src/msiglip/model/objectives.py` → add routing in `src/msiglip/model/tbps.py` forward() → add config flag in `configs/loss/`

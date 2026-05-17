@@ -1133,13 +1133,13 @@ python -m deployment.demo.run_ingest \
   --source /path/to/images_or_video \
   --encoder qnn \
   --vision-bin vision_encoder.bin \
-  --htp-config htp_config_245.json \
+  --htp-config deployment/config/qnn/htp_config_245.json \
   --board-id qc-rb3g2 \
   --camera-id cam-lab-01
 
 python -m deployment.demo.run_search \
   --query "người mặc áo đỏ" \
-  --store deployment/demo_runtime/vectors.jsonl
+  --store artifacts/deployment/runtime/vectors.jsonl
 
 python -m deployment.demo.health
 ```

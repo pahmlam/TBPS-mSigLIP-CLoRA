@@ -1,0 +1,345 @@
+\documentclass{jstarticle}
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+
+
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{green!50!black},
+  breaklines=true,
+  frame=none,        % <-- không đóng khung
+  backgroundcolor=\color{gray!5}, % thêm nền nhẹ (tuỳ chọn)
+  showstringspaces=false
+}
+
+% If you have long equations
+% \documentclass[mathindent=1ex]{jstarticle}
+
+% Which journal to submit to.
+% - "ssad": Smart Systems and Devices
+% - "etsd": Engineering and Technology for Sustainable Development
+% - "ds-ai": Data Science and Artificial Intelligence
+% Default is "ssad".
+\submitTo{ssad}
+
+% Manuscript title
+\title{Nghiên cứu và phát triển hệ thống tìm kiếm người dựa trên câu truy vấn từ dữ liệu video giám sát}
+
+% Authors
+\author[1,*]{Nguyễn Hữu Trung}
+\author[1]{Phạm Tùng Lâm}
+\author[1]{Hoàng Phương Thảo}
+\authornote{1}{Trường Điện - Điện tử, Đại học Bách khoa Hà Nội}
+\authornote{*}{Email liên hệ: Trung.NH223743@sis.hust.edu.vn}
+
+% Abstract
+\begin{abstract}
+   Trong những năm gần đây, tìm kiếm người dựa trên câu truy vấn (TBPS) đã thu hút được sự quan tâm lớn của cộng đồng nghiên cứu khoa học, tuy nhiên nghiên cứu cho tiếng Việt còn hạn chế. Trong nghiên cứu này, trước hết chúng tôi đề xuất chiến lược tăng cường dữ liệu hiệu quả cho mô hình Thị giác - Ngôn ngữ, sau đấy cải tiến phương pháp tìm kiếm thông qua khung mSigLIP-CLoRA, tích hợp hàm Cross-modal Circle Loss để tăng khả năng phân biệt các mẫu âm khó và kỹ thuật LoRA nhằm tối ưu hóa tham số huấn luyện. Bên cạnh đó, đa phần các nghiên cứu mới tập trung thử nghiệm ngoại tuyến (offline) trên các cơ sở dữ liệu có sẵn và chưa quan tâm đến tốc độ và hiệu quả truy vấn. Trong nghiên cứu này chúng tôi xây dựng một hệ thống quản lý dữ liệu video giám sát và tích hợp hệ thống tìm kiếm người dựa trên câu mô tả tiếng Việt, tích hợp kỹ thuật tìm kiếm vector hiệu năng cao FAISS nhằm nâng cao tốc độ truy vấn nhưng vẫn đảm bảo độ chính xác. Chúng tôi đã thực hiện các thử nghiệm trong trong cả hai trường hợp trực tuyến và ngoại tuyến trên cơ sở dữ liệu 3000VnPersonSearch đạt kết quả vượt trội với Rank@1 đạt 52.28\%. Trong thử nghiệm trực tuyến với 40 tình nguyện viên, hệ thống đạt độ chính xác 70\% tại Rank@1 với tốc độ phản hồi nhanh chóng. Kết quả này khẳng định tính hiệu quả của việc kết hợp giữa chiến lược dữ liệu, cải tiến thuật toán và tối ưu hóa hạ tầng trong việc giải quyết bài toán tìm kiếm người trong thực tế.
+\end{abstract}
+
+% Keywords
+\keyword{Tìm kiếm người dựa trên câu mô tả ngôn ngữ tự nhiên (TBPS)}
+\keyword{Mô hình đa ngôn ngữ (Multilingual model)}
+\keyword{Vision-Language Pre-training (VLP)}
+\keyword{Hệ thống giám sát thông minh}
+
+% Bibliography
+% \usepackage[backend=biber,style=ieee]{biblatex}
+\addbibresource{refs.bib}
+
+% Other settings
+% These settings are document specific.
+\usepackage{tabularray}
+
+\usepackage{xcolor}
+\definecolor{customgray}{gray}{0.9}
+\usepackage{tabularx}
+
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily}
+\let\Code\lstinline
+
+\usepackage{prettyref}
+\newrefformat{fig}{Fig.\,\ref{#1}}
+\newrefformat{tab}{Table.\,\ref{#1}}
+\newrefformat{sec}{Section \ref{#1}}
+\newrefformat{subsec}{Section \ref{#1}}
+\newrefformat{subsubsec}{Section \ref{#1}}
+
+
+
+\begin{document}
+
+\maketitle
+
+\section{Giới thiệu}
+Trong bối cảnh đô thị hóa nhanh và mật độ dân số ngày càng tăng, vấn đề đảm bảo an ninh, giám sát hoạt động và quản lý không gian công cộng tại các trung tâm thương mại, khu dân cư hay tòa nhà  trở nên cấp thiết hơn bao giờ hết. Hệ thống camera giám sát đã và đang đóng vai trò quan trọng trong việc quan sát, ghi nhận và hỗ trợ xử lý các tình huống thực tế. Tuy nhiên, phần lớn các hệ thống giám sát hiện nay vẫn đang được thực hiện thủ công, dẫn đến độ trễ trong phản hồi, hạn chế về khả năng bao quát cũng như chi phí vận hành cao. Trước thực trạng đó, việc ứng dụng các công nghệ hiện đại như trí tuệ nhân tạo (AI) và hệ thống giám sát thông minh là hướng đi tất yếu trong quá trình xây dựng đô thị thông minh. Việc triển khai các hệ thống camera giám sát đã mang lại nhiều lợi ích trong việc quan sát, ghi nhận và xử lý các tình huống thực tế diễn ra trên đường phố. Bên cạnh đó, khối lượng dữ liệu video rất lớn được tạo ra liên tục từ hàng ngàn camera giám sát cũng mang đến những thách thức lớn trong việc lưu trữ, phân tích và khai thác hiệu quả.  Một số hệ thống quản lý dữ liệu video hiện nay trên thị trường Việt Nam như View100 V8 \cite{bienbac2022}, Mystic Server–Client \cite{lovad2025mystic} hay các hệ thống theo dõi đa điểm đã cải thiện đáng kể khả năng giám sát trực tiếp, phân tích hành vi, tái nhận dạng đối tượng và vận hành thời gian thực. Tuy nhiên, hầu hết các chức năng tìm kiếm người vẫn dựa trên quan sát thủ công hoặc dựa trên các thuộc tính rời rạc (giới tính, độ tuổi, phụ kiện,...), vốn không phù hợp với quy mô dữ liệu lớn và không đáp ứng được nhu cầu truy vấn nhanh trong các tình huống khẩn cấp. 
+
+Bài toán tìm kiếm người dựa trên câu truy vấn (TBPS) được hiểu là bài toán đối sánh (matching) các đặc trưng giữa hai miền ngôn ngữ và miền ảnh. Đây cũng chính là thách thức lớn nhất của bài toán này. Đa số các nghiên cứu hiện tại tập trung vào việc xây dựng miền không gian chung nhằm học sự tương quan giữa các thông tin được trích chọn từ miền ngôn ngữ và miền ảnh. Trong những năm gần đây, các mô hình ngôn ngữ - thị giác (Vision-Language Model), ví dụ như mô hình CLIP (Contrastive Language-Image Pre-Training) \cite{radford2021learning}, ALIGN \cite{jia2021scaling}, SigLIP \cite{zhai2023sigmoid} đã thể hiện được khả năng vượt trội trong việc học và mô hình hóa sự tương quan giữa các đặc trưng trong miền thị giác và miền ngôn ngữ. Mô hình SigLIP được coi là một biến thể cải tiến của CLIP, trong đó hàm mất mát tương phản (Contrastive loss) dựa trên hàm softmax được thay thế bằng hàm sigmoid. Việc sử dụng hàm sigmoid trong quá trình huấn luyện giúp mô hình mSigLIP không chỉ làm việc tốt trên các cơ sở dữ liệu có mức độ phân tán cao mà còn cải thiện đáng kể hiệu quả tính toán. Một số nghiên cứu \cite{cao2024empirical,zhai2023sigmoid,cvpr23crossmodal} đã khai thác được sức mạnh của các mô hình trên để giải quyết bài toán tìm kiếm người dựa trên câu mô tả và đã đạt được các kết quả đáng ghi nhận. 
+
+Tuy nhiên, việc áp dụng các mô hình này với các ngôn ngữ có tài nguyên hạn chế, ví dụ như tiếng Việt, vẫn chưa thực sự đạt kết quả như mong muốn. Một số thách thức chính của bài toán tìm kiếm người trong trường hợp này có thể kể đến như sau. Thứ nhất, do thiếu dữ liệu huấn luyện, các mô hình không được học một cách đầy đủ về sự tương quan về mặt ngữ nghĩa giữa các cặp ảnh-câu mô tả.  Thứ hai, do sự khác biệt về cấu trúc ngữ pháp cũng như phong cách diễn đạt giữa các ngôn ngữ. Những thách thức này dẫn đến việc các mô hình đã được huấn luyện trên ngôn ngữ tiếng Anh chưa đạt được hiệu quả đối với các ngôn ngữ khác, đặc biệt là với các ngôn ngữ có tài nguyên hạn chế. Nhằm khắc phục những khó khăn đó, nghiên cứu này đề xuất sử dụng mô hình đa ngôn ngữ mSigLIP (multilingual SigLIP) trong giải quyết bài toán tìm kiếm người dựa trên câu mô tả tiếng Việt. Mô hình mSigLIP được mở rộng từ  SigLIP \cite{zhai2023sigmoid} và được huấn luyện trên cơ sở dữ liệu WebLI \cite{chen2022pali} với 100 ngôn ngữ khác nhau.    
+
+Bên cạnh đó, trong các hệ thống tìm kiếm với quy mô lớn, tốc độ truy vấn là một yếu tố quan trọng nhằm đảm bảo khả năng đáp ứng thời gian thực của hệ thống. Với các phương pháp tìm kiếm tuyến tính truyền thống, quá trình đối sánh các cặp đặc trưng được thực hiện một cách tuần tự, dẫn đến hiệu năng tính toán của hệ thống giảm khi kích thước của cơ sở dữ liệu tăng. FAISS (Facebook AI Similarity Search) \cite{douze2025faiss} là một thư viện có mã nguồn mở, được sử dụng trong các bài toán tìm kiếm vector với tốc độ cao và phân cụm các vector có số chiều lớn. FAISS cung cấp khả năng lập chỉ mục và tìm kiếm vector hiệu quả trên CPU, đồng thời hỗ trợ tăng tốc bằng GPU trong các hệ thống quy mô lớn, cho phép xử lý hàng triệu vector trong thời gian thực. Trên cơ sở những phân tích trên, nhóm tác giả tập trung phát triển hệ thống tìm kiếm người dựa trên câu mô tả tiếng Việt, hệ thống này được xây dựng dựa trên mô-đun tìm kiếm người TBPS-mSigLIP \cite{tran2025multilingual} và tích hợp thư viện mã nguồn mở FAISS nhằm nâng cao tốc độ truy vấn mà vẫn đảm bảo độ chính xác cao.
+
+Bài báo đề xuất một khung hệ thống tìm kiếm người theo mô tả văn bản đa ngôn ngữ trong môi trường giám sát. Hệ thống tích hợp mô hình vision–language tiền huấn luyện để biểu diễn đặc trưng ảnh và văn bản trong không gian chung, đồng thời triển khai cơ chế truy vấn vector sử dụng FAISS nhằm tăng tốc độ tìm kiếm ở quy mô lớn. Kết quả thực nghiệm trên bộ dữ liệu 3000VnPersonSearch cho thấy hệ thống đạt độ chính xác ổn định và cải thiện đáng kể thời gian truy vấn so với phương pháp MySQL JSON truyền thống, chứng minh tính khả thi cho các ứng dụng thực tế.
+
+\section{Một số nghiên cứu liên quan}
+\subsection{Bài toán tìm kiếm người dựa trên câu mô tả (Text-Based Person Search)}
+
+Bài toán tìm kiếm người dựa trên mô tả ngôn ngữ tự nhiên (Text-Based Person Search – TBPS) được Li và cộng sự giới thiệu năm 2017\cite{Li_2017_CVPR}, mở ra hướng nghiên cứu truy xuất ảnh người bằng văn bản mô tả trong môi trường giám sát. Các phương pháp đầu tiên thường dựa trên mô hình hai nhánh: nhánh xử lý ảnh và nhánh xử lý văn bản \cite{jing2020pose, wang2020vitaa, jing2020cross,suo2022simple, zhou2023text, niu2023improving}, trong đó nhánh ảnh sử dụng các mạng tích chập như VGG hoặc ResNet để trích xuất đặc trưng thị giác, còn nhánh văn bản sử dụng LSTM, Bi-LSTM hoặc các mô hình biểu diễn từ như Word2Vec hay BERT để ánh xạ mô tả thành vector. Các tiếp cận này chú trọng xây dựng không gian biểu diễn chung giữa ảnh và văn bản, đồng thời đề xuất nhiều cơ chế căn chỉnh ở cả mức toàn cục và mức cục bộ nhằm khớp các phần quan trọng trong mô tả và vùng ảnh tương ứng. Tuy tạo nền tảng ban đầu, các mô hình này gặp hạn chế khi xử lý mô tả phức tạp, câu văn tự nhiên không theo cấu trúc, hoặc dữ liệu thu được từ camera có chất lượng thấp.
+
+Một nhánh nghiên cứu khác phát triển từ quan sát rằng mô tả TBPS thực chất mang cấu trúc gần giống một tập thuộc tính thị giác như màu sắc, trang phục, phụ kiện hay dáng người. Nổi bật trong hướng tiếp cận này là nghiên cứu Attribute-aided Matching của Aggarwal \cite{aggarwal2020text}, trong đó mô hình được thiết kế để trích chọn các thuộc tính từ ảnh và văn bản và sử dụng thuộc tính này để dẫn hướng sự chú ý vào các vùng ảnh liên quan. Phương pháp này giúp mô hình tập trung vào các chi tiết quan trọng và tăng cường khả năng phân biệt giữa các đối tượng có ngoại hình tương đồng. Tuy nhiên, hướng tiếp cận dựa trên thuộc tính vẫn phụ thuộc vào bộ phân loại thuộc tính huấn luyện riêng và thường suy giảm hiệu quả trong các tình huống ảnh bị mờ, thiếu sáng, hoặc khi mô tả văn bản mang tính tự nhiên thay vì dạng liệt kê thuộc tính. Điều này đặc biệt đúng trong tiếng Việt, nơi các mô tả trang phục và màu sắc rất đa dạng về cách diễn đạt.
+
+
+Một thách thức lớn của TBPS là số lượng dữ liệu ảnh–văn bản gán nhãn thường rất hạn chế. Để giải quyết vấn đề này, nhiều nghiên cứu đã khai thác học tương phản đa phương thức nhằm mở rộng hiệu quả huấn luyện mà không phụ thuộc quá nhiều vào kích thước bộ dữ liệu. Công trình CM-MoCo của Xiao Han \cite{han2021text} là một ví dụ tiêu biểu, trong đó phương pháp sử dụng một bộ nhớ động dạng hàng đợi để duy trì số lượng lớn cặp mẫu không phù hợp, tạo ranh giới phân tách tốt hơn trong không gian vector đặc trưng và khắc phục tình trạng quá khớp khi dữ liệu ít. Nhờ đó, mô hình có thể học được ánh xạ ngữ nghĩa ổn định giữa ảnh và mô tả ngay cả trong điều kiện tài nguyên hạn chế. Tuy vậy, hướng tiếp cận này vẫn chịu ảnh hưởng từ hiện tượng thay đổi ngữ nghĩa khi sử dụng các mô hình ngôn ngữ đã được huấn luyện trước lớn không được điều chỉnh đúng cách cho miền dữ liệu của TBPS. Điều này càng rõ rệt trong tiếng Việt, nơi cách mô tả trang phục và dáng người mang tính giàu ngữ cảnh và ít chuẩn hóa hơn nhiều so với tiếng Anh.
+
+\subsection{Hệ thống quản lý và phân tích dữ liệu Video tại Việt Nam}
+Trong những năm gần đây, nhiều nền tảng quản lý và phân tích dữ liệu video giám sát (Video Management System)  đã được triển khai rộng rãi tại Việt Nam, phục vụ các nhu cầu về giám sát giao thông, an ninh đô thị và vận hành hạ tầng. Một trong những hệ thống tiêu biểu là View100 V8  của Biển Bạc \cite{bienbac2022}, quản lý một số lượng lớn các camera và có khả năng tích hợp các mô-đun phân tích hình ảnh (IVS/VA) từ camera hoặc máy chủ AI. Hệ thống tập trung mạnh vào khả năng hiển thị, quản lý và ghi hình ổn định trong môi trường giám sát thực tế. Bên cạnh đó, Mystic Server–Client của LOVAD \cite{lovad2025mystic} đại diện cho thế hệ VMS mới phát triển theo mô hình server–client dành riêng cho nhu cầu thực tiễn tại Việt Nam. Mystic hỗ trợ hiển thị và giám sát thời gian thực quy mô lớn, xử lý đa nhiệm trên GPU, tích hợp nhiều chức năng phân tích hành vi, nhận dạng biển số và giám sát giao thông thông minh, phù hợp với môi trường vận hành đô thị. Ngoài các hệ thống VMS truyền thống, một số giải pháp chuyên sâu như Green Smart AI \cite{greensmart2025} tập trung vào theo dõi đa camera và tái định danh đối tượng (Re-ID), cho phép phát hiện và nhận dạng hành vi khả nghi trong khu vực giám sát. Giải pháp này hỗ trợ mạnh trong các tình huống điều tra, truy vết và phân tích hành vi bất thường tại các không gian rộng như sân bay, trung tâm thương mại hay hệ thống camera đô thị. Mặc dù các hệ thống trên đều hỗ trợ tốt giám sát trực tiếp, hiển thị đa camera và phân tích hành vi thông minh, nhưng khả năng tìm kiếm người dựa trên mô tả tự nhiên tiếng Việt vẫn chưa được tích hợp. Quá tìm kiếm vẫn phụ thuộc quan sát thủ công hoặc dựa trên thuộc tính rời rạc (giới tính, độ tuổi, trang phục, phụ kiện), vốn không đáp ứng được nhu cầu truy vấn nhanh trong môi trường với lượng dữ liệu rất lớn.
+
+\section{Tích hợp mô-đun tìm kiếm người trong hệ thống quản lý dữ liệu camera giám sát}
+\subsection{Tổng quan hệ thống quản lý dữ liệu giám sát}
+Mục tiêu chính của nghiên cứu này đó là xây dựng hệ thống quản lý dữ liệu video giám sát và tích hợp mô-đun tìm kiếm người. Toàn bộ hệ thống được tổ chức theo mô hình bốn mô-đun rõ rệt. Hình \ref{fig:overall-system} là sơ đồ khối tổng quan của hệ thống quản lý dữ liệu video giám sát.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\linewidth]{Images/các tầng hệ thống.png}
+    \caption{Sơ đồ khối chung của hệ thống}
+    \label{fig:overall-system}
+\end{figure}
+
+\textbf{Mô-đun thu thập dữ liệu từ camera} : Tầng thu thập dữ liệu bao gồm các camera IP triển khai tại nhiều vị trí trong đô thị, truyền luồng video liên tục về hệ thống thông qua các giao thức mạng. Nhiệm vụ chính của tầng này là đảm bảo ổn định và liên tục của nguồn dữ liệu đầu vào trước khi chuyển tiếp đến máy chủ thông qua Streaming Server, các mô-đun AI phát hiện người/phương tiện, theo dõi, nhận dạng để gửi thông tin về tầng sau. Thành phần này quản lý thống nhất các luồng video và cung cấp dữ liệu cho nhiều mô-đun phân tích xử lý sau đấy.
+
+
+\textbf{Mô-đun xử lý và phân tích dữ liệu}: Mô-đun xử lý và phân tích dữ liệu đóng vai trò trung tâm trong việc xử lý luồng video đầu vào và chuẩn bị thông tin đặc trưng phục vụ truy vấn tìm kiếm. Chi tiết về cơ chế biểu diễn đa phương thức và lập chỉ mục vector sẽ được trình bày trong phần \ref{tichhop}. 
+
+\textbf{Mô-đun quản lý dữ liệu và API Backend}: Được triển khai bằng FastAPI, chịu trách nhiệm quản lý dữ liệu nhận dạng, thông tin camera/người dùng và cung cấp API phục vụ truy vấn trực tuyến. Hệ thống thực hiện điều phối toàn bộ cấu trúc tìm kiếm và trả kết quả về giao diện.
+
+
+\textbf{Mô-đun giao diện người dùng (Client)}: Xây dựng bằng ReactJS theo mô hình SPA, tầng Client cung cấp các chức năng giám sát tìm kiếm và quản trị như xem trực tiếp, xem lại, theo dõi bản đồ, thống kê và quản lý thiết bị, cung cấp giao diện nhập truy vấn tiếng Việt và hiển thị danh sách đối tượng phù hợp theo thứ tự xếp hạng.
+
+Trong phạm vi bài báo này, chúng tôi tập trung vào mô-đun truy vấn tìm kiếm trực tuyến và cơ chế truy xuất hiệu năng cao ở tầng backend, trong khi các bước phát hiện và theo dõi được kế thừa từ hệ thống VMS sẵn có.
+
+\subsection{Tăng cường dữ liệu văn bản cho bài toán thị giác - ngôn ngữ}
+Trong các bài toán học đa phương thức, đặc biệt là các mô hình thị giác – ngôn ngữ (vision–language), chất lượng và độ đa dạng của dữ liệu văn bản đóng vai trò quan trọng trong việc học biểu diễn ngữ nghĩa. Tuy nhiên, đối với các ngôn ngữ có tài nguyên hạn chế như tiếng Việt, số lượng cặp dữ liệu ảnh – mô tả thường không đủ lớn, dẫn đến hiện tượng quá khớp và giảm khả năng tổng quát hóa của mô hình.
+Để khắc phục vấn đề này, nhiều nghiên cứu đã đề xuất các kỹ thuật tăng cường dữ liệu văn bản nhằm mở rộng không gian biểu diễn ngôn ngữ mà không cần thu thập thêm dữ liệu gán nhãn. Các phương pháp phổ biến bao gồm thay thế từ đồng nghĩa, diễn đạt lại câu, xóa hoặc chèn ngẫu nhiên các từ, và dịch vòng ( back translation). Những kỹ thuật này giúp tạo ra các biến thể ngữ nghĩa tương đương của câu mô tả ban đầu, từ đó giúp mô hình học được các biểu diễn ngôn ngữ linh hoạt và bền vững hơn.
+Trong bối cảnh các mô hình tiền huấn luyện thị giác – ngôn ngữ như CLIP hay SigLIP, một số nghiên cứu gần đây cũng khai thác tăng cường dữ liệu như một dạng tự giám sát (self-supervision), trong đó các phiên bản biến đổi của cùng một câu mô tả được sử dụng để tăng cường ràng buộc ngữ nghĩa giữa các biểu diễn. Tuy nhiên, việc áp dụng các kỹ thuật này cho tiếng Việt vẫn còn hạn chế do đặc thù ngôn ngữ và thiếu các công cụ xử lý ngôn ngữ tự nhiên chất lượng cao.
+Trong nghiên cứu này, chúng tôi khai thác các kỹ thuật tăng cường dữ liệu văn bản nhằm cải thiện khả năng học biểu diễn ngữ nghĩa của mô hình trong điều kiện dữ liệu tiếng Việt còn hạn chế, đồng thời tăng cường tính đa dạng của các câu truy vấn đầu vào.
+\subsection{Mô hình Tìm kiếm người dựa trên ngôn ngữ Tiếng Việt tự nhiên TBPS-mSigLIP}
+\label{subsec:tbps-msiglip}
+
+Mô hình TBPS-mSigLIP \cite{tran2025multilingual} được xây dựng trên kiến trúc hai nhánh mã hóa (dual-encoder), trong đó nhánh thị giác và nhánh ngôn ngữ cùng ánh xạ dữ liệu đầu vào vào một không gian biểu diễn chung có số chiều $d = 768$. Xương sống (backbone) của mô hình là mSigLIP (multilingual SigLIP) \cite{zhai2023sigmoid}, một mô hình thị giác–ngôn ngữ đa ngôn ngữ được tiền huấn luyện trên tập dữ liệu WebLI \cite{chen2022pali} với hơn 100 ngôn ngữ, bao gồm tiếng Việt. Khác với CLIP \cite{radford2021learning} sử dụng hàm softmax trong huấn luyện tương phản, mSigLIP sử dụng hàm sigmoid, xử lý mỗi cặp ảnh–văn bản như một bài toán phân loại nhị phân độc lập, giúp giảm đáng kể yêu cầu bộ nhớ và tăng tính ổn định trong quá trình huấn luyện.
+
+\subsubsection{Kiến trúc mã hóa hai nhánh}
+Nhánh mã hóa ảnh sử dụng kiến trúc Vision Transformer (ViT-B/16) với kích thước ảnh đầu vào $256 \times 256$ và kích thước miếng (patch) $16 \times 16$. Mỗi ảnh được chia thành 256 miếng, từng miếng được chiếu tuyến tính thành vector và xử lý qua các lớp Transformer. Đặc trưng toàn cục của ảnh được trích xuất từ token đặc biệt [CLS] và chiếu vào không gian chung: $\mathbf{v} = \text{ViT}(I) \in \mathbb{R}^{768}$. Nhánh mã hóa văn bản sử dụng kiến trúc Transformer đa ngôn ngữ với bộ từ vựng gồm 250.000 từ và độ dài tối đa 64 token. Đặc trưng văn bản được trích xuất từ token [EOS]: $\mathbf{u} = \text{TextEncoder}(T) \in \mathbb{R}^{768}$.
+
+Cả hai vector đặc trưng đều được chuẩn hóa $L_2$ trước khi tính độ tương đồng. Độ tương đồng giữa ảnh và văn bản được tính theo phương pháp SigLIP:
+\begin{equation}
+    s(I, T) = \sigma\bigl(\gamma \cdot \mathbf{v}^\top \mathbf{u} + c\bigr)
+\label{eq:siglip-sim}
+\end{equation}
+trong đó $\sigma$ là hàm sigmoid, $\gamma$ là hệ số tỉ lệ (logit scale) và $c$ là hệ số dịch chuyển (logit bias) được học trong quá trình huấn luyện.
+
+\subsubsection{Tinh chỉnh tham số hiệu quả với LoRA}
+Trong điều kiện dữ liệu tiếng Việt hạn chế, việc tinh chỉnh toàn bộ tham số (full fine-tuning) của mô hình tiền huấn luyện dễ dẫn đến quá khớp. Để khắc phục, chúng tôi áp dụng kỹ thuật LoRA (Low-Rank Adaptation) \cite{hu2022lora}, trong đó chỉ huấn luyện các ma trận hạng thấp được chèn vào các lớp attention. Cụ thể, ma trận trọng số $W$ của mỗi lớp được bổ sung thành phần cập nhật:
+\begin{equation}
+    W' = W + \Delta W = W + BA
+\label{eq:lora}
+\end{equation}
+trong đó $B \in \mathbb{R}^{d \times r}$, $A \in \mathbb{R}^{r \times d}$ là các ma trận hạng thấp với $r = 32 \ll d = 768$. LoRA được áp dụng cho bốn phép chiếu $W_q$, $W_k$, $W_v$, $W_o$ trong cơ chế self-attention của cả hai nhánh mã hóa. Nhờ đó, số lượng tham số cần huấn luyện chỉ chiếm khoảng 1,57\% tổng số tham số ($\sim$5,9 triệu / 376 triệu), đồng thời cho phép tăng kích thước batch lên gấp 3 lần so với tinh chỉnh toàn bộ trong cùng điều kiện bộ nhớ GPU. Ngoài việc tiết kiệm tài nguyên, LoRA còn đóng vai trò ổn định quá trình tối ưu hóa khi kết hợp với các hàm mất mát có gradient lớn như Circle Loss, do các cập nhật bị ràng buộc trong không gian con hạng thấp.
+
+\subsubsection{Hàm mất mát đa mục tiêu}
+Hàm mất mát tổng hợp của mô hình bao gồm bốn thành phần cơ sở kế thừa từ TBPS-mSigLIP và một thành phần bổ trợ Cross-modal Circle Loss:
+\begin{equation}
+    \mathcal{L} = \mathcal{L}_{\text{N-ITC}} + \mathcal{L}_{\text{MVS}} + \alpha_3 \mathcal{L}_{\text{C-ITC}} + \alpha_4 \mathcal{L}_{\text{SS}} + \alpha_5(e) \cdot \mathcal{L}_{\text{Circle}}
+\label{eq:total-loss}
+\end{equation}
+trong đó $\alpha_3 = 0{,}1$, $\alpha_4 = 0{,}4$ và $\alpha_5(e)$ là trọng số của Circle Loss theo lịch trình curriculum learning.
+
+\textbf{Hàm N-ITC} (Noise-robust Image-Text Contrastive) là thành phần chính, thực hiện căn chỉnh toàn cục giữa ảnh và văn bản sử dụng hàm mất mát dựa trên sigmoid:
+\begin{equation}
+    \mathcal{L}_{\text{N-ITC}} = -\frac{1}{N^2} \sum_{i=1}^{N} \sum_{j=1}^{N} \log \sigma\bigl(z_{ij} \cdot (\gamma \cdot \mathbf{v}_i^\top \mathbf{u}_j + c)\bigr)
+\label{eq:nitc}
+\end{equation}
+trong đó $z_{ij} \in \{-1, +1\}$ là nhãn mềm (soft target) được xây dựng từ nhãn định danh người (person ID) và $N$ là kích thước batch.
+
+\textbf{Hàm MVS} (Multi-View Supervision) tăng cường tính bền vững của quá trình căn chỉnh bằng cách sử dụng nhiều phiên bản tăng cường (augmented view) của cùng một ảnh. Cụ thể, với mỗi ảnh gốc $I$, một phiên bản tăng cường $I'$ được tạo ra thông qua các phép biến đổi ngẫu nhiên (xoay, cắt, thay đổi màu sắc). Hàm N-ITC được tính trên cả ảnh gốc và phiên bản tăng cường, sau đó lấy trung bình:
+\begin{equation}
+    \mathcal{L}_{\text{MVS}} = \frac{1}{2}\Big(\mathcal{L}_{\text{N-ITC}}(\mathbf{v}, \mathbf{u}) + \mathcal{L}_{\text{N-ITC}}(\mathbf{v}', \mathbf{u})\Big)
+\label{eq:mvs}
+\end{equation}
+trong đó $\mathbf{v}' = \text{ViT}(I')$ là đặc trưng của ảnh tăng cường. Nhờ đó, mô hình học được sự căn chỉnh ổn định trên nhiều biến thể thị giác của cùng một đối tượng, giảm thiểu hiện tượng quá khớp vào các đặc trưng cụ thể của ảnh gốc.
+
+\textbf{Hàm C-ITC} (Cyclic Image-Text Contrastive) đóng vai trò chuẩn hóa (regularization), đảm bảo tính nhất quán cấu trúc của không gian biểu diễn thông qua hai thành phần. Thành phần nội phương thức (inmodal) ràng buộc rằng cấu trúc tương đồng trong miền ảnh phải phản ánh cấu trúc trong miền văn bản:
+\begin{equation}
+    \mathcal{L}_{C\text{-}ITC}^{I} = \frac{1}{N^2} \sum_{i=1}^{N} \sum_{j=1}^{N} \big(s(\mathbf{v}_i, \mathbf{v}_j) - s(\mathbf{u}_i, \mathbf{u}_j)\big)^2
+\label{eq:citc-inmodal}
+\end{equation}
+Thành phần liên phương thức (intermodal) ràng buộc tính đối xứng của phép so sánh ảnh–văn bản:
+\begin{equation}
+    \mathcal{L}_{C\text{-}ITC}^{C} = \frac{1}{N^2} \sum_{i=1}^{N} \sum_{j=1}^{N} \big(s(\mathbf{v}_i, \mathbf{u}_j) - s(\mathbf{v}_j, \mathbf{u}_i)\big)^2
+\label{eq:citc-intermodal}
+\end{equation}
+trong đó $s(\cdot, \cdot)$ là độ tương đồng cosine. Hàm C-ITC tổng hợp được tính:
+\begin{equation}
+    \mathcal{L}_{\text{C-ITC}} = \lambda_I \mathcal{L}_{C\text{-}ITC}^{I} + \lambda_C \mathcal{L}_{C\text{-}ITC}^{C}
+\label{eq:citc}
+\end{equation}
+với $\lambda_I = \lambda_C = 0{,}25$.
+
+\textbf{Hàm SS} (Self-Supervision) sử dụng phương pháp SimCLR \cite{chen2020simple} để thực hiện học tự giám sát trên nhánh mã hóa ảnh. Với mỗi ảnh trong batch, hai phiên bản tăng cường $I_a$ và $I_b$ được tạo ra, sau đó đưa qua một đầu chiếu MLP (projection head) để thu được các biểu diễn $\mathbf{h}_a$ và $\mathbf{h}_b$. Hàm mất mát khuyến khích hai phiên bản của cùng một ảnh có biểu diễn gần nhau, đồng thời đẩy xa các ảnh khác nhau:
+\begin{equation}
+    \mathcal{L}_{\text{SS}} = -\frac{1}{2N}\sum_{i=1}^{2N}\log\frac{\exp\!\big(\text{sim}(\mathbf{h}_i, \mathbf{h}_{i^+}) / \tau_s\big)}{\displaystyle\sum_{\substack{k=1 \\ k \neq i}}^{2N}\exp\!\big(\text{sim}(\mathbf{h}_i, \mathbf{h}_k) / \tau_s\big)}
+\label{eq:simclr}
+\end{equation}
+trong đó $i^+$ là chỉ số của phiên bản tăng cường tương ứng với mẫu $i$ và $\tau_s = 0{,}1$ là nhiệt độ. Hàm SS giúp nhánh mã hóa ảnh học được biểu diễn bất biến với các phép biến đổi hình ảnh, tăng cường khả năng tổng quát hóa.
+
+\textbf{Hàm Cross-modal Circle Loss.} Mặc dù các thành phần cơ sở đảm bảo sự căn chỉnh toàn cục, hàm N-ITC dựa trên sigmoid tạo ra gradient tương đối đồng đều giữa các mẫu dễ và khó, dẫn đến khả năng phân biệt hạn chế đối với các đối tượng có ngoại hình tương đồng. Để khắc phục, chúng tôi bổ sung hàm Cross-modal Circle Loss \cite{sun2020circle} với cơ chế trọng số thích ứng, tự động khuếch đại gradient cho các mẫu khó (hard negatives):
+\begin{equation}
+    \mathcal{L}_{\text{Circle}} = \log \Bigg[ 1 + \sum_{j \in \mathcal{N}} e^{\gamma_c \alpha_n^j (s_n^j - m)} \cdot \sum_{i \in \mathcal{P}} e^{-\gamma_c \alpha_p^i (s_p^i - (1-m))} \Bigg]
+\label{eq:circle}
+\end{equation}
+trong đó $\gamma_c = 128$ là hệ số khuếch đại, $m = 0{,}25$ là biên phân tách (margin), $\mathcal{P}$ và $\mathcal{N}$ lần lượt là tập các cặp dương và cặp âm. Các trọng số thích ứng $\alpha_p^i = [1 + m - s_p^i]_+$ và $\alpha_n^j = [s_n^j + m]_+$ (với $[\cdot]_+$ là hàm ReLU) đảm bảo rằng các cặp có độ tương đồng vi phạm biên sẽ nhận được gradient mạnh hơn, trong khi các cặp đã được phân tách tốt sẽ ít bị ảnh hưởng. Kỹ thuật MVS cũng được áp dụng cho Circle Loss, trong đó hàm mất mát được tính trên cả ảnh gốc và phiên bản tăng cường rồi lấy trung bình.
+
+\subsubsection{Chiến lược Curriculum Learning cho Circle Loss}
+Do Circle Loss tập trung vào các mẫu khó, việc kích hoạt sớm khi mô hình chưa hội tụ được căn chỉnh cơ bản có thể gây mất ổn định. Chúng tôi áp dụng chiến lược curriculum learning với lịch trình ba giai đoạn cho trọng số $\alpha_5(e)$:
+\begin{equation}
+    \alpha_5(e) =
+    \begin{cases}
+        0 & \text{nếu } e \leq T_w \\[4pt]
+        \alpha_{\max} \cdot \dfrac{e - T_w}{T_r - T_w} & \text{nếu } T_w < e \leq T_r \\[4pt]
+        \alpha_{\max} & \text{nếu } e > T_r
+    \end{cases}
+\label{eq:curriculum}
+\end{equation}
+trong đó $e$ là epoch hiện tại, $T_w = 5$ là giai đoạn khởi động (warmup), $T_r = 20$ là thời điểm kết thúc giai đoạn tăng tuyến tính, và $\alpha_{\max} = 0{,}1$. Trong 5 epoch đầu, chỉ các thành phần cơ sở (N-ITC, MVS, C-ITC, SS) hoạt động, cho phép mô hình thiết lập căn chỉnh toàn cục ổn định. Từ epoch 6 đến 20, Circle Loss được đưa vào với trọng số tăng dần, bổ sung ràng buộc phân biệt mẫu khó một cách mượt mà mà không gây sốc cho quá trình tối ưu. Từ epoch 21 đến khi kết thúc huấn luyện (60 epoch), trọng số giữ ổn định tại $\alpha_{\max} = 0{,}1$.
+\subsection{Tích hợp mô hình TBPS-mSigLIP và kiến trúc FAISS vào hệ thống}
+\label{tichhop}
+Việc tích hợp mô hình TBPS-mSigLIP vào hệ thống quản lý và phân tích video đòi hỏi không chỉ điều chỉnh thuật toán mà còn tái cấu trúc toàn bộ cấu trúc để đáp ứng yêu cầu truy vấn nhanh và chính xác trong môi trường thực tế. Hình \ref{fig:personsearch-system} thể hiện kiến trúc xử lý truy vấn sử dụng TBPS-mSigLIP và FAISS với hai khối công việc chính:
+
+\subsubsection{Khối chuẩn hóa và xây dựng bộ lưu trữ chỉ mục}
+Sau khi hệ thống camera thu thập hình ảnh người từ các luồng video giám sát, mô-đun phân tích tiến hành phát hiện và cắt vùng ảnh chứa đối tượng người trong từng khung hình. Các ảnh này được đưa vào mô hình TBPS-mSigLIP để trích xuất vector đặc trưng $f_i \in \mathbb{R}^{768}$, biểu diễn thông tin ngữ nghĩa đa phương thức của người trong một không gian chung giữa ảnh và văn bản. Toàn bộ vector đặc trưng được chuyển sang dạng số thực float32 và chuẩn hóa L2 theo công thức (\ref{L2}):
+\begin{equation}
+ \hat{f}_i = \frac{f_i}{\lVert f_i \rVert_2}, 
+\label{L2}   
+\end{equation}
+nhằm đảm bảo tất cả vector có độ dài bằng 1. Các vector đặc trưng sau chuẩn hóa được gom thành tập dữ liệu và nạp vào chỉ mục FAISS IndexFlatIP để phục vụ tìm kiếm. IndexFlatIP lưu trữ toàn bộ vector dưới dạng mảng liên tục trong bộ nhớ. Mặc dù có độ phức tạp tuyến tính theo số lượng vector, IndexFlatIP đạt hiệu năng cao nhờ các tối ưu mức thấp như tận dụng SIMD và cache CPU, đồng thời đảm bảo độ chính xác tuyệt đối. Chỉ mục FAISS cùng với tệp ánh xạ giữa chỉ số nội bộ của FAISS và khóa chính ID người trong cơ sở dữ liệu được lưu xuống ổ đĩa để tái sử dụng, giúp hệ thống có thể truy vấn nhanh và ổn định ngay khi khởi động mà không cần xây dựng lại chỉ mục.
+
+\subsubsection{Khối truy vấn và so khớp chỉ mục}
+Khi người dùng nhập câu mô tả tự nhiên (ví dụ: “bé gái mặc váy màu trắng, đi giày, tóc dài, đeo túi xách”), mô hình TBPS-mSigLIP mã hóa văn bản thành vector đặc trưng truy vấn $f_q \in \mathbb{R}^{768}$ nằm trong cùng không gian đa phương thức với vector đặc trưng ảnh người. Vector đặc trưng này tiếp tục được chuẩn hóa L2 nhằm đảm bảo tương thích với chỉ mục FAISS đã xây dựng trước đó. Vector truy vấn \(\hat{f_q}\) được đưa vào FAISS IndexFlatIP và thực hiện tìm kiếm chính xác bằng cách tính tích vô hướng giữa vector truy vấn \(\hat{f_q}\) và toàn bộ vector đặc trưng trong tập dữ liệu theo công thức (\ref{cosine_sim}):
+\begin{equation} 
+    \mathrm{cosine\_similarity}(f_i, f_q)
+=
+\frac{f_i . f_q}{\lVert f_i \rVert \, \lVert f_q \rVert\ }{,\quad i = 1, \ldots, N}
+\label{cosine_sim}
+\end{equation}
+
+Do các vector đặc trưng này đều đã chuẩn hóa, độ đo tương tự cosine phản ánh trực tiếp mức độ tương đồng ngữ nghĩa giữa mô tả văn bản và ảnh người. FAISS trả về danh sách Top-K chỉ số nội bộ có giá trị \(s_i\) lớn nhất. Các chỉ số này sau đó được ánh xạ sang ID người thông qua tệp ánh xạ, cho phép backend truy xuất đầy đủ thông tin liên quan trong cơ sở dữ liệu (ảnh, đặc trưng, camera, vị trí, thời gian,…). Nhờ sử dụng chỉ mục FAISS, toàn bộ quá trình so khớp được thực hiện với độ trễ rất thấp, đáp ứng yêu cầu tìm kiếm thời gian thực trong hệ thống giám sát.
+
+Sau khi backend hoàn thành truy vấn, kết quả sẽ được trả về giao diện người dùng cuối với  danh sách tìm kiếm được sắp xếp theo thứ hạng, được thể hiện như ở Hình \ref{fig:interface}. Các thứ hạng này được sắp xếp theo sự giảm dần của sự tương đồng giữa cặp ảnh và câu mô tả. Sự phù hợp hay không phù hợp được đánh giá bởi người dùng.
+
+
+\begin{figure}[htp!]
+    \centering
+    \includegraphics[width=1\linewidth]{Images/example.png}
+    \caption{Giao diện tìm kiếm người theo mô tả}
+    \label{fig:interface}
+\end{figure}
+\section{Kết quả thử nghiệm}
+Phần này trình bày kết quả đánh giá toàn diện mô hình TBPS-mSigLIP và cơ chế tìm kiếm dựa trên FAISS sau khi được tích hợp vào hệ thống quản lý và phân tích dữ liệu camera giám sát. Việc đánh giá bao gồm (i) thực nghiệm ngoại tuyến (offline) trên  3000VnPersonSearch; (ii) đánh giá hiệu năng truy vấn và độ chính xác của hệ thống dưới nhiều cấu hình khác nhau; và (iii) kiểm thử trực tuyến khi cho người dùng trải nghiệm web. Các thực nghiệm cho phép đánh giá đồng thời hiệu quả của mô hình học sâu TBPS-mSigLIP, chất lượng biểu diễn đa phương thức (multi-modal embedding), và hiệu năng truy xuất vector tốc độ cao của FAISS trong môi trường thực.
+\subsection{Triển khai hệ thống}
+Hệ thống được triển khai thử nghiệm trên một máy chủ chạy hệ điều hành Ubuntu 24.04.2 LTS (GNU/Linux 6.14.0-33-generic x86\_64). Hệ điều hành Linux giúp tận dụng tốt tài nguyên phần cứng, dễ dàng quản lý dịch vụ nền và hỗ trợ tốt cho các thư viện học sâu như PyTorch, FAISS.
+
+Ngôn ngữ lập trình sử dụng cho phía backend và các mô-đun xử lý AI là Python 3.13.7. Phiên bản này hỗ trợ đầy đủ các thư viện hiện đại như FastAPI và Uvicorn, SQLAlchemy, PyTorch, transformers và cả FAISS-CPU. Hệ quản trị cơ sở dữ liệu được sử dụng là MySQL. MySQL phù hợp với mô hình dữ liệu quan hệ của hệ thống, hỗ trợ tốt các yêu cầu về chức năng của dự án, được sử dụng rộng rãi, dễ triển khai trên môi trường Linux. Ở phía Frontend, hệ thống thử nghiệm một giao diện web quản lý và tra cứu được xây dựng bằng ReactJS, kết hợp với Ant Design để dựng các thành phần giao diện bao gồm form tìm kiếm, bảng kết quả, thẻ hiển thị ảnh và mô tả. Frontend chạy độc lập và giao tiếp với backend thông qua các REST API trên nền HTTP.
+
+\subsection{Đánh giá hiệu quả của mô đun tìm kiếm người}
+\subsubsection{Cơ sở dữ liệu}
+Các thử nghiệm được thực hiện trên cơ sở dữ liệu  3000VnPersonSearch \cite{pham2022towards}.  3000VnPersonSearch là cơ sở dữ liệu được xây dựng cho bài toán tìm kiếm người dựa trên câu truy vấn ngôn ngữ tiếng Việt. CSDL này bao gồm 6.302 ảnh của 3.000 người, mỗi ảnh được mô tả bởi hai câu. Tổng cộng, CSDL có 12.604 câu mô tả cho toàn bộ ảnh. Mỗi câu mô tả bao gồm từ 3-8 thuộc tính thuộc các nhóm như trang phục, màu sắc, phụ kiện, độ tuổi, dáng người, ngữ cảnh.  Cơ sở dữ liệu 3000VnPersonSearch được chia thành hai tập huấn luyện và tập kiểm tra. Trong đó, tập huấn luyện bao gồm các cặp ảnh - câu của 2000 người (4.302 ảnh, 8.604 câu mô tả) và tập kiểm tra bao gồm cặp ảnh - câu của 1000 người (2.000 người và 4.000 câu mô tả). 
+
+\subsubsection{Độ đo đánh giá}
+Kết quả trả về của bài toán TBPS là danh sách đã được xếp hạng của các hình ảnh trong cơ sở dữ liệu tìm kiếm dựa trên độ tương đồng với câu truy vấn đầu vào. Những ảnh được đánh giá là phù hợp nhất với câu truy vấn sẽ được xếp hạng ở những thứ hạng thấp. Độ chính xác tại thứ hạng thứ \textit{k} được sử dụng để đánh giá hiệu quả của một phương pháp trong bài toán tìm kiếm. Độ đo này được định nghĩa bằng tỷ lệ giữa các câu truy vấn  tìm thấy kết quả phù hợp trong \textit{k} thứ hạng cao nhất trên tổng số các câu truy vấn đầu vào.  Thông thường, các giá trị độ chính xác tại một số thứ hạng quan trọng (R@1, R@5, R@10) được tính toán để so sánh hiệu quả của các phương pháp khác nhau. Bên cạnh đó, độ đo mAP (mean Average Precision) và độ đo mINP (mean Inverse Negative Penalty) cũng được sử dụng để đánh giá tính hiệu quả của mỗi phương pháp. Nếu mAP là giá trị trung bình của độ chính xác tại các thứ hạng khác nhau, độ đo mINP đánh giá khả năng tìm thấy các kết quả đúng tại thứ hạng thấp. Các độ đo mAP và mINP càng cao thì thuật toán đề xuất được đánh giá càng tốt. 
+\subsubsection{Kết quả tìm kiếm người ngoại tuyến}
+Mô hình được huấn luyện trong 60 epoch trên GPU NVIDIA RTX 3060 (12GB) sử dụng bộ tối ưu AdamW với tốc độ học $10^{-4}$. Khi áp dụng LoRA, kích thước batch được tăng từ 8 lên 24 (batch hiệu dụng là 72 với tích lũy gradient 3 bước) nhờ giảm đáng kể bộ nhớ sử dụng. Bảng \ref{tab:offline-results} trình bày kết quả so sánh phương pháp đề xuất mSigLIP-CLoRA với các phương pháp SOTA trên tập kiểm tra của 3000VnPersonSearch.
+
+\begin{table}[htp!]
+\centering
+\caption{So sánh với các phương pháp SOTA trên 3000VnPersonSearch. Kết quả tốt nhất được in \textbf{đậm}.}
+\renewcommand{\arraystretch}{1.2}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+\textbf{Phương pháp} & \textbf{R@1} & \textbf{R@5} & \textbf{R@10} & \textbf{mAP} & \textbf{mINP} \\ \hline
+SRCF \cite{phan2023method} & 30,70 & 57,05 & 67,93 & - & - \\ \hline
+CFFVL \cite{phan2023method} & 40,32 & 66,60 & 76,58 & - & - \\ \hline
+ViTAA \cite{phan2024systematic} & 27,08 & 51,38 & 63,00 & - & - \\ \hline
+TBPS-mSigLIP \cite{tran2025multilingual} & 49,70 & 75,93 & 84,75 & 54,96 & 48,66 \\ \hline
+\textbf{mSigLIP-CLoRA} & \textbf{52,28} & \textbf{79,55} & \textbf{88,03} & \textbf{57,32} & \textbf{50,57} \\ \hline
+\end{tabular}
+}
+\label{tab:offline-results}
+\end{table}
+
+Kết quả cho thấy mSigLIP-CLoRA vượt trội các phương pháp SOTA trên 3000VnPersonSearch. So với các mô hình TBPS truyền thống dựa trên kiến trúc hai nhánh CNN–LSTM với bộ trích chọn đặc trưng riêng biệt (SRCF, CFFVL, ViTAA), phương pháp đề xuất đạt R@1 cao hơn từ 12 đến 25 điểm phần trăm, cho thấy hiệu quả vượt trội của việc sử dụng backbone thị giác–ngôn ngữ đa ngôn ngữ mSigLIP được tiền huấn luyện trên dữ liệu WebLI quy mô lớn so với các kiến trúc được huấn luyện từ đầu trên tập dữ liệu ReID có kích thước hạn chế.
+
+Đáng chú ý hơn, so với phương pháp gốc TBPS-mSigLIP, mSigLIP-CLoRA cải thiện \textbf{+2,58\% R@1} (từ 49,70\% lên \textbf{52,28\%}), đồng thời tăng R@5 (+3,62\%), R@10 (+3,28\%), mAP (+2,36\%) và mINP (+1,91\%). Cải thiện này đến từ ba đóng góp chính: (i) thay thế tinh chỉnh toàn bộ bằng LoRA, cho phép tăng kích thước batch từ 8 lên 24 (batch hiệu dụng 72 với tích lũy gradient 3 bước) với chỉ 1,57\% tham số huấn luyện, đồng thời đóng vai trò chuẩn hóa (regularization) ngăn hiện tượng quá khớp; (ii) bổ sung Circle Loss nhằm khai thác các mẫu âm khó, tinh chỉnh không gian biểu diễn ở mức cục bộ; và (iii) chiến lược curriculum learning trì hoãn Circle Loss trong giai đoạn đầu, giúp mô hình xây dựng nền tảng căn chỉnh toàn cục vững chắc trước khi áp dụng ràng buộc hình học chi tiết, từ đó tận dụng tối đa hiệu quả của cơ chế khai thác mẫu âm khó.
+\subsubsection{Kết quả tìm kiếm người trực tuyến}
+Trong trường hợp tìm kiếm người trực tuyến, chúng tôi đánh giá hiệu quả của mô hình  với 200 câu truy vấn tiếng Việt được thực hiện bởi 40 người tình nguyện viên. Mỗi tình nguyện viên sẽ thực hiện thử nghiệm với 05 câu truy vấn và hệ thống sẽ trả về kết quả tìm kiếm. Sau đó, người dùng sẽ đánh giá kết quả trả về có phù hợp hay không với câu truy vấn đầu vào. Mô hình TBPS-mSigLIP kết hợp FAISS thể hiện khả năng truy xuất tương đối tốt đối với các truy vấn mô tả màu sắc trang phục, dáng người và giới tính, đặc biệt ở các trường hợp mô tả đơn giản như “cô gái áo đỏ”, “bé trai đang chơi”, “đàn ông mặc áo phao đen”, hay “người già mặc vest”. Đây là các đặc trưng thị giác nổi bật, phù hợp với không gian đặc trưng ngữ nghĩa của mô hình.
+
+Tuy nhiên, hệ thống vẫn gặp hạn chế ở các truy vấn yêu cầu mô tả chất liệu trang phục, ngữ cảnh hoặc hành động, ví dụ như "áo len - áo phông",  “đang ngồi uống nước”, “trên tay cầm máy tính”, hoặc các mô tả liên quan đến độ tuổi như “trẻ sơ sinh”. Những đặc điểm này không thể hiện rõ trong vector đặc trưng hoặc không ổn định giữa các khung hình. Ngoài ra, một số trường hợp mô tả có chi tiết nhỏ (như “đeo kính”) đôi khi bị nhận dạng sai do chất lượng ảnh trích xuất thấp hoặc ảnh thiếu độ phân giải. Hình \ref{examples} đưa ra hai ví dụ tương ứng với hai trường hợp: (a) câu mô tả đơn giản và (b) câu mô tả phức tạp. Trong trường hợp đầu tiên, với câu truy vấn: "Một người đàn ông mặc áo trắng, quần đen". Đây là một câu truy vấn với các thuộc tính về trang phục "áo trắng", "quần đen", là các thuộc tính phổ biến để mô tả một người đàn ông. Do đó, ảnh được hệ thống trả về được người dùng đánh giá là phù hợp với cả 10 kết quả đầu tiên. Ngược lại, trong trường hợp thứ hai với câu truy vấn: "Một bé gái buộc tóc, mặc váy màu xanh, đi đôi giày màu đen.", kết quả trả về được người dùng đánh giá là không phù với cả 10 thứ hạng đầu tiên. Có thể nhận thấy, đây là một câu mô tả chi tiết về diện mạo bề ngoài của một bé gái, do đó rất khó để tìm thấy hình ảnh phù hợp với câu truy vấn trên. 
+\begin{figure*}[!t]
+\centering
+\subfloat{
+\includegraphics[width=0.85\linewidth]{Images/simple-description.png}
+\label{simple}
+}\\
+\subfloat{
+\includegraphics[width=0.85\linewidth]{Images/complicate-description.png}
+\label{complicate}
+}
+\caption{Ví dụ minh họa kết quả tìm kiếm trong hai trường hợp: a) câu mô tả đơn giản b) câu mô tả phức tạp}
+\label{examples}
+\end{figure*}
+
+Với các thử nghiệm trực tuyến trên cơ sở dữ liệu 3000VnPersonSearch, độ chính xác đạt được  70\%  tại  thứ hạng thứ nhất (R@1) và 82\% tại thứ hạng thứ  5 (R@5). Chúng ta có thể nhận thấy hệ thống tương đối hiệu quả khi làm việc với cơ sở dữ liệu đa dạng  như 3000VnPersonSearch. Hệ thống phù hợp cho các truy vấn mang tính mô tả tổng quát và có đặc trưng thị giác rõ ràng. Các sai lệch chủ yếu xuất hiện ở yêu cầu nhận dạng chi tiết hoặc hành động theo ngữ cảnh.
+\subsection{Đánh giá thời gian tìm kiếm}
+Để đánh giá sự vượt trội trong thời gian tìm kiếm khi tích hợp FAISS, chúng tôi đã thực nghiệm so sánh với phương pháp sử dụng MySQL JSON Query. Ở phương pháp này, các vector đặc trưng của mỗi đối tượng người được lưu trực tiếp trong cơ sở dữ liệu quan hệ dưới dạng trường JSON. Khi thực hiện truy vấn, hệ thống phải trích xuất từng phần tử của vector đặc trưng từ cấu trúc JSON và tính toán độ tương đồng giữa vector truy vấn và toàn bộ vector trong bảng dữ liệu thông qua các biểu thức SQL. Kết quả khi thực hiện bằng hai phương pháp đối với 6000 vector tương ứng với 6000 ảnh trong bộ cơ sở dữ liệu 3000VnPersonSearch được thể hiện ở bảng II. Kết quả so sánh thực nghiệm cho thấy phương pháp sử dụng FAISS FlatIP nhanh hơn hàng trăm lần so với phương pháp MySQL JSON Query. Điều này chứng tỏ thời gian phản hồi của hệ thống là rất nhanh và phù hợp cho các ứng dụng yêu cầu thời gian thực.
+
+\begin{table}[htp!]
+\centering
+\caption{So sánh thời gian truy vấn.}
+\renewcommand{\arraystretch}{1.2}
+\resizebox{0.9\columnwidth}{!}{%
+\begin{tabular}{|l|c|l|}
+\hline
+\textbf{Phương pháp} & \textbf{Thời gian trả kết quả truy vấn}  \\ \hline
+
+MySQL JSON Query 
+    & 8000--12000 ms 
+  \\ \hline
+
+\textbf{FAISS FlatIP} 
+    & \textbf{120–200 ms} 
+ \\ \hline
+
+\end{tabular}
+}
+\label{tab:vector-search}
+\end{table}
+
+
+Về tốc độ, phần lớn truy vấn được xử lý trong khoảng 120-200 ms, thời gian nhanh nhất quan sát được là khoảng 85–95 ms và chậm nhất là 450–500 ms, đáp ứng tốt yêu cầu truy vấn thời gian thực (real-time) của các hệ thống giám sát đô thị. Các truy vấn này cho thấy phương pháp hoạt động ổn định: vector đặc trưng của câu truy vấn, tính độ tương đồng, FAISS trả về kết quả gần nhất và hiển thị lên giao diện nguời dùng. Thời gian này phù hợp với đặc tính của FAISS IndexFlatIP khi chạy trên CPU trong điều kiện tải ổn định. Tuy nhiên, một số truy vấn xuất hiện thời gian phản hồi cao bất thường, khoảng 5–9 giây. Đây không phải là vấn đề của FAISS mà thường xuất phát từ các yếu tố như: Hệ thống đang trong giai đoạn khởi động ban đầu (làm nóng hệ thống), chưa lưu bộ nhớ đệm (cache) cho vector đặc trưng hoặc chưa tải hoàn tất toàn bộ chỉ mục vào bộ nhớ, bộ xử lý trung tâm (CPU) của máy chủ bị tăng tải đột ngột, hoặc xảy ra tình trạng nghẽn vào/ra (I/O) khi đọc ảnh từ ổ cứng. Trong điều kiện hoạt động liên tục và ổn định, FAISS thường trả kết quả trong 5–40 ms, còn phần còn lại của cấu trúc chiếm thêm 50–150 ms, vì vậy có thể khẳng định hệ thống có tiềm năng tối ưu hơn nữa. Nhìn chung, tốc độ tìm kiếm đáp ứng được yêu cầu thời gian thực, chỉ xuất hiện một vài điểm trễ do điều kiện máy chủ. Hệ thống phù hợp triển khai cho các môi trường sử dụng thực tế với tần suất truy vấn cao.
+\section{Kết luận và hướng phát triển}
+Nghiên cứu này đã đề xuất và triển khai một kiến trúc tìm kiếm người thông minh dựa trên mô tả ngôn ngữ tự nhiên, tích hợp mô hình đa ngôn ngữ TBPS-mSigLIP với cơ sở hạ tầng truy vấn vector tốc độ cao FAISS. Hệ thống được xây dựng nhằm mở rộng khả năng tìm kiếm ngữ nghĩa của nền tảng quản lý dữ liệu camera giám sát, vốn trước đây chỉ hỗ trợ các thuộc tính cơ bản như màu sắc hay loại trang phục. Kết quả thực nghiệm cho thấy việc sử dụng TBPS-mSigLIP đã mang lại khả năng hiểu ngôn ngữ tiếng Việt tốt, đặc biệt với các mô tả liên quan đến trang phục, dáng người, động tác hoặc phụ kiện. Đồng thời, việc tích hợp FAISS giúp tăng đáng kể tốc độ truy vấn, đáp ứng yêu cầu hoạt động thời gian thực trong các hệ thống giám sát quy mô lớn. Tuy nhiên, độ chính xác của kết quả trả về vẫn chịu ảnh hưởng trong những trường hợp câu truy vấn chứa các yếu tố dễ gây nhầm lẫn về ngữ nghĩa. 
+ % Điều này dẫn đến việc mô hình đôi khi ưu tiên các ảnh có màu nổi bật giống từ khóa, thay vì đối tượng mô tả chính. 
+ Mặc dù vậy, hệ thống vẫn duy trì tính ổn định, tốc độ cao và cho kết quả chấp nhận. Để khắc phục các hạn chế hiện tại và nâng cao độ chính xác của hệ thống, trong thời gian tới các kỹ thuật như kỹ thuật sắp xếp lại thứ hạng sẽ được nghiên cứu cũng như tích hợp các mô đun xử lý và triển khai thử nghiệm toàn bộ hoạt động của hệ thống.  
+ 
+
+\section*{Lời cảm tạ}
+Nghiên cứu này được tài trợ bởi Bộ Khoa học và Công nghệ Việt Nam (MOST) trong khuôn khổ đề tài mã số KC.01.15/21-30: “Nghiên cứu, xây dựng hệ thống tích hợp, xử lý dữ liệu hình ảnh phân tán diện rộng phục vụ quản lý đô thị thông minh”.
+\section*{Tài liệu tham khảo}
+
+\printbibliography[heading=none]
+% \printbibliography
+\end{document} 
