@@ -107,13 +107,16 @@ def _preprocess_to_nchw_float32(image_path: Path, size: int) -> tuple[array, tup
         img = img.convert("RGB")
         original_size = img.size
         img = img.resize((size, size), _resample_filter())
-        pixels = list(img.getdata())
+        pixel_bytes = img.tobytes()
 
     # ToTensor produces C,H,W and scales to [0, 1]. Normalize(0.5, 0.5) maps
     # to [-1, 1]. Keep channel-major order for ONNX/QNN input [1,3,H,W].
     values = array("f")
     for channel in range(3):
-        values.extend((pixel[channel] / 255.0 - 0.5) / 0.5 for pixel in pixels)
+        values.extend(
+            (pixel_bytes[index] / 255.0 - 0.5) / 0.5
+            for index in range(channel, len(pixel_bytes), 3)
+        )
 
     if sys.byteorder != "little":
         values.byteswap()
@@ -269,7 +272,8 @@ def main() -> None:
         )
         stem = _sanitize_name(Path(record["file_path"]).with_suffix("").as_posix())
         raw_path = raw_dir / f"{sample_index:05d}_pid{record['pid']}_{stem}.raw"
-        values.tofile(raw_path)
+        with raw_path.open("wb") as f:
+            values.tofile(f)
         prepared.append(
             {
                 "sample_index": sample_index,
