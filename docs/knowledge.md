@@ -1886,6 +1886,22 @@ MSIGLIP_PRETRAINED_ROOT=/path/to/pretrained
 MSIGLIP_ARTIFACTS_ROOT=/path/to/artifacts
 ```
 
+Không thêm fallback theo máy local vào `trainer.py`. Trên server training, ví dụ workspace `/mnt/data/user_data/lampt/PS/code`, path thật nên được truyền bằng env var hoặc Hydra override để repo vẫn portable:
+
+```bash
+cd /mnt/data/user_data/lampt/PS/code
+MSIGLIP_DATA_ROOT=/mnt/data/user_data/lampt/PS/code \
+MSIGLIP_PRETRAINED_ROOT=/mnt/data/user_data/lampt/PS/code \
+python trainer.py -cn cir_msiglip
+```
+
+Nếu server đã chuyển dữ liệu/pretrained về layout chuẩn thì không cần override:
+
+```text
+/mnt/data/user_data/lampt/PS/code/data/raw/VN3K
+/mnt/data/user_data/lampt/PS/code/artifacts/models/pretrained/m_siglip_checkpoints
+```
+
 ### Suy nghĩ & cách tiếp cận
 
 - **Không đổi hành vi model/loss:** refactor chỉ đổi layout, imports và path mặc định.

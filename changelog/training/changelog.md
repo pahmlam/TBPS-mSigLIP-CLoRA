@@ -8,6 +8,7 @@
 | 2 | HIGH | config | Renamed Hydra config tree to `configs/`, added `configs/paths/default.yaml`, and routed Hydra outputs to `artifacts/training/` | COMPLETE |
 | 3 | MED | config | Updated noisy correspondence default storage from root `noiseindex/` to `artifacts/training/noiseindex/` | COMPLETE |
 | 4 | MED | docs | Updated README, architecture docs, AGENTS/CLAUDE instructions, and Vietnamese knowledge base for the new layout | COMPLETE |
+| 5 | MED | config | Kept training paths fully config/env-driven; server-specific paths should be provided by env vars or Hydra overrides, not inferred from a local workstation layout | COMPLETE |
 
 ## [2026-04-14] Idea C — Unified Noise-Aware Circle Loss (NACIR)
 
