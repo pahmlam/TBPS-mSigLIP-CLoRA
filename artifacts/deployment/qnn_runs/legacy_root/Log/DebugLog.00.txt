@@ -1,0 +1,4 @@
+Logging started for program DebugLog on host qc-rb3g2 at Thu May 14 2026 15:45:40.430720 (this log file is /home/ubuntu/sigm/Lam/Log/DebugLog.00.txt)
+15:45:40.482229815 [USER_INFO:SNPE] DEFAULT:0 Log level set to 4
+15:45:40.839401950 [USER_ERROR:DL_CONTAINER] DEFAULT:1 error code = 310; Failed to initialize the DLC reader
+Logging stopped at Thu May 14 2026 15:45:40.878717

@@ -1,0 +1,10 @@
+image:=raw/00000_pid2000_TamChuc_01_02001_1.raw
+image:=raw/00001_pid2000_TamChuc_01_02001_2.raw
+image:=raw/00002_pid2001_TamChuc_01_02002_1.raw
+image:=raw/00003_pid2001_TamChuc_01_02002_2.raw
+image:=raw/00004_pid2002_TamChuc_01_02003_1.raw
+image:=raw/00005_pid2002_TamChuc_01_02003_2.raw
+image:=raw/00006_pid2003_TamChuc_01_02004_1.raw
+image:=raw/00007_pid2003_TamChuc_01_02004_2.raw
+image:=raw/00008_pid2004_TamChuc_01_02005_1.raw
+image:=raw/00009_pid2004_TamChuc_01_02005_2.raw

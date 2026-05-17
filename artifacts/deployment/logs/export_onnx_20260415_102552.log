@@ -1,0 +1,37 @@
+Logging to: /Users/phamtunglam/Documents/Projects/mSigLIP/code/deployment/logs/export_onnx_20260415_102552.log
+Loading config: exported_model/config.yaml
+Loading state dict: exported_model/model_fp32.pt
+Building backbone from config...
+Model loaded (1418.5 MB, fp32)
+
+Exporting vision encoder to ONNX...
+[torch.onnx] Obtain model graph for `VisionWrapper([...]` with `torch.export.export(..., strict=False)`...
+`use_return_dict` is deprecated! Use `return_dict` instead!
+[torch.onnx] Obtain model graph for `VisionWrapper([...]` with `torch.export.export(..., strict=False)`... ✅
+[torch.onnx] Run decompositions...
+[torch.onnx] Run decompositions... ✅
+[torch.onnx] Translate the graph into ONNX...
+[torch.onnx] Translate the graph into ONNX... ✅
+[torch.onnx] Optimize the ONNX graph...
+Skipping constant folding for op Split with multiple outputs.
+Applied 54 of general pattern rewrite rules.
+Skipping constant folding for op Split with multiple outputs.
+[torch.onnx] Optimize the ONNX graph... ✅
+Saved: exported_model/vision_encoder.onnx (1.4 MB)
+
+Exporting text encoder to ONNX...
+[torch.onnx] Obtain model graph for `TextWrapper([...]` with `torch.export.export(..., strict=False)`...
+[torch.onnx] Obtain model graph for `TextWrapper([...]` with `torch.export.export(..., strict=False)`... ✅
+[torch.onnx] Run decompositions...
+[torch.onnx] Run decompositions... ✅
+[torch.onnx] Translate the graph into ONNX...
+[torch.onnx] Translate the graph into ONNX... ✅
+[torch.onnx] Optimize the ONNX graph...
+Applied 52 of general pattern rewrite rules.
+[torch.onnx] Optimize the ONNX graph... ✅
+Saved: exported_model/text_encoder.onnx (1.4 MB)
+
+Done! ONNX models saved to: exported_model/
+Next: run deployment/scripts/inference_test.py or convert to SNPE
+
+Log saved: /Users/phamtunglam/Documents/Projects/mSigLIP/code/deployment/logs/export_onnx_20260415_102552.log

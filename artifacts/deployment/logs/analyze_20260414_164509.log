@@ -1,0 +1,63 @@
+Logging to: /home/ubuntu/sigm/Lam/deployment/logs/analyze_20260414_164509.log
+Loading checkpoint: /home/ubuntu/sigm/Lam/epoch=56-val_score=52.28.ckpt
+
+============================================================
+CHECKPOINT STRUCTURE
+============================================================
+Top-level keys: ['epoch', 'global_step', 'pytorch-lightning_version', 'state_dict', 'loops', 'callbacks', 'optimizer_states', 'lr_schedulers', 'MixedPrecision', 'hparams_name', 'hyper_parameters']
+State dict keys: 1808
+
+============================================================
+MODEL SIZE BREAKDOWN
+============================================================
+Module                          Params  FP32 (MB)  FP16 (MB)
+------------------------------------------------------------
+text_encoder               277,695,744     1059.3      529.7
+vision_encoder              92,930,304      354.5      177.3
+lora_adapters                4,767,744       18.2        9.1
+simclr_mlp                   1,181,184        4.5        2.3
+logit_scale_bias                     2        0.0        0.0
+------------------------------------------------------------
+TOTAL                      376,574,978     1436.5      718.3
+
+============================================================
+MEMORY ESTIMATES FOR INFERENCE (single sample)
+============================================================
+FP32: model=1437MB + activations~718MB = ~2155MB
+FP16: model=718MB + activations~359MB = ~1077MB
+INT8: model=359MB + activations~180MB = ~539MB
+
+============================================================
+QUALCOMM RB3 GEN2 COMPATIBILITY (available RAM: ~4000MB)
+============================================================
+FP32: ~2155MB needed, margin=1845MB --> OK
+FP16: ~1077MB needed, margin=2923MB --> OK
+INT8: ~539MB needed, margin=3461MB --> OK
+
+============================================================
+LORA ADAPTERS: 582 keys
+============================================================
+First 10:
+  backbone.base_model.model.text_model.encoder.layers.0.self_attn.k_proj.lora_A.default.weight: torch.Size([32, 768])
+  backbone.base_model.model.text_model.encoder.layers.0.self_attn.k_proj.lora_B.default.weight: torch.Size([768, 32])
+  backbone.base_model.model.text_model.encoder.layers.0.self_attn.v_proj.lora_A.default.weight: torch.Size([32, 768])
+  backbone.base_model.model.text_model.encoder.layers.0.self_attn.v_proj.lora_B.default.weight: torch.Size([768, 32])
+  backbone.base_model.model.text_model.encoder.layers.0.self_attn.q_proj.lora_A.default.weight: torch.Size([32, 768])
+  backbone.base_model.model.text_model.encoder.layers.0.self_attn.q_proj.lora_B.default.weight: torch.Size([768, 32])
+  backbone.base_model.model.text_model.encoder.layers.0.self_attn.out_proj.lora_A.default.weight: torch.Size([32, 768])
+  backbone.base_model.model.text_model.encoder.layers.0.self_attn.out_proj.lora_B.default.weight: torch.Size([768, 32])
+  backbone.base_model.model.text_model.encoder.layers.1.self_attn.k_proj.lora_A.default.weight: torch.Size([32, 768])
+  backbone.base_model.model.text_model.encoder.layers.1.self_attn.k_proj.lora_B.default.weight: torch.Size([768, 32])
+
+Optimizer states in checkpoint: YES (will be stripped for inference)
+
+============================================================
+RECOMMENDATIONS
+============================================================
+1. Export to FP16 (safest for 4GB RAM): run deployment/scripts/lora_fp16/export.py
+2. For best performance: export to ONNX + quantize to INT8
+3. LoRA weights should be merged into base model before export
+4. On RB3: set CPU governor to 'performance' for best speed
+   sudo cpupower frequency-set -g performance
+
+Log saved: /home/ubuntu/sigm/Lam/deployment/logs/analyze_20260414_164509.log

@@ -1,0 +1,253 @@
+Logging to: /Users/phamtunglam/Documents/Projects/mSigLIP/code/deployment/logs/to_fp16_20260415_133611.log
+Loading FP32 ONNX: exported_model/vision_onnx/vision_encoder.onnx (356.0 MB total)
+Converting to FP16 (keep_io_types=False → I/O also FP16)...
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 1.8919721345156404e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -3.5059826153371887e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -9.374343790113926e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 3.888271749019623e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 2.514570951461792e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -4.7730281949043274e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 5.122274160385132e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -8.979259291663766e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 8.090382586090072e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -2.988620906307915e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 5.188650842313791e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -1.5594845415023428e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 9.348150342702866e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 3.168679540976882e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -4.339381121098995e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 3.731111064553261e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -2.0021616364829242e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 4.103640094399452e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -6.461050361394882e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 6.050289158565647e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -1.2836566254392778e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 1.3382565278163838e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -3.939119697093929e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 3.597233444452286e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -8.079223334789276e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 1.1175870895385742e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -7.689232006669044e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 2.176966518163681e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -2.60770320892334e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 3.702007234096527e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -2.1595042198896408e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 7.768962140275448e-10 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -2.2642585584264907e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 6.223805826266471e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -2.2714445435667585e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 3.1956005841493607e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -2.5989720597863197e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -5.311449058353901e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 2.4749278182412127e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -1.3826666922511777e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 7.815431857238764e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -4.895621130707184e-10 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 7.675225788261741e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 9.281211532652378e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -1.0710209608078003e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 5.1106326282024384e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -8.393544703722e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -2.7008354663848877e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 1.4652885127475201e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -1.7315556766206441e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 4.951574705813755e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -5.518759671474527e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 4.7963112592697144e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -9.080395102500916e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 9.895302355289459e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 8.568167686462402e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -4.225876182317734e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 3.3760443329811096e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -5.963374860584736e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 1.034007723887953e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -8.887271718549528e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 4.508990958385084e-10 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -3.994804487206238e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 1.862645149230957e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -5.564652383327484e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 4.912726581096649e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 3.4458935260772705e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 4.566390998661518e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 9.725101612900744e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -1.0112503723291866e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 6.071461200463091e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -1.4254772917610126e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 6.271511665545404e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -4.6566128730773926e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 1.30385160446167e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 7.683411240577698e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -5.314359441399574e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -6.216578185558319e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 3.224864997264376e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -2.920303110443001e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 1.0461620902901814e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -1.595497245432398e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 7.89295881986618e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 6.05359673500061e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -4.47325874119997e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 8.102506399154663e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -7.852213457226753e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 1.3825538935918757e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -5.4060276255540884e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 3.000669579478199e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -1.3231217899090097e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 2.1420419216156006e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 4.557659849524498e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -5.9371814131736755e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 1.5032128430902958e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -4.936009645462036e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 2.3813668814653965e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 2.531707998798538e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -1.514174208239183e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -4.6100467443466187e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 7.497146725654602e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 1.2223608791828156e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -4.4819898903369904e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 6.466871127486229e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 7.077585184589452e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -3.336191056746429e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 2.7222033516238753e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -8.165526566017434e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 4.9709342420101166e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -2.3050233721733093e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -3.952300176024437e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 7.334165275096893e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -5.2852556109428406e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 9.588060123633113e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -9.7332870652167e-09 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 6.848351574717526e-08 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -5.789749124573973e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -1.6643575406760647e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 4.669699293913254e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -2.5176587925557214e-08 will be truncated to -1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:52: UserWarning: the float32 number 2.692893907862981e-09 will be truncated to 1e-07
+  warnings.warn(
+/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/lib/python3.10/site-packages/onnxconverter_common/float16.py:70: UserWarning: the float32 number -3.196662134996586e-08 will be truncated to -1e-07
+  warnings.warn(
+Saved: exported_model/vision_onnx_fp16/ (178.7 MB total, ~2.0x smaller)
+
+Done! Submit the FP16 model to Qualcomm AI Hub:
+  qai-hub submit-compile-job --model exported_model/vision_onnx_fp16 --device 'Dragonwing RB3 Gen 2 Vision Kit' --compile_options ' --target_runtime qnn_context_binary' --input_specs '<input_spec with float16>' --wait
+
+Log saved: /Users/phamtunglam/Documents/Projects/mSigLIP/code/deployment/logs/to_fp16_20260415_133611.log

@@ -1,0 +1,14 @@
+Logging to: /home/ubuntu/sigm/Lam/deployment/logs/export_lora_fp16_20260414_181005.log
+Loading checkpoint: epoch=56-val_score=52.28.ckpt
+trainable params: 4,767,744 || all params: 375,393,794 || trainable%: 1.2701
+Merging LoRA adapters into base model...
+LoRA merged successfully.
+Saved FP32: exported_model/model_fp32.pt (1418.5 MB)
+Saved FP16: exported_model/model_fp16.pt (709.3 MB)
+Saved config: exported_model/config.yaml
+
+Done! All files saved to: exported_model/
+
+Next step: python deployment/scripts/onnx/export.py --model-dir exported_model
+
+Log saved: /home/ubuntu/sigm/Lam/deployment/logs/export_lora_fp16_20260414_181005.log

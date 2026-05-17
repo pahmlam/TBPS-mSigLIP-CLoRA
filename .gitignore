@@ -43,3 +43,13 @@ input_list.txt
 image_*_float32.raw
 deployment/logs/
 deployment/qnn_inputs/
+
+# Keep deployment artifacts versionable so local and RB3 can share the same
+# prepared QNN inputs, outputs, configs, and small runtime assets.
+!artifacts/
+artifacts/*
+!artifacts/deployment/
+!artifacts/deployment/**
+artifacts/deployment/exports/
+artifacts/deployment/**/.DS_Store
+artifacts/deployment/**/__pycache__/

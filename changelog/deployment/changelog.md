@@ -1,5 +1,11 @@
 # Deployment Changelog
 
+## [2026-05-17] Track deployment artifacts for board/local sync
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | config | Updated `.gitignore` to keep `artifacts/deployment/**` versionable while leaving non-deployment artifacts ignored, with `artifacts/deployment/exports/` excluded as a large generated export directory | COMPLETE (makes QNN inputs/outputs easier to sync between local and RB3 without tracking bulky exported models) |
+
 ## [2026-05-17] Move deployment artifacts out of repo root
 
 | # | Priority | Type | Action | Status |
