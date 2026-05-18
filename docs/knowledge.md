@@ -3,6 +3,29 @@
 > Tài liệu kiến thức tích lũy trong quá trình nghiên cứu và deploy mSigLIP.
 > Mỗi mục ghi lại: **định nghĩa** các khái niệm liên quan, **vì sao** cần làm, **làm gì**, **làm như thế nào**, và **suy nghĩ/cách tiếp cận**  khi giải quyết vấn đề.
 
+<!-- TEMPLATE CHO MỤC MỚI
+
+## N. [Tiêu đề]
+
+> **Ngày:** YYYY-MM  
+> **Liên quan:** `file/path`, `another/path`
+
+### Định nghĩa
+- **Thuật ngữ 1:** Giải thích ngắn gọn
+- **Thuật ngữ 2:** Giải thích ngắn gọn
+
+### Vì sao (WHY)
+Giải thích vấn đề / động lực.
+
+### Làm gì (WHAT)
+Mô tả giải pháp / hành động cụ thể.
+
+### Làm như thế nào (HOW)
+Code, commands, hoặc chi tiết kỹ thuật.
+
+### Suy nghĩ & cách tiếp cận
+Phân tích, trade-offs, lý do chọn cách này thay vì cách khác.
+-->
 ---
 
 ## Mục lục
@@ -31,6 +54,7 @@
 22. [Tune FN branch của NACIR trong notebook](#22-tune-fn-branch-của-nacir-trong-notebook)
 23. [RB3-first modular demo cho hệ thống end-to-end](#23-rb3-first-modular-demo-cho-hệ-thống-end-to-end)
 24. [Tái cấu trúc repo theo layout AI project chuẩn](#24-tái-cấu-trúc-repo-theo-layout-ai-project-chuẩn)
+25. [Đánh giá QNN HTP output đầu tiên trên VN3K test 10](#25-đánh-giá-qnn-htp-output-đầu-tiên-trên-vn3k-test-10)
 
 ---
 
@@ -1923,26 +1947,81 @@ Nếu server đã chuyển dữ liệu/pretrained về layout chuẩn thì khôn
 - **Không ép move dữ liệu thật:** dataset và pretrained checkpoint có thể ở path cũ qua env var; default mới chỉ định nơi chuẩn cho setup mới.
 - **Artifacts bị ignore:** file nặng hoặc sinh ra khi chạy không nên sống ở root hoặc trong source tree.
 
-<!-- TEMPLATE CHO MỤC MỚI
+## 25. Đánh giá QNN HTP output đầu tiên trên VN3K test 10
 
-## N. [Tiêu đề]
-
-> **Ngày:** YYYY-MM  
-> **Liên quan:** `file/path`, `another/path`
+> **Ngày:** 2026-05-17  
+> **Liên quan:** `artifacts/deployment/qnn_outputs/vn3k_test_10`, `deployment/scripts/qnn/summarize_qnn_outputs.py`, `deployment/config/qnn/htp_config_245.json`
 
 ### Định nghĩa
-- **Thuật ngữ 1:** Giải thích ngắn gọn
-- **Thuật ngữ 2:** Giải thích ngắn gọn
+
+- **QNN context binary:** File `vision_encoder.bin` đã được compile cho QNN/HTP, chạy bằng `qnn-net-run --retrieve_context`, không phải DLC cho SNPE.
+- **Result output:** Mỗi input trong `input_list.txt` tạo một thư mục `Result_N/output_0.raw`.
+- **Embedding vision:** Output cuối của vision encoder, kỳ vọng 768 chiều. Trong lần chạy này graph metadata là `QNN_DATATYPE_UFIXED_POINT_8`, nhưng `qnn-net-run` ghi output ra file float32 đã dequantize vì không dùng `--use_native_output_files`.
 
 ### Vì sao (WHY)
-Giải thích vấn đề / động lực.
+
+Sau khi QNN HTP chạy được trên board, cần kiểm tra output trước khi claim pipeline deploy ổn:
+- số lượng output phải khớp số input;
+- mỗi output phải đúng shape 768;
+- file không rỗng, không NaN/Inf;
+- các ảnh khác nhau không được cho output byte-identical;
+- profile/timing phải được đọc đúng từ file profiling có dữ liệu;
+- sau đó mới so sánh với PyTorch/ONNX baseline và tính retrieval metric.
 
 ### Làm gì (WHAT)
-Mô tả giải pháp / hành động cụ thể.
+
+Đánh giá thư mục `artifacts/deployment/qnn_outputs/vn3k_test_10`:
+- Có đủ 10 output cho 10 ảnh VN3K test.
+- Mỗi `output_0.raw` có 3072 bytes = 768 float32.
+- `summary.json` báo `any_nan=false`, `any_inf=false`.
+- `all_outputs_byte_identical=false`, nghĩa là QNN không trả cùng một tensor cho mọi input.
+- Norm output chưa normalize nằm trong khoảng 11.83 đến 13.10, trung bình 12.47.
+- `embeddings_l2.csv` đã chứa 10 embedding L2-normalized để dùng cho bước kiểm tra cosine hoặc retrieval.
 
 ### Làm như thế nào (HOW)
-Code, commands, hoặc chi tiết kỹ thuật.
+
+Lệnh summarize output:
+
+```bash
+python3 deployment/scripts/qnn/summarize_qnn_outputs.py \
+  artifacts/deployment/qnn_outputs/vn3k_test_10 \
+  --manifest artifacts/deployment/qnn_inputs/vn3k_test_10/manifest.csv \
+  --stats-csv artifacts/deployment/qnn_outputs/vn3k_test_10/stats.csv \
+  --embeddings-csv artifacts/deployment/qnn_outputs/vn3k_test_10/embeddings_l2.csv \
+  --json artifacts/deployment/qnn_outputs/vn3k_test_10/summary.json
+```
+
+Kết quả quan trọng:
+
+```text
+num_outputs = 10
+bytes_per_output_unique = [3072]
+expected_dim = 768
+any_nan = false
+any_inf = false
+all_outputs_byte_identical = false
+norm_min = 11.8331
+norm_max = 13.1043
+norm_mean = 12.4697
+```
+
+Sanity check cosine trên 10 ảnh:
+
+```text
+same_pid_pairs = 5
+diff_pid_pairs = 40
+same_mean = 0.9120
+diff_mean = 0.9018
+top_diff_max = 0.9238
+```
+
+Cosine cùng PID chỉ cao hơn khác PID một chút và vẫn có negative pair cao hơn positive pair. Đây chưa phải lỗi runtime, vì tập 10 ảnh quá nhỏ và chỉ kiểm tra vision embedding, chưa có text encoder/retrieval. Nó chỉ nói rằng chưa thể kết luận accuracy từ 10 ảnh này.
 
 ### Suy nghĩ & cách tiếp cận
-Phân tích, trade-offs, lý do chọn cách này thay vì cách khác.
--->
+
+- **Pass runtime:** QNN HTP đã load context binary, retrieve graph, chạy đủ 10 inference và sinh output đúng kích thước.
+- **Chưa pass accuracy:** Cần so sánh QNN output với PyTorch/ONNX baseline trên cùng preprocessing để đo sai số cosine/L2. Sau đó chạy tập VN3K lớn hơn để đo retrieval.
+- **Profile hiện chưa đọc đúng:** `profile.txt` đang được tạo từ `qnn-profiling-data_0.log`, file này gần như rỗng. File có execute events là `qnn-profiling-data_1.log`, cần chạy `qnn-profile-viewer --input_log qnn-profiling-data_1.log --output profile_1.txt` trên board.
+- **Output cần L2-normalize trước khi search:** norm raw không bằng 1, nên vector store/retrieval phải lưu embedding đã normalize hoặc normalize tại query time.
+- **Bước tiếp theo đúng thứ tự:** sửa profile extraction, chạy benchmark nhiều mẫu hơn, tạo baseline PyTorch cho cùng VN3K subset, rồi mới mở rộng sang text encoder hoặc end-to-end retrieval.
+

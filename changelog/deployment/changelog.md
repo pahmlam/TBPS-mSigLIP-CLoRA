@@ -1,5 +1,11 @@
 # Deployment Changelog
 
+## [2026-05-17] Evaluate VN3K QNN HTP output artifact
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | docs | Added `docs/knowledge.md` entry for the first VN3K QNN HTP output evaluation, including output shape checks, NaN/Inf checks, cosine sanity check, and next benchmark/accuracy steps | COMPLETE (records that runtime output passed basic validity but still needs profiling and baseline comparison) |
+
 ## [2026-05-17] Track deployment artifacts for board/local sync
 
 | # | Priority | Type | Action | Status |
