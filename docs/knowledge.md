@@ -2179,6 +2179,12 @@ Hướng tune tiếp theo hợp lý hơn là mở rộng sweep `epsilon_n` thay 
 FN_EPS_N_SWEEP = [0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80]
 ```
 
+Notebook đã được chỉnh theo hướng này trong Section 4.6. Cell synthetic FN sẽ in thêm `Suggested train override` khi có candidate pass toàn bộ điều kiện, ví dụ:
+
+```text
+loss.nacir_config.fn_prior=<selected_prior> loss.nacir_config.epsilon_n=<selected_epsilon_n>
+```
+
 Nếu `epsilon_n=0.60` hoặc `0.70` đưa `total neg grad ratio` lên trên `0.30` mà `known-FN grad ratio` vẫn thấp hơn vanilla Circle rõ ràng, lúc đó mới coi NACIR đủ an toàn để chạy training thật.
 
 ### Suy nghĩ & cách tiếp cận

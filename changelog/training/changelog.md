@@ -100,3 +100,10 @@
 | # | Priority | Type | Action | Status |
 |---|----------|------|--------|--------|
 | 1 | MED | docs | Recorded the latest `notebooks/workspace.ipynb` controlled validation: clean no-op and synthetic FP pass, FN suppression works, but no-collapse still fails with total negative gradient ratio 0.258 < 0.30 | COMPLETE |
+
+## [2026-05-20] Extend NACIR FN epsilon sweep in workspace
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | config | Extended `notebooks/workspace.ipynb` Section 4.6 `FN_EPS_N_SWEEP` through 0.80 so the notebook can search milder FN suppression candidates that preserve >30% negative gradient | COMPLETE |
+| 2 | LOW | docs | Added notebook output guidance for printing the selected NACIR training override only when controlled validation passes | COMPLETE |
