@@ -55,6 +55,7 @@ Phân tích, trade-offs, lý do chọn cách này thay vì cách khác.
 23. [RB3-first modular demo cho hệ thống end-to-end](#23-rb3-first-modular-demo-cho-hệ-thống-end-to-end)
 24. [Tái cấu trúc repo theo layout AI project chuẩn](#24-tái-cấu-trúc-repo-theo-layout-ai-project-chuẩn)
 25. [Đánh giá QNN HTP output đầu tiên trên VN3K test 10](#25-đánh-giá-qnn-htp-output-đầu-tiên-trên-vn3k-test-10)
+26. [Đánh giá output NACIR sau tuning FN sweep](#26-đánh-giá-output-nacir-sau-tuning-fn-sweep)
 
 ---
 
@@ -2103,3 +2104,87 @@ venv/bin/qai-hub submit-compile-job \
 ```
 
 Sau khi tải binary mới về, chạy lại cùng `vn3k_test_10`, rồi chạy lại `compare_qnn_with_pytorch.py`. Mục tiêu tối thiểu: cosine QNN-vs-PyTorch phải tăng rất cao so với `0.17`; nếu vẫn thấp thì cần kiểm tra thêm I/O quantization, graph output tensor, hoặc dùng `submit_quantize_job` + `submit_compile_and_link_jobs`.
+
+## 26. Đánh giá output NACIR sau tuning FN sweep
+
+> **Ngày:** 2026-05  
+> **Liên quan:** `notebooks/workspace.ipynb`, `src/msiglip/model/objectives.py`, `src/msiglip/model/noise_aware.py`
+
+### Định nghĩa
+
+- **Controlled validation:** kiểm thử loss trên embedding cố định, có synthetic noise được biết trước, để xác nhận detector có phản ứng đúng trước khi chạy full training.
+- **No-collapse ratio:** tỉ lệ tổng gradient hard-negative của NACIR so với vanilla Circle. Nếu quá thấp, loss có thể làm yếu tín hiệu học negative quá mức.
+- **Synthetic FN:** cặp cùng người thật nhưng bị đổi PID giả để mô phỏng false negative.
+- **Synthetic FP:** positive pair bị làm hỏng bằng cách thay text embedding bằng caption khác PID.
+
+### Vì sao (WHY)
+
+Output mới của `notebooks/workspace.ipynb` sau khi thêm sweep `fn_prior` và `epsilon_n` cần được đánh giá lại. Section 4.5 vẫn in `GREENLIGHT`, nhưng gate đáng tin hơn là Section 4.6 `NACIR Controlled Noise Validation`, vì section này kiểm tra clean no-op, synthetic FN, synthetic FP và collapse cùng lúc.
+
+### Làm gì (WHAT)
+
+Kết luận hiện tại: **chưa nên chạy full NACIR training**. NACIR đã tốt hơn output trước ở nhánh FN, nhưng vẫn chưa vượt ngưỡng no-collapse.
+
+Các số chính:
+
+```text
+Retrieval sanity: R@1=53.35, R@5=80.03, R@10=88.30, mAP=58.17, mINP=51.45
+
+Clean no-op:
+Circle loss = 124.615601
+NACIR off   = 124.615601
+diff        = 0.00e+00
+
+Synthetic FN best fallback:
+selected fn_prior   = 0.100
+selected epsilon_n  = 0.50
+known-FN P(FN)      = 0.7903
+true-neg P(FN)      = 0.0221
+known-FN grad ratio = 0.181
+total neg grad ratio= 0.258  (< 0.30 threshold)
+
+Synthetic FP:
+GMM separation          = 6.473
+fallback                = False
+clean weight corrupted  = 0.0000
+clean weight clean      = 0.9778
+alpha_p corrupt / clean = 0.2000 / 0.9910
+```
+
+### Làm như thế nào (HOW)
+
+Đọc output trực tiếp từ notebook:
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+p = Path("notebooks/workspace.ipynb")
+nb = json.loads(p.read_text())
+for i, cell in enumerate(nb["cells"]):
+    text = "".join(
+        "".join(out.get("text", "")) if isinstance(out.get("text", ""), list) else out.get("text", "")
+        for out in cell.get("outputs", [])
+    )
+    if "NACIR Controlled Noise Validation Summary" in text:
+        print(i)
+        print(text)
+PY
+```
+
+Hướng tune tiếp theo hợp lý hơn là mở rộng sweep `epsilon_n` thay vì hạ ngưỡng no-collapse ngay:
+
+```python
+FN_EPS_N_SWEEP = [0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80]
+```
+
+Nếu `epsilon_n=0.60` hoặc `0.70` đưa `total neg grad ratio` lên trên `0.30` mà `known-FN grad ratio` vẫn thấp hơn vanilla Circle rõ ràng, lúc đó mới coi NACIR đủ an toàn để chạy training thật.
+
+### Suy nghĩ & cách tiếp cận
+
+- Clean no-op pass tuyệt đối (`diff=0.00e+00`), nghĩa là khi tắt detector NACIR không làm lệch Circle Loss.
+- FP branch pass rất mạnh: GMM separation cao và clean weight của corrupted rows gần 0. Đây đúng với loại noisy correspondence/caption shuffle mà repo đang inject.
+- FN branch đã cải thiện so với output trước (`total neg grad ratio` từ khoảng `0.075` lên `0.258`), nhưng vẫn dưới ngưỡng `0.30`. Đây là dấu hiệu detector đang suppress FN đúng hướng nhưng hơi mạnh tay với tổng negative gradient.
+- Không nên dùng Section 4.5 `GREENLIGHT` làm quyết định training. Section 4.6 mới là gate chính và hiện đang `STOP`.
+- Các lỗi notebook ở A/B comparison (`CKPT_PATH_B` chưa set, `W_B` chưa có) và Section 8 OOM là lỗi vận hành của section tùy chọn, không phải lỗi logic NACIR. Tuy vậy nên dọn hoặc guard các cell này để notebook chạy sạch hơn.

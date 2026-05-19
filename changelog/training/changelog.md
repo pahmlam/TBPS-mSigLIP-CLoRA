@@ -94,3 +94,9 @@
 |---|----------|------|--------|--------|
 | 1 | HIGH | refactor | Updated `workspace.ipynb` Section 4.6 synthetic FN validation to sweep `fn_prior` and `epsilon_n`, then select a conservative candidate that passes no-collapse instead of maximizing P(FN) gap | COMPLETE |
 | 2 | MED | docs | Documented the FN tuning strategy and selection criteria in `docs/knowledge.md` | COMPLETE |
+
+## [2026-05-20] Assess post-tuning NACIR workspace outputs
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | docs | Recorded the latest `notebooks/workspace.ipynb` controlled validation: clean no-op and synthetic FP pass, FN suppression works, but no-collapse still fails with total negative gradient ratio 0.258 < 0.30 | COMPLETE |
