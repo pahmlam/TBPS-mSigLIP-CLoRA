@@ -1947,6 +1947,7 @@ Nếu server đã chuyển dữ liệu/pretrained về layout chuẩn thì khôn
 - **Không ép move dữ liệu thật:** dataset và pretrained checkpoint có thể ở path cũ qua env var; default mới chỉ định nơi chuẩn cho setup mới.
 - **Artifacts bị ignore:** file nặng hoặc sinh ra khi chạy không nên sống ở root hoặc trong source tree.
 - **Notebook validation cũng phải theo `src` layout:** `notebooks/workspace.ipynb` cần tự thêm `src/` vào `sys.path` và import qua `msiglip.*`; nếu còn `from model...` hoặc `from data...` thì notebook sẽ vỡ sau refactor.
+- **Config cũ có relative path:** các `.hydra/config.yaml` sinh trước refactor có thể chứa `dataset_root_dir: .`. Khi notebook chạy từ `notebooks/`, dấu `.` không còn là repo root. Vì vậy notebook phải normalize `dataset_root_dir`, tokenizer path và backbone path theo `PROJECT_ROOT` trước khi tạo `TBPSDataModule`.
 
 ## 25. Đánh giá QNN HTP output đầu tiên trên VN3K test 10
 

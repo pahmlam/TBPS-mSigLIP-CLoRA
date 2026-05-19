@@ -6,6 +6,7 @@
 |---|----------|------|--------|--------|
 | 1 | HIGH | bugfix | Updated `notebooks/workspace.ipynb` imports from root modules (`model`, `data`, `utils`, `lightning_*`) to `msiglip.*` package imports | COMPLETE |
 | 2 | MED | bugfix | Added notebook setup logic to insert repo `src/` into `sys.path` when running from either repo root or `notebooks/` | COMPLETE |
+| 3 | HIGH | bugfix | Normalized old Hydra config paths in `notebooks/workspace.ipynb` so relative `dataset_root_dir`, tokenizer path, and backbone path resolve against repo root instead of notebook CWD | COMPLETE |
 
 ## [2026-05-17] Reorganize training code into package layout
 
