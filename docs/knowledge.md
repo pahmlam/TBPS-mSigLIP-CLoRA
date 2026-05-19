@@ -2187,6 +2187,13 @@ loss.nacir_config.fn_prior=<selected_prior> loss.nacir_config.epsilon_n=<selecte
 
 Nếu `epsilon_n=0.60` hoặc `0.70` đưa `total neg grad ratio` lên trên `0.30` mà `known-FN grad ratio` vẫn thấp hơn vanilla Circle rõ ràng, lúc đó mới coi NACIR đủ an toàn để chạy training thật.
 
+Sau khi Section 4.6 pass với `fn_prior=0.01`, `epsilon_n=0.70`, Section 8 mini fine-tune được đổi từ Cross-Modal Circle sang NACIR thật:
+
+- Dùng `compute_noise_aware_circle()` thay vì `compute_cross_modal_circle()`.
+- Lấy candidate từ `controlled_results['synthetic_fn']`; nếu chưa chạy Section 4.6 thì fallback an toàn là `fn_prior=0.01`, `epsilon_n=0.70`.
+- Dùng `NoiseAwareCircleState` mini để cập nhật EMA similarity stats, per-sample loss, và GMM clean weights trong vòng lặp mini fine-tune.
+- Giảm `MINI_BATCH` xuống `8` và re-extract post fine-tune với `batch_size=32` để giảm rủi ro CUDA OOM.
+
 ### Suy nghĩ & cách tiếp cận
 
 - Clean no-op pass tuyệt đối (`diff=0.00e+00`), nghĩa là khi tắt detector NACIR không làm lệch Circle Loss.

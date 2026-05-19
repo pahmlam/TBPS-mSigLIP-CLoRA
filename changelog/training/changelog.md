@@ -107,3 +107,10 @@
 |---|----------|------|--------|--------|
 | 1 | MED | config | Extended `notebooks/workspace.ipynb` Section 4.6 `FN_EPS_N_SWEEP` through 0.80 so the notebook can search milder FN suppression candidates that preserve >30% negative gradient | COMPLETE |
 | 2 | LOW | docs | Added notebook output guidance for printing the selected NACIR training override only when controlled validation passes | COMPLETE |
+
+## [2026-05-20] Switch workspace mini fine-tune to NACIR
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | refactor | Updated `notebooks/workspace.ipynb` Section 8 mini fine-tune to use `compute_noise_aware_circle()` with the Section 4.6 selected `fn_prior` / `epsilon_n` candidate instead of vanilla Cross-Modal Circle | COMPLETE |
+| 2 | LOW | config | Reduced mini fine-tune batch size and post-extraction batch size to lower CUDA OOM risk during the notebook sanity check | COMPLETE |
