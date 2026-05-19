@@ -1,5 +1,12 @@
 # Training Changelog
 
+## [2026-05-20] Fix notebook imports for src package layout
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | HIGH | bugfix | Updated `notebooks/workspace.ipynb` imports from root modules (`model`, `data`, `utils`, `lightning_*`) to `msiglip.*` package imports | COMPLETE |
+| 2 | MED | bugfix | Added notebook setup logic to insert repo `src/` into `sys.path` when running from either repo root or `notebooks/` | COMPLETE |
+
 ## [2026-05-17] Reorganize training code into package layout
 
 | # | Priority | Type | Action | Status |

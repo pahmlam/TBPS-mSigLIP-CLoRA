@@ -1946,6 +1946,7 @@ Nếu server đã chuyển dữ liệu/pretrained về layout chuẩn thì khôn
 - **Giữ command cũ:** `python trainer.py -cn cir_msiglip` và các `run_*.sh` vẫn là entrypoint quen thuộc.
 - **Không ép move dữ liệu thật:** dataset và pretrained checkpoint có thể ở path cũ qua env var; default mới chỉ định nơi chuẩn cho setup mới.
 - **Artifacts bị ignore:** file nặng hoặc sinh ra khi chạy không nên sống ở root hoặc trong source tree.
+- **Notebook validation cũng phải theo `src` layout:** `notebooks/workspace.ipynb` cần tự thêm `src/` vào `sys.path` và import qua `msiglip.*`; nếu còn `from model...` hoặc `from data...` thì notebook sẽ vỡ sau refactor.
 
 ## 25. Đánh giá QNN HTP output đầu tiên trên VN3K test 10
 
@@ -2017,11 +2018,87 @@ top_diff_max = 0.9238
 
 Cosine cùng PID chỉ cao hơn khác PID một chút và vẫn có negative pair cao hơn positive pair. Đây chưa phải lỗi runtime, vì tập 10 ảnh quá nhỏ và chỉ kiểm tra vision embedding, chưa có text encoder/retrieval. Nó chỉ nói rằng chưa thể kết luận accuracy từ 10 ảnh này.
 
+Profiling cập nhật sau khi chạy đúng `qnn-profile-viewer` trên `qnn-profiling-data_1.log`:
+
+```text
+Init / load binary NetRun: 54.269 ms
+De-init NetRun: 16.766 ms
+Execute NetRun average: 22.252 ms
+Execute NetRun min/max: 21.774 / 23.013 ms
+Backend QNN execute average: 22.155 ms
+Accelerator execute average: 20.723 ms
+Accelerator excluding wait average: 19.964 ms
+RPC execute average: 21.928 ms
+HVX threads used: 4
+NetRun IPS: 38.2405 inference/sec
+```
+
+File `profile_1.txt` là CSV chi tiết. Các dòng summary text được in ra terminal bởi `qnn-profile-viewer`, còn file output chứa từng event riêng lẻ.
+
 ### Suy nghĩ & cách tiếp cận
 
 - **Pass runtime:** QNN HTP đã load context binary, retrieve graph, chạy đủ 10 inference và sinh output đúng kích thước.
 - **Chưa pass accuracy:** Cần so sánh QNN output với PyTorch/ONNX baseline trên cùng preprocessing để đo sai số cosine/L2. Sau đó chạy tập VN3K lớn hơn để đo retrieval.
-- **Profile hiện chưa đọc đúng:** `profile.txt` đang được tạo từ `qnn-profiling-data_0.log`, file này gần như rỗng. File có execute events là `qnn-profiling-data_1.log`, cần chạy `qnn-profile-viewer --input_log qnn-profiling-data_1.log --output profile_1.txt` trên board.
+- **Profile đã đọc đúng:** `profile.txt` cũ được tạo từ `qnn-profiling-data_0.log` nên rỗng; `profile_1.txt` mới đọc từ `qnn-profiling-data_1.log` và cho latency thực tế khoảng 22.25 ms/inference.
 - **Output cần L2-normalize trước khi search:** norm raw không bằng 1, nên vector store/retrieval phải lưu embedding đã normalize hoặc normalize tại query time.
-- **Bước tiếp theo đúng thứ tự:** sửa profile extraction, chạy benchmark nhiều mẫu hơn, tạo baseline PyTorch cho cùng VN3K subset, rồi mới mở rộng sang text encoder hoặc end-to-end retrieval.
+- **Bước tiếp theo đúng thứ tự:** tạo baseline PyTorch cho cùng VN3K subset bằng `deployment/scripts/qnn/compare_qnn_with_pytorch.py`, so sánh sai số embedding QNN-vs-PyTorch, sau đó chạy benchmark nhiều mẫu hơn và mở rộng sang text encoder hoặc end-to-end retrieval.
 
+Command so sánh QNN với PyTorch baseline trên local:
+
+```bash
+python3 deployment/scripts/qnn/compare_qnn_with_pytorch.py \
+  --model-dir artifacts/deployment/exports/exported_model \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
+  --qnn-output-dir artifacts/deployment/qnn_outputs/vn3k_test_10 \
+  --precision fp32 \
+  --csv artifacts/deployment/qnn_outputs/vn3k_test_10/qnn_vs_pytorch.csv \
+  --json artifacts/deployment/qnn_outputs/vn3k_test_10/qnn_vs_pytorch_summary.json
+```
+
+Script này đọc chính raw tensor trong `input_list.txt`, không decode JPEG lại. Vì vậy sai khác đo được là sai khác giữa QNN HTP context binary và PyTorch model export trên cùng input.
+
+Kết quả thực tế với binary dummy-calibration hiện tại:
+
+```text
+QNN vs PyTorch/ONNX cosine_l2_mean = 0.1727
+cosine_l2_min/max = 0.1440 / 0.2424
+l2_l2_mean = 1.2861
+```
+
+ONNX Runtime và PyTorch cho cùng raw input khớp với nhau; QNN lệch mạnh. Vì vậy không nên mở rộng benchmark với binary này để đánh giá accuracy. Nguyên nhân phù hợp nhất với log compile là INT8 dùng dummy calibration (`--calibration_data none`), nên quantization range không đại diện cho ảnh VN3K.
+
+Chuẩn bị calibration thật từ VN3K train:
+
+```bash
+venv/bin/python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
+  --dataset-root VN3K \
+  --split train \
+  --selection random \
+  --seed 2400 \
+  --num-samples 500 \
+  --output-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_500 \
+  --path-mode relative
+```
+
+Upload calibration dataset bằng Python API vì CLI `qai-hub 0.48.0` không có lệnh `upload-dataset`:
+
+```bash
+venv/bin/python deployment/scripts/qnn/upload_qaihub_calibration_dataset.py \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_500 \
+  --name msiglip-vision-vn3k-train-calib-500
+```
+
+Sau khi script in `Dataset ID`, compile lại QNN context binary:
+
+```bash
+venv/bin/qai-hub submit-compile-job \
+  --model artifacts/deployment/exports/exported_model/vision_onnx/ \
+  --device "Dragonwing RB3 Gen 2 Vision Kit" \
+  --compile_options " --target_runtime qnn_context_binary --quantize_full_type int8" \
+  --input_specs '{"image": ((1, 3, 256, 256), "float32")}' \
+  --calibration_data <DATASET_ID> \
+  --name "mSigLIP-vision-int8-vn3k-calib-500" \
+  --wait
+```
+
+Sau khi tải binary mới về, chạy lại cùng `vn3k_test_10`, rồi chạy lại `compare_qnn_with_pytorch.py`. Mục tiêu tối thiểu: cosine QNN-vs-PyTorch phải tăng rất cao so với `0.17`; nếu vẫn thấp thì cần kiểm tra thêm I/O quantization, graph output tensor, hoặc dùng `submit_quantize_job` + `submit_compile_and_link_jobs`.

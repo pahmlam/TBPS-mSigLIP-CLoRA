@@ -1,5 +1,19 @@
 # Deployment Changelog
 
+## [2026-05-18] Add QNN-vs-PyTorch comparison script
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | HIGH | feature | Added `deployment/scripts/qnn/compare_qnn_with_pytorch.py` to compare QNN `Result_*/output_0.raw` tensors against local PyTorch `encode_image` outputs using the exact raw inputs from `input_list.txt` | COMPLETE (next deployment validation step is now executable and measures model/runtime drift rather than preprocessing drift) |
+| 2 | HIGH | feature | Added `deployment/scripts/qnn/upload_qaihub_calibration_dataset.py` to upload prepared VN3K raw tensors as a QAI Hub calibration dataset through the Python API | COMPLETE (current `qai-hub` CLI lacks `upload-dataset`, but the API supports `upload_dataset`) |
+| 3 | MED | docs | Updated `deployment/docs/deployment-plan.md` and `docs/knowledge.md` with the baseline-comparison result, real-calibration upload command, and calibrated compile command | COMPLETE |
+
+## [2026-05-18] Record QNN HTP profile timing
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | docs | Updated `docs/knowledge.md` with `profile_1.txt` timing from `qnn-profiling-data_1.log`: 22.25 ms NetRun average, 20.72 ms accelerator average, 38.24 IPS, and 4 HVX threads | COMPLETE (profile extraction is now validated and no longer blocked on the empty `qnn-profiling-data_0.log`) |
+
 ## [2026-05-17] Evaluate VN3K QNN HTP output artifact
 
 | # | Priority | Type | Action | Status |

@@ -68,7 +68,7 @@ epoch=56    model_fp16.pt           vision_onnx/                 INT8-quantized 
                                      external weights)                                        as vision)
 ```
 
-### Current status: step 4 complete for vision encoder, step 5 next
+### Current status: vision HTP runtime works; dummy-cal accuracy fails
 
 **What works:**
 - Checkpoint analysis (`deployment/scripts/analyze_checkpoint.py`)
@@ -76,11 +76,12 @@ epoch=56    model_fp16.pt           vision_onnx/                 INT8-quantized 
 - ONNX export with external weights (`deployment/scripts/onnx/export.py`) → `vision_onnx/`, `text_onnx/`
 - ONNX → FP16 conversion with FP16 I/O (`deployment/scripts/onnx/to_fp16.py`) → `vision_onnx_fp16/`
 - **AI Hub INT8 compile for vision encoder** (job `jgkr7qwn5`) → QNN context binary for HTP V68 ✅
+- **RB3 QNN HTP runtime** → `vn3k_test_10` runs successfully at ~22.25 ms/image NetRun average, ~20.72 ms accelerator average, 4 HVX threads.
+- **Baseline sanity tooling** → `deployment/scripts/qnn/compare_qnn_with_pytorch.py` compares QNN outputs to PyTorch/ONNX on the exact same raw inputs.
 
 **What still needs to be done:**
+- **Recompile with real VN3K calibration**: current dummy-cal binary has poor embedding fidelity (`QNN vs PyTorch/ONNX cosine_l2_mean = 0.1727` on `vn3k_test_10`).
 - Text encoder: same INT8 compile pipeline on AI Hub
-- Download compiled `.bin` to RB3 device and run `qnn-net-run` benchmarks
-- Replace dummy calibration with real VN3K calibration data for production accuracy
 - Accuracy evaluation: target R@1 ≥ 48% (vs FP32 baseline 52.28%)
 
 **Deprecation warnings:**
@@ -117,11 +118,11 @@ After 11 attempts (see `aihub-experiments.md` for detailed log), the root cause 
 1. ~~**Run Option B (INT8 dummy calibration)** on vision_encoder to confirm HTP compilation succeeds with INT I/O.~~ ✅ Job `jgkr7qwn5` compiled successfully. QNN context binary for HTP V68 produced.
 2. ~~**In parallel: run Option C (GPU FP16)** to have a fallback that works.~~ Deferred — HTP path works, no need for GPU fallback yet.
 
-### Phase 2 — On-device benchmarking with dummy-cal model (now)
+### Phase 2 — On-device benchmark with dummy-cal model ✅ DONE, not accuracy-usable
 
-1. **Download the compiled `.bin` from AI Hub** — job `jgkr7qwn5`, asset `mqyov9dxm`.
-2. **Transfer to RB3**: `scp vision_encoder.bin rb3:~/sigm/`
-3. **Benchmark latency & throughput**:
+1. ~~**Download the compiled `.bin` from AI Hub** — job `jgkr7qwn5`, asset `mqyov9dxm`.~~
+2. ~~**Transfer to RB3**: `scp vision_encoder.bin rb3:~/sigm/`~~
+3. ~~**Benchmark latency & throughput**~~:
    ```bash
    $QNN_BIN/qnn-net-run \
        --backend $QNN_LIB/libQnnHtp.so \
@@ -133,6 +134,53 @@ After 11 attempts (see `aihub-experiments.md` for detailed log), the root cause 
        --perf_profile high_performance
    ```
    `vision_encoder.bin` is a QNN context binary, not an SNPE DLC. Use `qnn-net-run` with the matching QAIRT/QNN 2.45 runtime and HTP skel libraries; `snpe-net-run` will fail with DLC reader errors for this artifact.
+
+Observed:
+- `vn3k_test_10` produces 10 valid `Result_*/output_0.raw` files.
+- Each output is 768 float32 values after qnn-net-run dequantization.
+- No NaN/Inf; outputs are not byte-identical.
+- Profile from `qnn-profiling-data_1.log`: NetRun average ~22.25 ms/image; accelerator average ~20.72 ms/image.
+- Fidelity check fails: QNN vs PyTorch/ONNX cosine mean ~0.1727. Treat this binary as runtime proof only.
+
+### Phase 2b — Recompile vision encoder with real calibration (now)
+
+1. Prepare real VN3K train calibration raws:
+   ```bash
+   venv/bin/python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
+     --dataset-root VN3K \
+     --split train \
+     --selection random \
+     --seed 2400 \
+     --num-samples 500 \
+     --output-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_500 \
+     --path-mode relative
+   ```
+2. Upload calibration dataset using the QAI Hub Python API:
+   ```bash
+   venv/bin/python deployment/scripts/qnn/upload_qaihub_calibration_dataset.py \
+     --input-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_500 \
+     --name msiglip-vision-vn3k-train-calib-500
+   ```
+3. Compile a new calibrated context binary:
+   ```bash
+   venv/bin/qai-hub submit-compile-job \
+     --model artifacts/deployment/exports/exported_model/vision_onnx/ \
+     --device "Dragonwing RB3 Gen 2 Vision Kit" \
+     --compile_options " --target_runtime qnn_context_binary --quantize_full_type int8" \
+     --input_specs '{"image": ((1, 3, 256, 256), "float32")}' \
+     --calibration_data <DATASET_ID> \
+     --name "mSigLIP-vision-int8-vn3k-calib-500" \
+     --wait
+   ```
+4. Download the new binary, rerun `vn3k_test_10`, and rerun:
+   ```bash
+   venv/bin/python deployment/scripts/qnn/compare_qnn_with_pytorch.py \
+     --model-dir artifacts/deployment/exports/exported_model \
+     --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
+     --qnn-output-dir artifacts/deployment/qnn_outputs/vn3k_test_10 \
+     --precision fp32
+   ```
+   Proceed to larger benchmark only if QNN-vs-PyTorch cosine improves substantially.
 4. **Compile text encoder** — same pipeline as vision:
    ```bash
    qai-hub submit-compile-job \
