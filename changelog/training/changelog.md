@@ -1,5 +1,11 @@
 # Training Changelog
 
+## [2026-05-26] Update NACIR training script with validated FN override
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | config | Added `loss.nacir_config.fn_prior=0.010` and `loss.nacir_config.epsilon_n=0.60` to `run_nacir.sh` so the script uses the latest notebook-selected NACIR candidate by default | COMPLETE |
+
 ## [2026-05-20] Fix notebook imports for src package layout
 
 | # | Priority | Type | Action | Status |

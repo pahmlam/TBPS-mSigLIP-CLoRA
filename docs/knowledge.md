@@ -56,6 +56,10 @@ Phân tích, trade-offs, lý do chọn cách này thay vì cách khác.
 24. [Tái cấu trúc repo theo layout AI project chuẩn](#24-tái-cấu-trúc-repo-theo-layout-ai-project-chuẩn)
 25. [Đánh giá QNN HTP output đầu tiên trên VN3K test 10](#25-đánh-giá-qnn-htp-output-đầu-tiên-trên-vn3k-test-10)
 26. [Đánh giá output NACIR sau tuning FN sweep](#26-đánh-giá-output-nacir-sau-tuning-fn-sweep)
+27. [Dự đoán Circle Loss khi inject noisy correspondence](#27-dự-đoán-circle-loss-khi-inject-noisy-correspondence)
+28. [Dự đoán NACIR khi inject noisy correspondence](#28-dự-đoán-nacir-khi-inject-noisy-correspondence)
+29. [Đánh giá output NACIR mới nhất sau mini fine-tune](#29-đánh-giá-output-nacir-mới-nhất-sau-mini-fine-tune)
+30. [Cập nhật `run_nacir.sh` theo candidate NACIR mới nhất](#30-cập-nhật-runnacirsh-theo-candidate-nacir-mới-nhất)
 
 ---
 
@@ -2201,3 +2205,250 @@ Sau khi Section 4.6 pass với `fn_prior=0.01`, `epsilon_n=0.70`, Section 8 mini
 - FN branch đã cải thiện so với output trước (`total neg grad ratio` từ khoảng `0.075` lên `0.258`), nhưng vẫn dưới ngưỡng `0.30`. Đây là dấu hiệu detector đang suppress FN đúng hướng nhưng hơi mạnh tay với tổng negative gradient.
 - Không nên dùng Section 4.5 `GREENLIGHT` làm quyết định training. Section 4.6 mới là gate chính và hiện đang `STOP`.
 - Các lỗi notebook ở A/B comparison (`CKPT_PATH_B` chưa set, `W_B` chưa có) và Section 8 OOM là lỗi vận hành của section tùy chọn, không phải lỗi logic NACIR. Tuy vậy nên dọn hoặc guard các cell này để notebook chạy sạch hơn.
+
+## 27. Dự đoán Circle Loss khi inject noisy correspondence
+
+> **Ngày:** 2026-05  
+> **Liên quan:** `run_noise_experiments.sh`, `src/msiglip/data/bases.py`, `src/msiglip/lightning_data.py`, `src/msiglip/model/tbps.py`, `docs/EXPERIMENT_SUMMARY.md`
+
+### Định nghĩa
+
+- **Sweep noisy correspondence:** chạy nhiều thí nghiệm với `dataset.noisy_rate` khác nhau để tạo đường suy giảm hiệu năng khi train set bị ghép sai caption.
+- **Vanilla Circle Loss dưới nhiễu:** Circle Loss hiện tại không dùng `real_correspondences`; nó vẫn coi mọi cặp cùng PID trong batch là positive, kể cả caption đã bị tráo sang người khác.
+- **Train noisy -> eval clean:** script chỉ inject noise vào `dataset.train`; validation/test loader vẫn dùng split sạch. Metric đo được là khả năng học từ train nhiễu rồi truy hồi trên test sạch.
+
+### Vì sao (WHY)
+
+`run_noise_experiments.sh` dùng cấu hình mạnh nhất hiện tại của mSigLIP-CLoRA nhưng cố tình phá nhãn positive. Vì Circle Loss có `gamma=128` và hard-mining mạnh, các cặp positive sai có thể tạo gradient mâu thuẫn lớn: N-ITC/Circle kéo ảnh và caption sai lại gần nhau, trong khi các cặp đúng còn lại cố giữ cấu trúc embedding đúng.
+
+### Làm gì (WHAT)
+
+Dự đoán chính: R@1 sẽ giảm gần đơn điệu khi `noisy_rate` tăng. Mức `0.1` có thể chỉ giảm nhẹ vì 90% train pair vẫn đúng và curriculum tắt Circle trong 5 epoch đầu. Từ `0.3-0.4`, suy giảm sẽ rõ hơn. Từ `0.6-0.8`, mô hình có rủi ro học alignment sai, mAP/mINP giảm mạnh hơn R@5/R@10.
+
+Một khoảng kỳ vọng hợp lý nếu so với clean seed 2400 (`R@1=52.28`):
+
+| `noisy_rate` | Dự đoán R@1 sạch sau train | Diễn giải |
+|---:|---:|---|
+| 0.1 | 49-52 | Có thể vẫn gần baseline LoRA/Circle nếu nhiễu ít |
+| 0.2 | 46-50 | Bắt đầu mất fine-grained alignment |
+| 0.3 | 42-47 | Positive sai đủ nhiều để hard-mining bị nhiễu |
+| 0.4 | 37-44 | mAP/mINP sẽ giảm rõ |
+| 0.5 | 32-40 | Alignment ảnh-văn bản bắt đầu kém ổn định |
+| 0.6 | 27-36 | Nhiều caption sai hơn đúng trong train subset nhiễu |
+| 0.7 | 22-32 | Circle có thể khuếch đại gradient sai |
+| 0.8 | 18-28 | Stress test nặng; khó giữ clean retrieval tốt |
+
+### Làm như thế nào (HOW)
+
+Script chạy tuần tự:
+
+```bash
+NOISY_RATES=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8)
+
+uv run trainer.py -cn cir_msiglip \
+  dataset.noisy_rate=$noisy_rate \
+  dataset.noisy_file="artifacts/training/noiseindex/VN3K_VI_${noisy_rate}.npy" \
+  trainer.max_epochs=60 \
+  trainer.accumulate_grad_batches=3 \
+  ++trainer.precision=16-mixed \
+  optimizer=cir_test \
+  optimizer.param_groups.default.lr=1e-4 \
+  +lora=default
+```
+
+`inject_noisy_correspondence()` giữ `pid`, `image_id`, `image_path` của mẫu gốc và chỉ thay caption bằng caption từ index khác trong nhóm được chọn. File `.npy` được lưu để lần sau dùng lại cùng mapping. Vì shuffle có thể có fixed point, số mẫu thật sự bị tráo thường xấp xỉ nhưng không luôn đúng tuyệt đối bằng `noisy_rate * N`.
+
+### Suy nghĩ & cách tiếp cận
+
+- Script hiện không chạy mốc `0.0`, nên muốn vẽ degradation curve đầy đủ cần thêm baseline clean hoặc so với `docs/EXPERIMENT_SUMMARY.md`.
+- Đây là kiểm thử robustness của Circle Loss, không phải cách tăng clean R@1. Với loss không noise-aware, correspondence noise thường là nhãn sai chứ không phải augmentation có lợi.
+- Circle curriculum giúp giảm sốc ở đầu training, nhưng sau epoch 21 Circle weight đạt `0.1`, nên hard-mining vẫn sẽ khuếch đại các cặp bị gán positive sai.
+- Nếu muốn kỳ vọng ít suy giảm hơn, nên chạy NACIR/RDE-style trên cùng noise files để down-weight noisy positives; với vanilla Circle, mục tiêu hợp lý là đo tốc độ suy giảm.
+
+## 28. Dự đoán NACIR khi inject noisy correspondence
+
+> **Ngày:** 2026-05  
+> **Liên quan:** `run_noise_experiments.sh`, `run_nacir.sh`, `configs/loss/cir_msiglip.yaml`, `src/msiglip/model/noise_aware.py`, `src/msiglip/model/objectives.py`
+
+### Định nghĩa
+
+- **NACIR dưới noisy correspondence:** biến thể Circle Loss có thêm detector để giảm lực kéo của positive pair nghi nhiễu và giảm lực đẩy của negative pair nghi false negative.
+- **FP branch:** nhánh quan trọng nhất cho noise sweep hiện tại, vì caption-shuffle tạo noisy positive/false positive: ảnh A bị ghép caption B nhưng vẫn được loss coi là positive.
+- **GMM fallback:** nếu per-sample loss không tách được hai cụm clean/noisy, NACIR đặt `clean_weights=1` và suy biến gần vanilla Circle Loss.
+
+### Vì sao (WHY)
+
+Trong script inject noise, nhãn PID không đổi nhưng caption bị tráo. Vanilla Circle/N-ITC sẽ kéo cặp sai lại gần. NACIR có cơ chế theo dõi per-sample Circle loss, fit GMM từ epoch `fp_enable_epoch=15`, rồi giảm `alpha_p` cho positive pair có `clean_weight` thấp. Vì vậy NACIR được kỳ vọng chịu nhiễu tốt hơn Circle Loss thường, đặc biệt từ `noisy_rate >= 0.3`.
+
+### Làm gì (WHAT)
+
+Dự đoán chính: NACIR không nhất thiết tăng clean R@1 ở `noisy_rate=0.0`, nhưng khi train set bị inject noise, NACIR nên **giảm tốc độ suy giảm** so với vanilla Circle. Lợi ích lớn nhất nằm ở vùng `0.3-0.6`; ở `0.7-0.8`, nhiễu quá nhiều nên detector vẫn có thể giúp nhưng khó cứu hoàn toàn alignment.
+
+Khoảng kỳ vọng nếu FP-GMM tách tốt (`gmm_fallback=0`, `gmm_separation > 1`):
+
+| `noisy_rate` | Circle R@1 dự đoán | NACIR R@1 dự đoán | Delta kỳ vọng |
+|---:|---:|---:|---:|
+| 0.1 | 49-52 | 50-52.5 | -0.5 đến +1 |
+| 0.2 | 46-50 | 48-51 | +1 đến +3 |
+| 0.3 | 42-47 | 45-49 | +2 đến +5 |
+| 0.4 | 37-44 | 42-48 | +3 đến +7 |
+| 0.5 | 32-40 | 37-45 | +4 đến +8 |
+| 0.6 | 27-36 | 32-42 | +4 đến +10 |
+| 0.7 | 22-32 | 27-38 | +3 đến +9 |
+| 0.8 | 18-28 | 22-34 | +2 đến +8 |
+
+Nếu GMM fallback thường xuyên hoặc clean/noisy loss không tách cụm, kết quả NACIR sẽ gần vanilla Circle và delta có thể gần 0.
+
+### Làm như thế nào (HOW)
+
+Chạy NACIR trên cùng noise files bằng cách giữ override `dataset.noisy_rate` / `dataset.noisy_file` và thêm `loss.NACIR=true`:
+
+```bash
+uv run trainer.py -cn cir_msiglip \
+  dataset.noisy_rate=$noisy_rate \
+  dataset.noisy_file="artifacts/training/noiseindex/VN3K_VI_${noisy_rate}.npy" \
+  trainer.max_epochs=60 \
+  trainer.accumulate_grad_batches=3 \
+  ++trainer.precision=16-mixed \
+  optimizer=cir_test \
+  optimizer.param_groups.default.lr=1e-4 \
+  +lora=default \
+  loss.NACIR=true
+```
+
+Các metric cần theo dõi:
+
+- `gmm_separation`: nên > `1.0` sau epoch 15.
+- `gmm_fallback`: nên về `0` ở các rate có noise rõ.
+- `nacir_clean_weight_mean`: nên thấp hơn `1.0` khi noise tăng.
+- `nacir_alpha_p_scale_mean`: nên giảm khi GMM phát hiện noisy positives.
+- `val_t2i_R1`, `val_t2i_mAP`, `val_t2i_mINP`: so sánh với Circle trên cùng noise file.
+
+### Suy nghĩ & cách tiếp cận
+
+- NACIR phù hợp với sweep này hơn vanilla Circle vì loại nhiễu đang inject chính là noisy positive, đúng mục tiêu của FP branch.
+- FN branch không phải bằng chứng chính trong sweep dataset-level này; muốn kiểm tra FN branch vẫn cần synthetic FN trong notebook.
+- NACIR có floor `epsilon_p=0.2`, nên không loại bỏ hoàn toàn sample nghi nhiễu. Đây là thiết kế an toàn để tránh mất toàn bộ tín hiệu khi detector sai.
+- Không nên kết luận chỉ bằng một run seed. Với noise rate cao, variance lớn; nên dùng ít nhất 2-3 seed ở các mốc đại diện `0.2`, `0.4`, `0.6`, `0.8`.
+
+## 29. Đánh giá output NACIR mới nhất sau mini fine-tune
+
+> **Ngày:** 2026-05  
+> **Liên quan:** `notebooks/workspace.ipynb`, `src/msiglip/model/objectives.py`, `src/msiglip/model/noise_aware.py`, `configs/loss/cir_msiglip.yaml`, `run_nacir.sh`
+
+### Định nghĩa
+
+- **Controlled greenlight:** bảng kiểm trong Section 4.6 của notebook, tạo synthetic FN/FP có ground truth để kiểm tra NACIR trước khi training dài.
+- **No-collapse ratio:** tỉ lệ tổng gradient negative của NACIR so với vanilla Circle. Ngưỡng đang dùng là `> 0.30`.
+- **Mini fine-tune:** vòng fine-tune ngắn trên subset để kiểm tra loss có làm tụt retrieval ngay hay không, trước khi chạy full 60 epochs.
+
+### Vì sao (WHY)
+
+Output mới nhất đã thay đổi quyết định so với lần đánh giá trước. Trước đó FN branch chưa pass no-collapse (`0.258 < 0.30`). Sau khi mở rộng sweep `epsilon_n`, notebook chọn được cấu hình bảo thủ hơn và mini fine-tune không làm tụt R@1. Vì training thật tốn nhiều giờ, cần chốt gate tiếp theo rõ ràng để tránh vừa bỏ lỡ tín hiệu tốt vừa chạy full run quá sớm.
+
+### Làm gì (WHAT)
+
+Kết luận hiện tại: **NACIR đã đủ điều kiện để chuyển từ notebook sang một run training kiểm chứng có giới hạn**, nhưng chưa nên claim là kết quả chính.
+
+Các số chính từ output:
+
+```text
+Retrieval sanity: R@1=53.35, R@5=80.03, R@10=88.30, mAP=58.17, mINP=51.45
+
+Clean no-op:
+Circle loss = 116.960556
+NACIR off   = 116.960556
+diff        = 0.00e+00
+
+Synthetic FN selected:
+fn_prior             = 0.010
+epsilon_n            = 0.60
+known-FN P(FN)       = 0.4522
+true-neg P(FN)       = 0.0040
+known-FN grad ratio  = 0.280
+total neg grad ratio = 0.303
+
+Synthetic FP:
+GMM separation          = 6.287
+fallback                = False
+clean weight corrupted  = 0.0000
+clean weight clean      = 0.9778
+alpha_p corrupt / clean = 0.2000 / 0.9910
+
+Mini fine-tune:
+epoch 1 avg loss = 79.4855, gmm_sep=0.635, fallback=True
+epoch 2 avg loss = 75.2583, gmm_sep=0.612, fallback=True
+R@1 delta        = +0.02
+```
+
+### Làm như thế nào (HOW)
+
+Run tiếp theo nên dùng đúng override notebook đề xuất:
+
+```bash
+uv run trainer.py -cn cir_msiglip \
+  trainer.max_epochs=60 \
+  trainer.accumulate_grad_batches=3 \
+  ++trainer.precision=16-mixed \
+  optimizer=cir_test \
+  optimizer.param_groups.default.lr=1e-4 \
+  +lora=default \
+  loss.NACIR=true \
+  loss.nacir_config.fn_prior=0.010 \
+  loss.nacir_config.epsilon_n=0.60
+```
+
+Khuyến nghị thứ tự:
+
+1. Chạy clean NACIR một seed với override trên.
+2. Theo dõi kỹ `nacir_alpha_n_scale_mean`, `nacir_clean_weight_mean`, `gmm_separation`, `gmm_fallback`, `val_t2i_R1`.
+3. Nếu clean R@1 không tụt quá khoảng 0.5-1.0 điểm so với Circle baseline, mới chạy noisy correspondence ở các mốc đại diện `0.2`, `0.4`, `0.6`.
+4. Nếu clean R@1 tụt, ablate FN-only bằng cách đẩy `fp_enable_epoch` rất cao hoặc FP-only bằng cách đẩy `fn_enable_epoch` rất cao để xác định nhánh gây hại.
+
+### Suy nghĩ & cách tiếp cận
+
+- `epsilon_n=0.60` là lựa chọn hợp lý hơn default `0.10` cho clean VN3K vì nó vẫn suppress known-FN (`grad ratio=0.280`) nhưng vừa đủ giữ tổng negative gradient (`0.303`) qua ngưỡng.
+- No-collapse pass rất sát ngưỡng, nên full run cần được xem là validation run chứ chưa phải final contribution.
+- Mini fine-tune ổn định là tín hiệu tốt: R@1 không tụt và loss giảm. Tuy vậy GMM fallback trong mini fine-tune là bình thường vì clean subset không có noisy positive rõ ràng.
+- FP branch mới là nơi có khả năng tạo lợi ích lớn trong `run_noise_experiments.sh`, vì caption-shuffle tạo false positive/noisy positive.
+- Lỗi notebook ở Section A/B (`CKPT_PATH_B=None`) không ảnh hưởng tới quyết định NACIR; đó là section tùy chọn cần set checkpoint thứ hai nếu muốn so sánh side-by-side.
+
+## 30. Cập nhật `run_nacir.sh` theo candidate NACIR mới nhất
+
+> **Ngày:** 2026-05  
+> **Liên quan:** `run_nacir.sh`, `notebooks/workspace.ipynb`, `configs/loss/cir_msiglip.yaml`
+
+### Định nghĩa
+
+- **Hydra override:** tham số truyền trực tiếp ở command line để ghi đè config YAML khi chạy training.
+- **FN override của NACIR:** cặp `fn_prior` và `epsilon_n` điều khiển mức suppress negative branch cho các cặp nghi false negative.
+
+### Vì sao (WHY)
+
+`run_nacir.sh` trước đó chỉ bật `loss.NACIR=true`, nên training sẽ dùng default `epsilon_n=0.10`. Output notebook mới nhất cho thấy default này quá aggressive trong synthetic FN validation, còn candidate `fn_prior=0.010`, `epsilon_n=0.60` vừa pass no-collapse vừa giữ R@1 ổn định trong mini fine-tune.
+
+### Làm gì (WHAT)
+
+Cập nhật `run_nacir.sh` để entrypoint mặc định dùng candidate đã được notebook chọn:
+
+```bash
+loss.NACIR=true \
+loss.nacir_config.fn_prior=0.010 \
+loss.nacir_config.epsilon_n=0.60
+```
+
+### Làm như thế nào (HOW)
+
+Sau thay đổi, chạy clean NACIR validation bằng:
+
+```bash
+bash run_nacir.sh
+```
+
+Script vẫn giữ cùng backbone/config chính: `cir_msiglip`, 60 epochs, LoRA default, optimizer `cir_test`, LR `1e-4`, precision `16-mixed`.
+
+### Suy nghĩ & cách tiếp cận
+
+- Đưa override vào script giúp tránh chạy nhầm cấu hình default cũ.
+- Không sửa `configs/loss/cir_msiglip.yaml` để default toàn repo vẫn conservative/off-by-default; chỉ entrypoint NACIR experimental dùng candidate mới.
+- Nếu full clean NACIR tụt R@1, nên rollback bằng cách đổi override trong script hoặc ablate FN/FP branch trước khi sweep noisy correspondence.
