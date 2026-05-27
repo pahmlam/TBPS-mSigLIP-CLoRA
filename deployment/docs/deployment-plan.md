@@ -2,7 +2,7 @@
 
 > **Status:** In progress | **Target device:** Qualcomm RB3 Gen2 (QCS6490, HTP V68, 4 GB RAM, Ubuntu 24.04 aarch64)
 > **Source checkpoint:** `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` (VN3K R@1 = 52.28%, LoRA + Curriculum Circle Loss, seed 2400)
-> **Last updated:** 2026-05-17
+> **Last updated:** 2026-05-27
 
 ---
 
@@ -68,7 +68,7 @@ epoch=56    model_fp16.pt           vision_onnx/                 INT8-quantized 
                                      external weights)                                        as vision)
 ```
 
-### Current status: vision HTP runtime works; dummy-cal accuracy fails
+### Current status: vision HTP runtime works; deprecated real-cal compile path failed
 
 **What works:**
 - Checkpoint analysis (`deployment/scripts/analyze_checkpoint.py`)
@@ -78,9 +78,11 @@ epoch=56    model_fp16.pt           vision_onnx/                 INT8-quantized 
 - **AI Hub INT8 compile for vision encoder** (job `jgkr7qwn5`) → QNN context binary for HTP V68 ✅
 - **RB3 QNN HTP runtime** → `vn3k_test_10` runs successfully at ~22.25 ms/image NetRun average, ~20.72 ms accelerator average, 4 HVX threads.
 - **Baseline sanity tooling** → `deployment/scripts/qnn/compare_qnn_with_pytorch.py` compares QNN outputs to PyTorch/ONNX on the exact same raw inputs.
+- **Real VN3K calibration upload** → dataset `d7x5gzne9`, 500 train samples, accepted by AI Hub.
 
 **What still needs to be done:**
-- **Recompile with real VN3K calibration**: current dummy-cal binary has poor embedding fidelity (`QNN vs PyTorch/ONNX cosine_l2_mean = 0.1727` on `vn3k_test_10`).
+- **Switch quantization/compile flow**: real-calibration job `j5wx6x63p` failed because `submit-compile-job --quantize_full_type int8` still injected `--preserve_io_datatype image output_0`, leaving model I/O floating-point. HTP rejected the context binary stage.
+- **Recompile with real VN3K calibration using the Python API**: use `submit_quantize_job` + `submit_compile_and_link_jobs` or an equivalent flow that does not preserve FP I/O.
 - Text encoder: same INT8 compile pipeline on AI Hub
 - Accuracy evaluation: target R@1 ≥ 48% (vs FP32 baseline 52.28%)
 
@@ -142,9 +144,9 @@ Observed:
 - Profile from `qnn-profiling-data_1.log`: NetRun average ~22.25 ms/image; accelerator average ~20.72 ms/image.
 - Fidelity check fails: QNN vs PyTorch/ONNX cosine mean ~0.1727. Treat this binary as runtime proof only.
 
-### Phase 2b — Recompile vision encoder with real calibration (now)
+### Phase 2b — Real-calibration attempt via deprecated CLI ❌ FAILED
 
-1. Prepare real VN3K train calibration raws:
+1. Real VN3K train calibration raws were prepared:
    ```bash
    venv/bin/python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
      --dataset-root VN3K \
@@ -155,13 +157,14 @@ Observed:
      --output-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_500 \
      --path-mode relative
    ```
-2. Upload calibration dataset using the QAI Hub Python API:
+2. Calibration dataset was uploaded using the QAI Hub Python API:
    ```bash
    venv/bin/python deployment/scripts/qnn/upload_qaihub_calibration_dataset.py \
      --input-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_500 \
      --name msiglip-vision-vn3k-train-calib-500
    ```
-3. Compile a new calibrated context binary:
+   Dataset ID: `d7x5gzne9`.
+3. Deprecated CLI compile attempt `j5wx6x63p` failed:
    ```bash
    venv/bin/qai-hub submit-compile-job \
      --model artifacts/deployment/exports/exported_model/vision_onnx/ \
@@ -172,44 +175,49 @@ Observed:
      --name "mSigLIP-vision-int8-vn3k-calib-500" \
      --wait
    ```
-4. Download the new binary, rerun `vn3k_test_10`, and rerun:
-   ```bash
-   venv/bin/python deployment/scripts/qnn/compare_qnn_with_pytorch.py \
-     --model-dir artifacts/deployment/exports/exported_model \
-     --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
-     --qnn-output-dir artifacts/deployment/qnn_outputs/vn3k_test_10 \
-     --precision fp32
-   ```
-   Proceed to larger benchmark only if QNN-vs-PyTorch cosine improves substantially.
-4. **Compile text encoder** — same pipeline as vision:
-   ```bash
-   qai-hub submit-compile-job \
-       --model artifacts/deployment/exports/msiglip_lora/text_onnx/ \
-       --device "Dragonwing RB3 Gen 2 Vision Kit" \
-       --compile_options " --target_runtime qnn_context_binary --quantize_full_type int8" \
-       --input_specs '{"input_ids": ((1, 64), "int64"), "attention_mask": ((1, 64), "int64")}' \
-       --calibration_data none \
-       --name "mSigLIP-text-int8-dummy" \
-       --wait
-   ```
-5. **Write an RB3-first modular retrieval demo**: `deployment/demo/` provides image/video source adapters, QNN vision encoding on board, local spool/vector-store preflight, and swappable backend/text-service interfaces. Local fake/ONNX checks are preflight only; deployment acceptance must run on RB3 with QNN.
+   The log shows:
+   - `qairt-converter` received `--preserve_io_datatype image output_0` twice.
+   - `qairt-quantizer` also received `--preserve_io_datatype image output_0`.
+   - Quantization itself completed successfully.
+   - Context-binary creation failed with: `Tensor 'image' has a floating-point type which is not supported by the targeted device.`
 
-### Phase 3 — Proper INT8 quantization (after Phase 2)
+Conclusion: dataset `d7x5gzne9` is usable, but this CLI path is not. It preserves FP I/O, so HTP rejects the model before any on-board test can happen.
+
+### Phase 3 — Proper INT8 quantization (current next step)
 
 1. **Collect calibration data**
-   - Sample 200–500 images from VN3K training split, resize to 256×256, normalize with the same mean/std as training (0.5, 0.5, 0.5).
-   - Save as a Qualcomm AI Hub calibration dataset via `qai-hub upload-dataset`.
+   - Done for vision: `artifacts/deployment/qnn_inputs/vn3k_train_calib_500/`.
+   - Uploaded dataset: `d7x5gzne9`.
    - Mirror for text: sample 200-500 Vietnamese captions from training, tokenize with `SiglipTokenizer`, save input_ids + attention_mask pairs.
 
-2. **Quantize & compile** (use new API to avoid `--preserve_io_datatype` auto-injection)
-   - Vision: `qai-hub submit-quantize-job` → `qai-hub submit-compile-and-link-jobs`
+2. **Quantize & compile with the new API**
+   - Vision: `qai_hub.submit_quantize_job(...)` → `qai_hub.submit_compile_and_link_jobs(...)`
    - Text: same pipeline.
+   - Hard requirement: converter/quantizer/link logs must not preserve FP I/O for `image`.
+   - Helper script for the current vision path:
+     ```bash
+     venv/bin/python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+       --model artifacts/deployment/exports/exported_model/vision_onnx/ \
+       --calibration-data d7x5gzne9 \
+       --wait \
+       --download artifacts/deployment/qnn_inputs/vision_encoder_calib500.bin
+     ```
+   - The helper resolves `--calibration-data d7x5gzne9` through `hub.get_dataset(...)`. Passing the raw string directly to `submit_quantize_job` makes `qai_hub 0.48.0` treat it as a local file path.
+   - Quantize job `jp13422k5` showed that AI Hub also rejects the original dynamic-batch ONNX at quantize time. The helper now creates `artifacts/deployment/exports/exported_model/vision_onnx_static/` and rewrites input `image` from `['batch_size', 3, 256, 256]` to `[1, 3, 256, 256]` before upload.
 
-3. **Accuracy check (critical)**
-   - Download quantized ONNX models from AI Hub job results.
-   - Run on host with ONNX Runtime against VN3K test set.
-   - Compute R@1 and compare against FP32 baseline (52.28%).
-   - Acceptance threshold: R@1 ≥ 48% (within 5 pp). If lower, investigate per-layer sensitivity with AIMET or exclude attention softmax from INT8.
+3. **On-board sanity check**
+   - Download the new QNN context binary only after the compile/link job succeeds.
+   - Run `vn3k_test_10` on RB3 with `qnn-net-run`.
+   - Run `compare_qnn_with_pytorch.py`.
+   - Proceed to `vn3k_test_100`, full VN3K R@1, and text encoder only if QNN-vs-PyTorch cosine improves substantially over dummy-cal `0.1727`.
+
+4. **Compile text encoder**
+   - Start only after vision INT8 fidelity is usable.
+   - Use the same non-preserving I/O quantization/compile path.
+
+5. **Write an RB3-first modular retrieval demo**
+   - `deployment/demo/` provides image/video source adapters, QNN vision encoding on board, local spool/vector-store preflight, and swappable backend/text-service interfaces.
+   - Local fake/ONNX checks are preflight only; deployment acceptance must run on RB3 with QNN.
 
 ### Phase 4 — Demo & documentation
 
@@ -223,7 +231,7 @@ Observed:
 
 | # | Question | How to resolve |
 |---|----------|---------------|
-| 1 | Does INT8 quantization preserve R@1 within acceptable range for SigLIP-style attention? | Phase 2 step 3 — measure empirically. Paper reports only minor degradation for CLIP/SigLIP with PTQ, but we have no VN3K data point yet. |
+| 1 | Does INT8 quantization preserve R@1 within acceptable range for SigLIP-style attention? | Phase 3 sanity/accuracy checks — measure empirically after a real-calibration context binary is produced without preserved FP I/O. |
 | 2 | Will the text embedding table (~730 MB in FP32, ~180 MB in INT8) fit in HTP memory? | Check with `qai-hub submit-profile-job` after compile — reports on-chip memory usage. |
 | 3 | How much does quantization cost for cross-modal alignment specifically? | Implement A/B on a holdout set — the `logit_scale` and `logit_bias` parameters may need to stay FP16. |
 | 4 | LoRA was merged at FP32 — does post-merge quantization lose the LoRA benefit? | Compare quantized (with merged LoRA) vs quantized (without LoRA, base SigLIP only) on VN3K R@1. Expected: merged LoRA retains ~3–5 pp advantage. |

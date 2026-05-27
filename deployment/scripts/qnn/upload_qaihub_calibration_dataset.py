@@ -97,12 +97,26 @@ def main() -> None:
 
     arrays = [_read_raw_numpy(path, args.image_size) for path in raw_paths]
     dataset = hub.upload_dataset({args.input_name: arrays}, name=args.name)
+    dataset_id = getattr(dataset, "dataset_id", None)
+    dataset_name = (
+        getattr(dataset, "dataset_name", None)
+        or getattr(dataset, "name", None)
+        or args.name
+    )
 
     print(f"Uploaded {len(arrays)} samples")
-    print(f"Dataset name: {dataset.dataset_name}")
-    print(f"Dataset ID:   {dataset.dataset_id}")
-    print("\nUse this with:")
-    print(f"  --calibration_data {dataset.dataset_id}")
+    print(f"Dataset name: {dataset_name}")
+    if dataset_id:
+        print(f"Dataset ID:   {dataset_id}")
+        print("\nUse this with:")
+        print(f"  --calibration_data {dataset_id}")
+    else:
+        print("Dataset ID:   <not exposed by this qai_hub client object>")
+        print("\nList recent datasets to recover the ID:")
+        print(
+            "  venv/bin/python deployment/scripts/qnn/list_qaihub_datasets.py "
+            "--limit 10"
+        )
 
 
 if __name__ == "__main__":

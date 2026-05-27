@@ -60,6 +60,11 @@ Phân tích, trade-offs, lý do chọn cách này thay vì cách khác.
 28. [Dự đoán NACIR khi inject noisy correspondence](#28-dự-đoán-nacir-khi-inject-noisy-correspondence)
 29. [Đánh giá output NACIR mới nhất sau mini fine-tune](#29-đánh-giá-output-nacir-mới-nhất-sau-mini-fine-tune)
 30. [Cập nhật `run_nacir.sh` theo candidate NACIR mới nhất](#30-cập-nhật-runnacirsh-theo-candidate-nacir-mới-nhất)
+31. [Tổng kết tiến độ deploy RB3 ngày 2026-05-26](#31-tổng-kết-tiến-độ-deploy-rb3-ngày-2026-05-26)
+32. [Báo cáo tiến độ deploy RB3 ngày 2026-05-27](#32-báo-cáo-tiến-độ-deploy-rb3-ngày-2026-05-27)
+33. [Đánh giá clean NACIR run lần 1](#33-đánh-giá-clean-nacir-run-lần-1)
+34. [Chiến lược tiếp theo cho FN branch của NACIR](#34-chiến-lược-tiếp-theo-cho-fn-branch-của-nacir)
+35. [Clean no-op proof cho NACIR](#35-clean-no-op-proof-cho-nacir)
 
 ---
 
@@ -2446,9 +2451,377 @@ bash run_nacir.sh
 ```
 
 Script vẫn giữ cùng backbone/config chính: `cir_msiglip`, 60 epochs, LoRA default, optimizer `cir_test`, LR `1e-4`, precision `16-mixed`.
+Script cũng truyền tiếp `"$@"`, nên có thể thêm override ablation ở cuối lệnh mà không cần sửa file.
 
 ### Suy nghĩ & cách tiếp cận
 
 - Đưa override vào script giúp tránh chạy nhầm cấu hình default cũ.
 - Không sửa `configs/loss/cir_msiglip.yaml` để default toàn repo vẫn conservative/off-by-default; chỉ entrypoint NACIR experimental dùng candidate mới.
 - Nếu full clean NACIR tụt R@1, nên rollback bằng cách đổi override trong script hoặc ablate FN/FP branch trước khi sweep noisy correspondence.
+
+## 33. Đánh giá clean NACIR run lần 1
+
+> **Ngày:** 2026-05  
+> **Liên quan:** `artifacts/training/logs/output.log`, `run_nacir.sh`, `src/msiglip/model/noise_aware.py`, `configs/loss/cir_msiglip.yaml`
+
+### Định nghĩa
+
+- **Clean NACIR run:** training trên dữ liệu VN3K sạch với `loss.NACIR=true`, dùng candidate từ notebook `fn_prior=0.010`, `epsilon_n=0.60`.
+- **GMM fallback:** FP detector không đủ separation nên `clean_weights=1.0`; positive branch không bị suppress.
+- **FN-only effect thực tế:** khi FP branch fallback toàn bộ, khác biệt chính so với Circle đến từ nhánh FN suppression.
+
+### Vì sao (WHY)
+
+Run đầu tiên là kiểm chứng quan trọng sau khi notebook pass controlled validation. Notebook chỉ kiểm tra embedding cố định và mini fine-tune ngắn; full 60 epoch mới cho biết NACIR có giữ được clean R@1 hay không. Kết quả giảm cho thấy cần phân biệt giữa: detector FN có ích trên synthetic FN, nhưng có thể làm yếu hard-negative mining trên clean VN3K.
+
+### Làm gì (WHAT)
+
+Kết quả chính từ log:
+
+```text
+Best checkpoint: epoch=48-val_score=50.70.ckpt
+Final test T2I: R@1=50.70, R@5=78.50, R@10=87.20, mAP=56.40, mINP=50.19
+Final test I2T: R@1=54.05, R@5=81.35, R@10=88.45, mAP=50.54, mINP=34.35
+Canonical Circle baseline seed 2400: T2I R@1=52.28
+Delta vs seed-2400 baseline: -1.58 R@1
+```
+
+GMM refit luôn fallback:
+
+```text
+epoch 15 separation=0.025 fallback=True
+epoch 20 separation=0.059 fallback=True
+epoch 25 separation=0.109 fallback=True
+epoch 30 separation=0.158 fallback=True
+epoch 35 separation=0.224 fallback=True
+epoch 40 separation=0.231 fallback=True
+epoch 45 separation=0.195 fallback=True
+epoch 50 separation=0.201 fallback=True
+epoch 55 separation=0.203 fallback=True
+```
+
+Kết luận: **không nên dùng full NACIR hiện tại làm clean replacement cho Circle Loss**. Trên clean VN3K, FP branch không có gì để sửa, còn FN branch có khả năng suppress hard negatives thật quá nhiều.
+
+### Làm như thế nào (HOW)
+
+Hướng chạy tiếp theo nên là ablation thay vì noisy sweep full NACIR ngay:
+
+```bash
+# No-op NACIR: kiểm tra đường NACIR khi detector tắt có tái lập Circle không
+bash run_nacir.sh \
+  loss.nacir_config.fn_enable_epoch=999 \
+  loss.nacir_config.fp_enable_epoch=999
+
+# FP-only NACIR: phù hợp với noisy correspondence/caption-shuffle
+bash run_nacir.sh \
+  loss.nacir_config.fn_enable_epoch=999
+
+# FN conservative hơn nếu vẫn muốn thử FN branch trên clean
+bash run_nacir.sh \
+  loss.nacir_config.fn_prior=0.005 \
+  loss.nacir_config.epsilon_n=0.80
+```
+
+Nếu mục tiêu là robustness với `run_noise_experiments.sh`, ưu tiên FP-only trên cùng noise files vì noise injection hiện tại tạo noisy positive/false positive, không trực tiếp tạo false negative.
+
+### Suy nghĩ & cách tiếp cận
+
+- Kết quả `50.70` thấp hơn baseline tốt nhất `52.28` và cũng thấp hơn mean multi-seed `51.52`, nên đây là tín hiệu negative cho clean NACIR hiện tại.
+- GMM fallback toàn bộ là hợp lý trên clean data nhưng làm cho FP branch không đóng góp. Vì vậy không thể kết luận FP branch vô ích; chỉ kết luận clean data không kích hoạt nó.
+- FN branch pass notebook rất sát ngưỡng no-collapse (`0.303`), nên full run giảm là nhất quán với giả thuyết suppression còn quá mạnh.
+- Bước tiếp theo tốt nhất là tách nhánh: FP-only cho noisy correspondence và no-op NACIR để kiểm tra regression path trước khi thử lại full NACIR.
+
+## 31. Tổng kết tiến độ deploy RB3 ngày 2026-05-26
+
+> **Ngày:** 2026-05-26  
+> **Liên quan:** `deployment/docs/deployment-plan.md`, `artifacts/deployment/qnn_inputs/`, `artifacts/deployment/qnn_outputs/vn3k_test_10/`, `deployment/scripts/qnn/`
+
+### Định nghĩa
+
+- **Runtime pass:** QNN context binary load được trên RB3, graph execute thành công, output đúng shape và profiling hợp lệ.
+- **Fidelity pass:** embedding QNN gần embedding PyTorch/ONNX baseline trên cùng raw input. Đây là gate bắt buộc trước khi mở rộng benchmark hoặc retrieval.
+- **Dummy calibration:** compile INT8 bằng `--calibration_data none`; chỉ kiểm tra đường compile/runtime, không đảm bảo accuracy.
+- **Real calibration:** dùng ảnh VN3K train đã preprocess đúng để ước lượng quantization range trước khi compile INT8.
+
+### Vì sao (WHY)
+
+Vision encoder đã chạy được trên board nhưng binary hiện tại không còn là ứng viên accuracy. Nếu tiếp tục benchmark `vn3k_test_100` hoặc full retrieval với binary này, kết quả sẽ phản ánh calibration sai thay vì năng lực thật của model.
+
+### Làm gì (WHAT)
+
+Trạng thái hiện tại:
+
+```text
+Export FP32/FP16 model: done
+Export ONNX vision/text: done
+Compile vision INT8 HTP dummy-cal: done, job jgkr7qwn5
+Run vision_encoder.bin trên RB3: done
+Latency vision HTP: ~22.25 ms/image NetRun average
+Output validity: pass, 10/10 outputs, 768 float32, no NaN/Inf
+QNN vs PyTorch/ONNX fidelity: fail, cosine_l2_mean = 0.1727
+Calibration train set vn3k_train_calib_500: chưa có
+Text encoder HTP: chưa compile
+End-to-end retrieval trên board: chưa làm
+```
+
+### Làm như thế nào (HOW)
+
+Bước tiếp theo phải chạy trên local trước:
+
+```bash
+cd /Users/phamtunglam/Documents/Projects/mSigLIP/code
+
+venv/bin/python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
+  --dataset-root VN3K \
+  --split train \
+  --selection random \
+  --seed 2400 \
+  --num-samples 500 \
+  --output-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_500 \
+  --path-mode relative
+```
+
+Upload calibration dataset:
+
+```bash
+venv/bin/python deployment/scripts/qnn/upload_qaihub_calibration_dataset.py \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_500 \
+  --name msiglip-vision-vn3k-train-calib-500
+```
+
+Nếu upload xong nhưng script/version client không in được ID, lấy lại ID bằng:
+
+```bash
+venv/bin/python deployment/scripts/qnn/list_qaihub_datasets.py --limit 10
+```
+
+Compile lại vision encoder bằng dataset ID vừa nhận:
+
+```bash
+venv/bin/qai-hub submit-compile-job \
+  --model artifacts/deployment/exports/exported_model/vision_onnx/ \
+  --device "Dragonwing RB3 Gen 2 Vision Kit" \
+  --compile_options " --target_runtime qnn_context_binary --quantize_full_type int8" \
+  --input_specs '{"image": ((1, 3, 256, 256), "float32")}' \
+  --calibration_data <DATASET_ID> \
+  --name "mSigLIP-vision-int8-vn3k-calib-500" \
+  --wait
+```
+
+Sau khi tải binary mới về board, chạy lại `vn3k_test_10` sang thư mục output mới, ví dụ `vn3k_test_10_calib500`, rồi sync về local và chạy:
+
+```bash
+venv/bin/python deployment/scripts/qnn/compare_qnn_with_pytorch.py \
+  --model-dir artifacts/deployment/exports/exported_model \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
+  --qnn-output-dir artifacts/deployment/qnn_outputs/vn3k_test_10_calib500 \
+  --precision fp32
+```
+
+### Suy nghĩ & cách tiếp cận
+
+- Không nên compile text encoder hoặc làm demo retrieval trước khi vision fidelity pass, vì lỗi calibration vision sẽ làm mọi metric retrieval nhiễu.
+- Runtime HTP đã được chứng minh; vấn đề còn lại là quantization accuracy.
+- Nếu real calibration vẫn cho cosine thấp, cần chuyển sang pipeline mới `submit_quantize_job` + `submit_compile_and_link_jobs` để tránh hành vi deprecated của `--quantize_full_type`.
+- Chỉ khi QNN-vs-PyTorch cosine tăng mạnh so với `0.1727` mới mở rộng sang `vn3k_test_100`, full VN3K R@1, và text encoder.
+
+## 32. Báo cáo tiến độ deploy RB3 ngày 2026-05-27
+
+> **Ngày:** 2026-05-27  
+> **Liên quan:** `deployment/docs/[deploy]-2026-05-27.md`, `deployment/docs/aihub-experiments.md`, `artifacts/deployment/logs/j5wx6x63p.log`, `artifacts/deployment/qnn_outputs/vn3k_test_10/`
+
+### Định nghĩa
+
+- **Báo cáo tiến độ:** tài liệu snapshot dùng để báo cáo trạng thái triển khai tại một thời điểm cụ thể.
+- **Real-calibration compile gate:** mốc quyết định sau khi compile vision encoder với calibration thật; chỉ khi QNN-vs-PyTorch fidelity pass mới mở rộng sang benchmark lớn hơn và text encoder.
+- **Preserve I/O datatype:** việc giữ kiểu dữ liệu I/O gốc của ONNX, ví dụ `image` vẫn là FP32. Với HTP V68, đây là lỗi blocking vì biên I/O phải là INT8/INT16.
+
+### Vì sao (WHY)
+
+Deployment đã có nhiều mốc nhỏ: compile dummy-cal, chạy HTP trên board, profile, kiểm tra output, so sánh fidelity, upload calibration và submit job mới. Cần một file báo cáo ngắn gọn để trình bày tiến độ mà không phải đọc nhiều log rời rạc.
+
+### Làm gì (WHAT)
+
+Cập nhật báo cáo `deployment/docs/[deploy]-2026-05-27.md` ghi lại:
+
+- vision encoder đã chạy được trên RB3 HTP;
+- latency đã đo được khoảng `22.25 ms/image`;
+- output runtime pass nhưng fidelity dummy-cal fail với `cosine_l2_mean = 0.1727`;
+- calibration dataset thật `d7x5gzne9` đã được dùng để submit compile job `j5wx6x63p`;
+- job `j5wx6x63p` đã fail vì converter/quantizer vẫn inject `--preserve_io_datatype image output_0`;
+- bước tiếp theo là chuyển sang QAI Hub Python API mới bằng `deployment/scripts/qnn/submit_qaihub_quantize_compile.py`, với yêu cầu không preserve FP I/O.
+
+### Làm như thế nào (HOW)
+
+File báo cáo nằm tại:
+
+```text
+deployment/docs/[deploy]-2026-05-27.md
+```
+
+AI Hub experiment log cũng được cập nhật cho job:
+
+```text
+j5wx6x63p
+```
+
+Các dòng log quyết định:
+
+```text
+qairt-converter ... --preserve_io_datatype image output_0 --preserve_io_datatype image output_0
+qairt-quantizer ... --preserve_io_datatype image output_0 ...
+Quantization completed successfully
+Tensor 'image' has a floating-point type which is not supported by the targeted device.
+```
+
+Lệnh tiếp theo:
+
+```bash
+venv/bin/python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+  --model artifacts/deployment/exports/exported_model/vision_onnx/ \
+  --calibration-data d7x5gzne9 \
+  --wait \
+  --download artifacts/deployment/qnn_inputs/vision_encoder_calib500.bin
+```
+
+Sau lần chạy đầu tiên, Python API báo:
+
+```text
+FileNotFoundError: No such file or directory: 'd7x5gzne9'
+```
+
+Nguyên nhân là `qai_hub 0.48.0` hiểu string `calibration_data="d7x5gzne9"` như đường dẫn file local, không tự resolve thành dataset ID. Script đã được sửa để gọi:
+
+```python
+calibration_data = hub.get_dataset("d7x5gzne9")
+hub.submit_quantize_job(model, calibration_data=calibration_data, ...)
+```
+
+Lần chạy sau tạo được quantize job `jp13422k5`, nhưng fail với:
+
+```text
+Model input 'image' has dynamic shapes. Please use a static shape.
+```
+
+Nguyên nhân là ONNX vision export hiện tại vẫn có batch động:
+
+```text
+image: ['batch_size', 3, 256, 256]
+```
+
+`submit_compile_job` trước đây xử lý được vì có `--input_specs`, nhưng `submit_quantize_job` không có tham số `input_specs` riêng. Script đã được sửa để tự tạo bản ONNX static trước khi upload:
+
+```text
+artifacts/deployment/exports/exported_model/vision_onnx_static/
+image: [1, 3, 256, 256]
+```
+
+### Suy nghĩ & cách tiếp cận
+
+- Báo cáo phân biệt rõ **runtime pass** với **compile pass** và **fidelity/accuracy pass** để tránh claim deploy thành công quá sớm.
+- `d7x5gzne9` không bị lãng phí; dataset calibration đã được AI Hub dùng. Lỗi nằm ở compile flow giữ float I/O, không phải ở dataset.
+- Không nên chạy lại cùng command `submit-compile-job --quantize_full_type int8`, vì `j5wx6x63p` xác nhận đường này vẫn preserve I/O float với real calibration.
+- Với Python API, dataset ID cũng phải được resolve rõ ràng thành `Dataset` object; nếu không API sẽ thử upload một file tên `d7x5gzne9`.
+- Với Python quantize API, ONNX đầu vào cũng phải static sẵn; không dựa vào compile-time `input_specs` để sửa dynamic batch.
+- Các bước tiếp theo phải đi theo thứ tự: tạo binary bằng API mới không preserve I/O float → chạy board → profile → compare fidelity → mới benchmark lớn hoặc compile text.
+
+## 34. Chiến lược tiếp theo cho FN branch của NACIR
+
+> **Ngày:** 2026-05-27  
+> **Liên quan:** `artifacts/training/logs/output.log`, `notebooks/workspace.ipynb`, `run_nacir.sh`, `src/msiglip/model/objectives.py`
+
+### Định nghĩa
+
+- **False Negative (FN):** cặp bị label là negative nhưng thật ra có thể cùng người hoặc mô tả khớp về mặt ngữ nghĩa.
+- **FN branch của NACIR:** nhánh dùng posterior `P(FN|s)` để giảm lực đẩy của Circle Loss trên negative pair nghi là false negative.
+- **Clean default path:** cấu hình dùng để tối ưu kết quả trên VN3K sạch, nơi baseline LoRA + Curriculum Circle đang là kết quả chính.
+
+### Vì sao (WHY)
+
+Clean NACIR run lần 1 giảm từ baseline `52.28` xuống `50.70` R@1. Trong run này, FP branch fallback toàn bộ nên phần khác biệt chính là FN suppression. Điều đó cho thấy FN branch hiện tại không nên nằm trong default clean training vì nó có thể làm yếu hard-negative mining thật.
+
+### Làm gì (WHAT)
+
+Không bỏ hẳn FN branch, nhưng đổi vai trò:
+
+- **Không dùng FN branch mặc định** cho clean VN3K.
+- **Giữ FN branch như diagnostic/research path** cho synthetic FN, dữ liệu bẩn hơn, hoặc dữ liệu thật có lỗi ID rõ ràng.
+- **Ưu tiên FP-only NACIR** cho noise experiment hiện tại, vì `inject_noisy_correspondence()` tạo noisy positive/caption-shuffle chứ không tạo FN trực tiếp.
+
+### Làm như thế nào (HOW)
+
+Các run hợp lý:
+
+```bash
+# Default clean baseline vẫn là Circle/NACIR-off.
+bash run_cir_loss.sh
+
+# FP-only NACIR cho caption-shuffle/noisy correspondence.
+bash run_nacir.sh \
+  loss.nacir_config.fn_enable_epoch=999
+
+# FN-only hoặc full FN chỉ chạy khi muốn nghiên cứu riêng FN branch.
+bash run_nacir.sh \
+  loss.nacir_config.fp_enable_epoch=999 \
+  loss.nacir_config.fn_prior=0.005 \
+  loss.nacir_config.epsilon_n=0.80
+```
+
+Nếu muốn đánh giá FN nghiêm túc, cần một benchmark có FN ground truth hoặc tạo synthetic FN trong notebook/training bằng cách đổi PID có kiểm soát. Caption-shuffle hiện tại không đủ để kết luận về FN.
+
+### Suy nghĩ & cách tiếp cận
+
+- FN branch không sai về mặt ý tưởng; nó đã phản ứng đúng trong notebook synthetic FN. Vấn đề là clean VN3K không cho thấy đủ FN thật để suppression có lợi.
+- Circle Loss đang tăng R@1 nhờ hard-negative mining. Nếu detector FN không đủ chính xác, nó sẽ triệt tiêu đúng tín hiệu giúp Circle Loss mạnh hơn N-ITC.
+- Với paper/thesis, nên trình bày FN branch là negative result/controlled analysis: hữu ích khi có FN giả lập, nhưng chưa cải thiện clean VN3K.
+- Hướng thực dụng là giữ clean model chính là LoRA + Curriculum Circle, còn NACIR dùng cho robustness/noisy data experiments.
+
+## 35. Clean no-op proof cho NACIR
+
+> **Ngày:** 2026-05-27  
+> **Liên quan:** `run_nacir.sh`, `notebooks/workspace.ipynb`, `src/msiglip/model/objectives.py`, `artifacts/training/logs/output.log`
+
+### Định nghĩa
+
+- **Implementation no-op:** khi truyền `fn_stats=None` và `clean_weights=None`, `compute_noise_aware_circle()` phải bằng đúng `compute_cross_modal_circle()`.
+- **Training clean-safe:** khi train trên dataset sạch, NACIR đầy đủ không được làm giảm accuracy đáng kể so với Circle baseline.
+- **Detector-off NACIR:** chạy cùng đường NACIR nhưng tắt cả FN/FP detector bằng `fn_enable_epoch=999`, `fp_enable_epoch=999`.
+
+### Vì sao (WHY)
+
+Nếu NACIR được claim là noise-aware extension an toàn, cần chứng minh rằng khi không có noise, nó không phá baseline. Tuy nhiên clean NACIR run lần 1 cho thấy full detector path chưa đạt tiêu chí này: R@1 giảm từ `52.28` xuống `50.70`. Vì vậy cần phân biệt claim nào đã pass và claim nào chưa pass.
+
+### Làm gì (WHAT)
+
+Hai tầng chứng minh:
+
+1. **Loss-level no-op:** đã pass trong notebook; NACIR detectors-off bằng Circle với `diff=0.00e+00`.
+2. **Training-level no-op:** cần chạy detector-off NACIR trên clean VN3K. Nếu kết quả gần Circle baseline trong khoảng multi-seed variance, implementation path an toàn.
+
+Full NACIR với FN detector bật **chưa clean-safe** trên VN3K, nên không nên claim full NACIR là clean no-op.
+
+### Làm như thế nào (HOW)
+
+Run cần chạy tiếp theo để chứng minh clean no-op:
+
+```bash
+bash run_nacir.sh \
+  loss.nacir_config.fn_enable_epoch=999 \
+  loss.nacir_config.fp_enable_epoch=999
+```
+
+Kỳ vọng:
+
+```text
+T2I R@1 gần LoRA + Curriculum Circle baseline.
+Nếu dùng seed 2400, kỳ vọng gần 52.28 hoặc ít nhất nằm quanh multi-seed mean 51.52 ± 0.68.
+```
+
+Nếu detector-off NACIR vẫn giảm nhiều, lỗi nằm ở wiring/training path của NACIR. Nếu detector-off ổn nhưng full NACIR giảm, lỗi nằm ở detector policy, cụ thể là FN suppression trên clean data.
+
+### Suy nghĩ & cách tiếp cận
+
+- Claim đúng hiện tại là: **NACIR có cơ chế rollback/no-op khi detector tắt**.
+- Claim chưa đúng là: **full NACIR tự động no-op trên clean VN3K**.
+- Để full NACIR clean-safe, cần thêm reliability gate cho FN branch hoặc mặc định tắt FN trên clean benchmark.
+- Với noisy correspondence hiện tại, FP-only là hướng phù hợp hơn vì FP branch có fallback tự nhiên qua GMM separation, còn FN branch chưa có gate đủ chắc.

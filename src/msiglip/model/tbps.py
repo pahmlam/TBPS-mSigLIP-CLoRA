@@ -129,7 +129,7 @@ class TBPS(nn.Module):
 
         return pooler_output
 
-    def prepare_sim_targets(self, pids, use_sigmoid=False):
+    def prepare_sim_targets(self, pids, use_sigmoid=True):
         """
         Prepare similarity targets for constrative learning.
 

@@ -17,7 +17,7 @@
 5. **`--quantize_io`** — Not a recognized qai-hub compile option. Passing it in `--compile_options` is silently ignored.
 6. **`--input_specs` dtype must match the model** — You cannot declare the input as `float16` if the ONNX file's graph declares it as `float32`. AI Hub validates before compiling.
 7. **Pre-quantize ONNX locally** via `onnxconverter_common.float16.convert_float_to_float16(..., keep_io_types=False)` → converts both weights and I/O to FP16. Useful for GPU target, but still rejected by HTP (because HTP needs INT, not FP).
-8. **`--preserve_io_datatype` auto-injection** — When using `--quantize_full_type int8`, AI Hub **automatically injects** `--preserve_io_datatype` into the qairt-converter and qairt-quantizer commands. This keeps I/O tensors in their original FP type even though internal weights/activations are quantized to INT8 — which HTP then rejects at the context-binary stage. The only way to avoid this is to use the newer `submit_quantize_job` API (which does not auto-inject the flag) or to submit a compile job without `--quantize_full_type` and handle quantization separately.
+8. **`--preserve_io_datatype` auto-injection** — When using `--quantize_full_type int8`, AI Hub **automatically injects** `--preserve_io_datatype` into the qairt-converter and qairt-quantizer commands. This keeps I/O tensors in their original FP type even though internal weights/activations are quantized to INT8 — which HTP then rejects at the context-binary stage. Job `j5wx6x63p` confirms this still happens with real VN3K calibration data. The only way to avoid this is to use the newer `submit_quantize_job` API (which does not auto-inject the flag) or a compile/link flow that consumes a quantized model without preserved FP I/O.
 
 ---
 
@@ -36,6 +36,9 @@
 | 9 | 2026-04-15 13:45 | `jp27om9r5` | `vision_onnx_fp16/` (178.7 MB, FP16 I/O) | `qnn_context_binary` | `--input_specs '{"image": ((1, 3, 256, 256), "float16")}'` | ❌ | `Tensor 'image' has a floating-point type which is not supported by the targeted device. Please quantize the model including its I/O and try again.` | HTP rejects **any** floating-point I/O, not just FP32. Need INT8 or INT16 at boundaries. |
 | 10 | 2026-05-06 14:30 | `jpyvrrv7p` | `vision_onnx/` (356 MB, FP32) | `qnn_context_binary` | `--quantize_full_type int8 --calibration_data none` | ❌ | `Tensor 'image' has a floating-point type which is not supported by the targeted device.` — converter cmd showed `--preserve_io_datatype image output_0` injected **twice** | `--quantize_full_type int8` auto-injects `--preserve_io_datatype`, keeping I/O as FP32 despite INT8 internal quantization. HTP still rejects FP I/O at context-binary stage. |
 | 11 | 2026-05-06 15:10 | `jgkr7qwn5` | `vision_onnx/` (356 MB, FP32) | `qnn_context_binary` | `--quantize_full_type int8 --calibration_data none` (without `--preserve_io_datatype`) | ✅ | Full pipeline completed: ONNX → DLC → INT8 quantize (weights+act 8-bit) → QNN context binary for HTP V68. Asset: `mqyov9dxm` (model.bin). 353M MACs, 92M params. | Removing `--preserve_io_datatype` allows I/O to be quantized to INT8 alongside internals — HTP accepts. Dummy calibration only (garbage accuracy); production needs real calibration data. `--quantize_full_type` and `--target_runtime qnn_context_binary` are deprecated — migrate to `submit_quantize_job` + `submit_compile_and_link_jobs`. |
+| 12 | 2026-05-27 | `j5wx6x63p` | `artifacts/deployment/exports/exported_model/vision_onnx/` (dir, FP32) | `qnn_context_binary` | `--quantize_full_type int8 --calibration_data d7x5gzne9` (500 VN3K train calibration samples) | ❌ | Quantization completed successfully, but converter and quantizer both injected `--preserve_io_datatype image output_0`; final context-binary stage failed: `Tensor 'image' has a floating-point type which is not supported by the targeted device.` | Real calibration data is valid, but the deprecated `submit-compile-job --quantize_full_type int8` path is still wrong for HTP because it preserves FP I/O. Move to `submit_quantize_job` + `submit_compile_and_link_jobs` or another flow that does not preserve FP I/O. |
+| 13 | 2026-05-27 | — | `artifacts/deployment/exports/exported_model/vision_onnx/` | Python API quantize helper | `submit_quantize_job(..., calibration_data="d7x5gzne9")` | ❌ | Client-side failure after model upload: `FileNotFoundError: ... No such file or directory: 'd7x5gzne9'` | In `qai_hub 0.48.0`, a raw string passed as `calibration_data` is treated as a local dataset path. Resolve dataset IDs with `hub.get_dataset("d7x5gzne9")` before calling `submit_quantize_job`. Helper script updated. |
+| 14 | 2026-05-27 | `jp13422k5` | `artifacts/deployment/exports/exported_model/vision_onnx/` | Python API `submit_quantize_job` | Dataset resolved with `hub.get_dataset("d7x5gzne9")`; original ONNX still dynamic | ❌ | `Model input 'image' has dynamic shapes. Please use a static shape.` | `submit_quantize_job` rejects dynamic ONNX inputs and has no separate `input_specs` parameter. Helper script now creates `vision_onnx_static/` by rewriting `image` to `(1,3,256,256)` before upload. |
 <!-- NEXT ROWS: INT8 quantization experiments (Phase 2) -->
 
 ---
@@ -76,16 +79,15 @@ qai-hub submit-compile-job \
 ### 🎯 Production target: INT8 with real calibration data
 ```bash
 # 1. Prepare calibration dataset from VN3K (200-500 images + text pairs)
-# 2. Upload to AI Hub: qai-hub upload-dataset ...
-# 3. Compile with calibration:
-qai-hub submit-compile-job \
-    --model artifacts/deployment/exports/msiglip_lora/vision_onnx/ \
-    --device "Dragonwing RB3 Gen 2 Vision Kit" \
-    --compile_options " --target_runtime qnn_context_binary --quantize_full_type int8" \
-    --input_specs '{"image": ((1, 3, 256, 256), "float32")}' \
-    --calibration_data <DATASET_ID> \
-    --name "mSigLIP-vision-int8-prod" \
-    --wait
+# 2. Upload to AI Hub using deployment/scripts/qnn/upload_qaihub_calibration_dataset.py
+# 3. Do not use submit-compile-job --quantize_full_type int8 for production.
+#    Job j5wx6x63p showed that it still preserves FP I/O and fails on HTP.
+# 4. Use the Python API: submit_quantize_job(...) followed by submit_compile_and_link_jobs(...).
+venv/bin/python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+    --model artifacts/deployment/exports/exported_model/vision_onnx/ \
+    --calibration-data d7x5gzne9 \
+    --wait \
+    --download artifacts/deployment/qnn_inputs/vision_encoder_calib500.bin
 ```
 
 ---

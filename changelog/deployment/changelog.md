@@ -1,5 +1,38 @@
 # Deployment Changelog
 
+## [2026-05-27] Record calibrated AI Hub compile failure
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | HIGH | docs | Updated `deployment/docs/aihub-experiments.md` to mark real-calibration job `j5wx6x63p` as failed after `submit-compile-job --quantize_full_type int8` preserved FP I/O and HTP rejected the context-binary stage | COMPLETE |
+| 2 | HIGH | feature | Added `deployment/scripts/qnn/submit_qaihub_quantize_compile.py` to submit the new Python API flow: `submit_quantize_job` followed by `submit_compile_and_link_jobs` with `--quantize_io` | COMPLETE |
+| 3 | HIGH | bugfix | Fixed `submit_qaihub_quantize_compile.py` to resolve `--calibration-data d7x5gzne9` through `hub.get_dataset(...)` before calling `submit_quantize_job`, because `qai_hub 0.48.0` treats raw strings as local dataset paths | COMPLETE |
+| 4 | HIGH | bugfix | Updated `submit_qaihub_quantize_compile.py` to create a static-shape ONNX copy before quantization, because job `jp13422k5` showed `submit_quantize_job` rejects the exported dynamic-batch `image` input | COMPLETE |
+| 5 | HIGH | docs | Updated `deployment/docs/deployment-plan.md` and `deployment/docs/[deploy]-2026-05-27.md` so the next step is the Python API quantize + compile/link flow, not rerunning the deprecated CLI command | COMPLETE |
+| 6 | MED | docs | Updated `docs/knowledge.md` with the final `j5wx6x63p` finding and the reasoning that dataset `d7x5gzne9` is reusable while the compile flow must change | COMPLETE |
+
+## [2026-05-27] Add RB3 deployment progress report
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | docs | Added `deployment/docs/[deploy]-2026-05-27.md` report summarizing RB3 deployment status, verified HTP runtime metrics, dummy-cal fidelity failure, real-calibration job `j5wx6x63p`, risks, and next steps | COMPLETE |
+| 2 | LOW | docs | Logged AI Hub job `j5wx6x63p` in `deployment/docs/aihub-experiments.md` as a real-calibration compile attempt before the final failure log was available | COMPLETE |
+
+## [2026-05-26] Fix QAI Hub calibration dataset ID reporting
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | HIGH | bugfix | Updated `upload_qaihub_calibration_dataset.py` to avoid assuming `Dataset.dataset_name` exists in `qai_hub 0.48.0` and still print the uploaded dataset ID | COMPLETE (upload succeeded but script crashed while printing metadata) |
+| 2 | MED | feature | Added `deployment/scripts/qnn/list_qaihub_datasets.py` to recover recent QAI Hub dataset IDs after upload | COMPLETE |
+| 3 | LOW | docs | Updated `docs/knowledge.md` with the dataset ID recovery command | COMPLETE |
+
+## [2026-05-26] Refresh RB3 deployment status and next gate
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | docs | Updated `deployment/docs/deployment-plan.md` to mark dummy-cal vision runtime as complete but accuracy-unusable, and to make real VN3K calibration the current gate | COMPLETE |
+| 2 | MED | docs | Added `docs/knowledge.md` entry summarizing RB3 deployment progress and exact next commands for calibration upload, recompile, and QNN-vs-PyTorch verification | COMPLETE |
+
 ## [2026-05-18] Add QNN-vs-PyTorch comparison script
 
 | # | Priority | Type | Action | Status |

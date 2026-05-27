@@ -14,4 +14,5 @@ uv run trainer.py -cn cir_msiglip \
     \
     loss.NACIR=true \
     loss.nacir_config.fn_prior=0.010 \
-    loss.nacir_config.epsilon_n=0.60
+    loss.nacir_config.epsilon_n=0.60 \
+    "$@"

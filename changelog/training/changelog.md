@@ -1,10 +1,18 @@
 # Training Changelog
 
+## [2026-05-27] Clarify FN branch follow-up after clean NACIR regression
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | docs | Documented that FN branch should not be used by default on clean VN3K after clean NACIR dropped to 50.70 R@1; keep FN for controlled/synthetic FN research and prioritize FP-only NACIR for caption-shuffle noise experiments | COMPLETE |
+| 2 | MED | docs | Added the distinction between loss-level no-op and training-level clean-safe proof for NACIR, recommending detector-off NACIR as the next clean safety check | COMPLETE |
+
 ## [2026-05-26] Update NACIR training script with validated FN override
 
 | # | Priority | Type | Action | Status |
 |---|----------|------|--------|--------|
 | 1 | MED | config | Added `loss.nacir_config.fn_prior=0.010` and `loss.nacir_config.epsilon_n=0.60` to `run_nacir.sh` so the script uses the latest notebook-selected NACIR candidate by default | COMPLETE |
+| 2 | MED | config | Added `"$@"` passthrough to `run_nacir.sh` so follow-up Hydra overrides can be supplied for NACIR ablations without editing the script | COMPLETE |
 
 ## [2026-05-20] Fix notebook imports for src package layout
 
