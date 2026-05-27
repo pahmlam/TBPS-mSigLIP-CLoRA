@@ -2716,6 +2716,32 @@ artifacts/deployment/exports/exported_model/vision_onnx_static/
 image: [1, 3, 256, 256]
 ```
 
+Log `jpr9v62vp` cho thấy bước compile với model static/QDQ đã pass:
+
+```text
+qairt-converter ... --preserve_onnx_output_order
+Total MACs: 263076096
+Total Params Count: 92690688
+Successfully computed visualization graph for mq389x29m
+Compilation completed
+```
+
+Điểm quan trọng là converter command **không còn** `--preserve_io_datatype`. Local cũng đã có binary:
+
+```text
+artifacts/deployment/qnn_inputs/vision_encoder_calib500.bin
+size khoảng 90 MB
+```
+
+Tuy vậy log vẫn có:
+
+```text
+Following OPs fallback to float.
+Tensor ... may has wrong signed offset 0 of a signed symmetric schema.
+```
+
+Vì vậy đây mới là **compile pass**, chưa phải **runtime/fidelity pass**. Bước tiếp theo bắt buộc là chạy binary này trên RB3 rồi so sánh QNN-vs-PyTorch.
+
 ### Suy nghĩ & cách tiếp cận
 
 - Báo cáo phân biệt rõ **runtime pass** với **compile pass** và **fidelity/accuracy pass** để tránh claim deploy thành công quá sớm.
@@ -2723,6 +2749,8 @@ image: [1, 3, 256, 256]
 - Không nên chạy lại cùng command `submit-compile-job --quantize_full_type int8`, vì `j5wx6x63p` xác nhận đường này vẫn preserve I/O float với real calibration.
 - Với Python API, dataset ID cũng phải được resolve rõ ràng thành `Dataset` object; nếu không API sẽ thử upload một file tên `d7x5gzne9`.
 - Với Python quantize API, ONNX đầu vào cũng phải static sẵn; không dựa vào compile-time `input_specs` để sửa dynamic batch.
+- `jpr9v62vp` là mốc tích cực vì đường API mới đã tạo được binary real-calibration mà không preserve FP I/O.
+- Các warning còn lại chỉ có thể đánh giá bằng runtime/fidelity; không nên compile text encoder trước khi `vision_encoder_calib500.bin` pass `vn3k_test_10`.
 - Các bước tiếp theo phải đi theo thứ tự: tạo binary bằng API mới không preserve I/O float → chạy board → profile → compare fidelity → mới benchmark lớn hoặc compile text.
 
 ## 34. Chiến lược tiếp theo cho FN branch của NACIR

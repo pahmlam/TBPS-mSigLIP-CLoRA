@@ -8,8 +8,9 @@
 | 2 | HIGH | feature | Added `deployment/scripts/qnn/submit_qaihub_quantize_compile.py` to submit the new Python API flow: `submit_quantize_job` followed by `submit_compile_and_link_jobs` with `--quantize_io` | COMPLETE |
 | 3 | HIGH | bugfix | Fixed `submit_qaihub_quantize_compile.py` to resolve `--calibration-data d7x5gzne9` through `hub.get_dataset(...)` before calling `submit_quantize_job`, because `qai_hub 0.48.0` treats raw strings as local dataset paths | COMPLETE |
 | 4 | HIGH | bugfix | Updated `submit_qaihub_quantize_compile.py` to create a static-shape ONNX copy before quantization, because job `jp13422k5` showed `submit_quantize_job` rejects the exported dynamic-batch `image` input | COMPLETE |
-| 5 | HIGH | docs | Updated `deployment/docs/deployment-plan.md` and `deployment/docs/[deploy]-2026-05-27.md` so the next step is the Python API quantize + compile/link flow, not rerunning the deprecated CLI command | COMPLETE |
-| 6 | MED | docs | Updated `docs/knowledge.md` with the final `j5wx6x63p` finding and the reasoning that dataset `d7x5gzne9` is reusable while the compile flow must change | COMPLETE |
+| 5 | HIGH | docs | Logged compile job `jpr9v62vp` as successful: static QDQ model compiled without `--preserve_io_datatype`, produced QNN DLC asset `mq389x29m`, and downloaded `vision_encoder_calib500.bin` locally | COMPLETE |
+| 6 | HIGH | docs | Updated `deployment/docs/deployment-plan.md` and `deployment/docs/[deploy]-2026-05-27.md` so the next step is running `vision_encoder_calib500.bin` on RB3, not compiling text yet | COMPLETE |
+| 7 | MED | docs | Updated `docs/knowledge.md` with the final `j5wx6x63p` finding and the reasoning that dataset `d7x5gzne9` is reusable while the compile flow must change | COMPLETE |
 
 ## [2026-05-27] Add RB3 deployment progress report
 

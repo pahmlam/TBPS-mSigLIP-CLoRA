@@ -204,6 +204,7 @@ Conclusion: dataset `d7x5gzne9` is usable, but this CLI path is not. It preserve
      ```
    - The helper resolves `--calibration-data d7x5gzne9` through `hub.get_dataset(...)`. Passing the raw string directly to `submit_quantize_job` makes `qai_hub 0.48.0` treat it as a local file path.
    - Quantize job `jp13422k5` showed that AI Hub also rejects the original dynamic-batch ONNX at quantize time. The helper now creates `artifacts/deployment/exports/exported_model/vision_onnx_static/` and rewrites input `image` from `['batch_size', 3, 256, 256]` to `[1, 3, 256, 256]` before upload.
+   - Compile job `jpr9v62vp` completed with the static QDQ model. The converter command did not include `--preserve_io_datatype`; local output `artifacts/deployment/qnn_inputs/vision_encoder_calib500.bin` exists and is ~90 MB. Remaining warnings are signed-offset warnings and a generic "fallback to float" notice, so board execution and fidelity are still mandatory.
 
 3. **On-board sanity check**
    - Download the new QNN context binary only after the compile/link job succeeds.
