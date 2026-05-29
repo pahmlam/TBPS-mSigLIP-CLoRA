@@ -68,7 +68,7 @@ epoch=56    model_fp16.pt           vision_onnx/                 INT8-quantized 
                                      external weights)                                        as vision)
 ```
 
-### Current status: vision HTP runtime works; deprecated real-cal compile path failed
+### Current status: vision HTP runtime works; real-cal INT8 fidelity failed
 
 **What works:**
 - Checkpoint analysis (`deployment/scripts/analyze_checkpoint.py`)
@@ -79,10 +79,11 @@ epoch=56    model_fp16.pt           vision_onnx/                 INT8-quantized 
 - **RB3 QNN HTP runtime** → `vn3k_test_10` runs successfully at ~22.25 ms/image NetRun average, ~20.72 ms accelerator average, 4 HVX threads.
 - **Baseline sanity tooling** → `deployment/scripts/qnn/compare_qnn_with_pytorch.py` compares QNN outputs to PyTorch/ONNX on the exact same raw inputs.
 - **Real VN3K calibration upload** → dataset `d7x5gzne9`, 500 train samples, accepted by AI Hub.
+- **Real-calibration Python API compile/link** → job `jpr9v62vp` produced `vision_encoder_calib500.bin`, and the binary runs on RB3 HTP without NaN/Inf.
 
 **What still needs to be done:**
-- **Switch quantization/compile flow**: real-calibration job `j5wx6x63p` failed because `submit-compile-job --quantize_full_type int8` still injected `--preserve_io_datatype image output_0`, leaving model I/O floating-point. HTP rejected the context binary stage.
-- **Recompile with real VN3K calibration using the Python API**: use `submit_quantize_job` + `submit_compile_and_link_jobs` or an equivalent flow that does not preserve FP I/O.
+- **Diagnose INT8 fidelity failure**: `vision_encoder_calib500.bin` runs, but QNN-vs-PyTorch `cosine_l2_mean = 0.1300` on `vn3k_test_10`, lower than dummy-cal `0.1727`. This binary is not retrieval-usable.
+- **Isolate where fidelity is lost**: compare the QDQ ONNX quantized model against PyTorch first; only then decide whether to change PTQ/calibration settings or debug QNN I/O/runtime.
 - Text encoder: same INT8 compile pipeline on AI Hub
 - Accuracy evaluation: target R@1 ≥ 48% (vs FP32 baseline 52.28%)
 
@@ -106,7 +107,7 @@ After 11 attempts (see `aihub-experiments.md` for detailed log), the root cause 
 
 | Path | Flow | Status |
 |------|------|--------|
-| **A. INT8 quantization (proper)** | Collect calibration data → `submit_quantize_job` + `submit_compile_and_link_jobs` | ✅ Pipeline verified (dummy cal). Need real calibration data for production accuracy. |
+| **A. INT8 quantization (proper)** | Collect calibration data → `submit_quantize_job` + `submit_compile_and_link_jobs` | ⚠️ Compile/runtime verified with real calibration, but fidelity failed (`cosine_l2_mean = 0.1300`). |
 | **B. INT8 dummy calibration (sanity check)** | `qai-hub ... --calibration_data none` | ✅ Done (job `jgkr7qwn5`). Garbage accuracy, pipeline only. |
 | **C. Target GPU instead of DSP** | `--compute_unit gpu` with FP16 model | ⏭ Fallback if INT8 accuracy is unacceptable |
 | **D. CPU only** | `--target_runtime onnx` → run ONNX Runtime on device | ⏭ Last resort |
@@ -183,7 +184,7 @@ Observed:
 
 Conclusion: dataset `d7x5gzne9` is usable, but this CLI path is not. It preserves FP I/O, so HTP rejects the model before any on-board test can happen.
 
-### Phase 3 — Proper INT8 quantization (current next step)
+### Phase 3 — Proper INT8 quantization ✅ compiled, ❌ fidelity failed
 
 1. **Collect calibration data**
    - Done for vision: `artifacts/deployment/qnn_inputs/vn3k_train_calib_500/`.
@@ -204,13 +205,43 @@ Conclusion: dataset `d7x5gzne9` is usable, but this CLI path is not. It preserve
      ```
    - The helper resolves `--calibration-data d7x5gzne9` through `hub.get_dataset(...)`. Passing the raw string directly to `submit_quantize_job` makes `qai_hub 0.48.0` treat it as a local file path.
    - Quantize job `jp13422k5` showed that AI Hub also rejects the original dynamic-batch ONNX at quantize time. The helper now creates `artifacts/deployment/exports/exported_model/vision_onnx_static/` and rewrites input `image` from `['batch_size', 3, 256, 256]` to `[1, 3, 256, 256]` before upload.
-   - Compile job `jpr9v62vp` completed with the static QDQ model. The converter command did not include `--preserve_io_datatype`; local output `artifacts/deployment/qnn_inputs/vision_encoder_calib500.bin` exists and is ~90 MB. Remaining warnings are signed-offset warnings and a generic "fallback to float" notice, so board execution and fidelity are still mandatory.
+   - Compile job `jpr9v62vp` completed with the static QDQ model. The converter command did not include `--preserve_io_datatype`; local output `artifacts/deployment/qnn_inputs/vision_encoder_calib500.bin` exists and is ~90 MB.
+   - Board execution on `vn3k_test_10_calib500` completed, but fidelity failed:
+     ```text
+     cosine_l2_mean = 0.1300
+     cosine_l2_min/max = 0.0799 / 0.1774
+     l2_l2_mean = 1.3189
+     any_qnn_nan/inf = false
+     ```
 
 3. **On-board sanity check**
-   - Download the new QNN context binary only after the compile/link job succeeds.
-   - Run `vn3k_test_10` on RB3 with `qnn-net-run`.
-   - Run `compare_qnn_with_pytorch.py`.
-   - Proceed to `vn3k_test_100`, full VN3K R@1, and text encoder only if QNN-vs-PyTorch cosine improves substantially over dummy-cal `0.1727`.
+   - Done for `vision_encoder_calib500.bin`.
+   - Result: runtime pass, fidelity fail.
+   - Do not proceed to `vn3k_test_100`, full VN3K R@1, or text encoder yet.
+
+### Phase 3b — Diagnose calibrated INT8 fidelity (current next step)
+
+1. **Compare QDQ ONNX vs PyTorch**
+   - Download/export the quantized QDQ ONNX model from the successful quantize step.
+   - Run the same `vn3k_test_10` raw inputs through QDQ ONNX locally and compare against PyTorch.
+   - Helper:
+     ```bash
+     venv/bin/python deployment/scripts/qnn/compare_onnx_with_pytorch.py \
+       --onnx-model artifacts/deployment/qnn_inputs/<downloaded_qdq_onnx_or_dir> \
+       --model-dir artifacts/deployment/exports/exported_model \
+       --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
+       --precision fp32 \
+       --json artifacts/deployment/qnn_outputs/vn3k_test_10_calib500/qdq_vs_pytorch_summary.json \
+       --csv artifacts/deployment/qnn_outputs/vn3k_test_10_calib500/qdq_vs_pytorch.csv
+     ```
+
+2. **Branch based on the QDQ result**
+   - If QDQ ONNX is already low: fix PTQ/calibration settings first (calibration size/selection, quantization granularity, sensitive op exclusions, or mixed precision).
+   - If QDQ ONNX is close to PyTorch: debug QNN compile/runtime/I/O (native input/output encodings, selected output tensor, QNN CPU vs HTP comparison).
+
+3. **Resume pipeline only after vision fidelity improves**
+   - Minimum gate: QNN-vs-PyTorch cosine must be dramatically higher than both `0.1727` dummy-cal and `0.1300` calib500.
+   - Only then run `vn3k_test_100`, full VN3K R@1, and text encoder compile.
 
 4. **Compile text encoder**
    - Start only after vision INT8 fidelity is usable.

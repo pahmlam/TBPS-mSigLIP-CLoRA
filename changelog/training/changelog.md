@@ -1,5 +1,12 @@
 # Training Changelog
 
+## [2026-05-29] Add dedicated NACIR detector-off script
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | config | Added `run_nacir_detector_off.sh` to run the NACIR loss path with both FN and FP detectors disabled via `fn_enable_epoch=999` and `fp_enable_epoch=999` | COMPLETE |
+| 2 | LOW | config | Kept `"$@"` passthrough in the dedicated script so extra Hydra overrides can still be supplied without editing the file | COMPLETE |
+
 ## [2026-05-27] Clarify FN branch follow-up after clean NACIR regression
 
 | # | Priority | Type | Action | Status |

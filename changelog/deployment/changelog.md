@@ -11,6 +11,8 @@
 | 5 | HIGH | docs | Logged compile job `jpr9v62vp` as successful: static QDQ model compiled without `--preserve_io_datatype`, produced QNN DLC asset `mq389x29m`, and downloaded `vision_encoder_calib500.bin` locally | COMPLETE |
 | 6 | HIGH | docs | Updated `deployment/docs/deployment-plan.md` and `deployment/docs/[deploy]-2026-05-27.md` so the next step is running `vision_encoder_calib500.bin` on RB3, not compiling text yet | COMPLETE |
 | 7 | MED | docs | Updated `docs/knowledge.md` with the final `j5wx6x63p` finding and the reasoning that dataset `d7x5gzne9` is reusable while the compile flow must change | COMPLETE |
+| 8 | HIGH | docs | Recorded the on-board `vision_encoder_calib500.bin` fidelity failure: runtime passed on `vn3k_test_10_calib500`, but QNN-vs-PyTorch `cosine_l2_mean = 0.1300`, so the next gate is QDQ ONNX vs PyTorch diagnosis rather than text compile | COMPLETE |
+| 9 | MED | feature | Added `deployment/scripts/qnn/compare_onnx_with_pytorch.py` to compare a downloaded QDQ ONNX vision model against PyTorch on the exact same VN3K raw inputs | COMPLETE |
 
 ## [2026-05-27] Add RB3 deployment progress report
 

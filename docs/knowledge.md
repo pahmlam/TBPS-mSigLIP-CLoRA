@@ -65,6 +65,7 @@ Phân tích, trade-offs, lý do chọn cách này thay vì cách khác.
 33. [Đánh giá clean NACIR run lần 1](#33-đánh-giá-clean-nacir-run-lần-1)
 34. [Chiến lược tiếp theo cho FN branch của NACIR](#34-chiến-lược-tiếp-theo-cho-fn-branch-của-nacir)
 35. [Clean no-op proof cho NACIR](#35-clean-no-op-proof-cho-nacir)
+36. [Script riêng cho NACIR detector-off](#36-script-riêng-cho-nacir-detector-off)
 
 ---
 
@@ -2649,7 +2650,8 @@ Cập nhật báo cáo `deployment/docs/[deploy]-2026-05-27.md` ghi lại:
 - output runtime pass nhưng fidelity dummy-cal fail với `cosine_l2_mean = 0.1727`;
 - calibration dataset thật `d7x5gzne9` đã được dùng để submit compile job `j5wx6x63p`;
 - job `j5wx6x63p` đã fail vì converter/quantizer vẫn inject `--preserve_io_datatype image output_0`;
-- bước tiếp theo là chuyển sang QAI Hub Python API mới bằng `deployment/scripts/qnn/submit_qaihub_quantize_compile.py`, với yêu cầu không preserve FP I/O.
+- đã chuyển sang QAI Hub Python API mới bằng `deployment/scripts/qnn/submit_qaihub_quantize_compile.py`, với yêu cầu không preserve FP I/O;
+- job API mới `jpr9v62vp` đã tạo được `vision_encoder_calib500.bin` và binary này chạy được trên RB3, nhưng fidelity vẫn fail với `cosine_l2_mean = 0.1300`.
 
 ### Làm như thế nào (HOW)
 
@@ -2659,10 +2661,11 @@ File báo cáo nằm tại:
 deployment/docs/[deploy]-2026-05-27.md
 ```
 
-AI Hub experiment log cũng được cập nhật cho job:
+AI Hub experiment log cũng được cập nhật cho các job:
 
 ```text
 j5wx6x63p
+jpr9v62vp
 ```
 
 Các dòng log quyết định:
@@ -2674,7 +2677,7 @@ Quantization completed successfully
 Tensor 'image' has a floating-point type which is not supported by the targeted device.
 ```
 
-Lệnh tiếp theo:
+Lệnh đã dùng cho flow API mới:
 
 ```bash
 venv/bin/python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
@@ -2740,7 +2743,34 @@ Following OPs fallback to float.
 Tensor ... may has wrong signed offset 0 of a signed symmetric schema.
 ```
 
-Vì vậy đây mới là **compile pass**, chưa phải **runtime/fidelity pass**. Bước tiếp theo bắt buộc là chạy binary này trên RB3 rồi so sánh QNN-vs-PyTorch.
+Vì vậy đây mới là **compile pass**, chưa phải **runtime/fidelity pass**. Sau khi chạy binary này trên RB3 và so sánh với PyTorch:
+
+```text
+qnn_output_dir = artifacts/deployment/qnn_outputs/vn3k_test_10_calib500
+num_samples = 10
+cosine_l2_mean = 0.1300
+cosine_l2_min/max = 0.0799 / 0.1774
+l2_l2_mean = 1.3189
+any_qnn_nan/inf = false
+```
+
+Kết quả này thấp hơn cả binary dummy-cal (`0.1727`), nên `vision_encoder_calib500.bin` **không dùng được cho retrieval**. Bước tiếp theo không phải compile text encoder mà là cô lập lỗi fidelity:
+
+1. So sánh QDQ ONNX sau quantize với PyTorch trên cùng `vn3k_test_10`.
+2. Nếu QDQ ONNX đã lệch mạnh: sửa cấu hình PTQ/calibration.
+3. Nếu QDQ ONNX tốt nhưng QNN thấp: debug QNN compile/runtime/I/O, đặc biệt native encoding của input/output.
+
+Helper mới để chạy bước so sánh QDQ ONNX:
+
+```bash
+venv/bin/python deployment/scripts/qnn/compare_onnx_with_pytorch.py \
+  --onnx-model artifacts/deployment/qnn_inputs/<downloaded_qdq_onnx_or_dir> \
+  --model-dir artifacts/deployment/exports/exported_model \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
+  --precision fp32 \
+  --json artifacts/deployment/qnn_outputs/vn3k_test_10_calib500/qdq_vs_pytorch_summary.json \
+  --csv artifacts/deployment/qnn_outputs/vn3k_test_10_calib500/qdq_vs_pytorch.csv
+```
 
 ### Suy nghĩ & cách tiếp cận
 
@@ -2750,8 +2780,10 @@ Vì vậy đây mới là **compile pass**, chưa phải **runtime/fidelity pass
 - Với Python API, dataset ID cũng phải được resolve rõ ràng thành `Dataset` object; nếu không API sẽ thử upload một file tên `d7x5gzne9`.
 - Với Python quantize API, ONNX đầu vào cũng phải static sẵn; không dựa vào compile-time `input_specs` để sửa dynamic batch.
 - `jpr9v62vp` là mốc tích cực vì đường API mới đã tạo được binary real-calibration mà không preserve FP I/O.
-- Các warning còn lại chỉ có thể đánh giá bằng runtime/fidelity; không nên compile text encoder trước khi `vision_encoder_calib500.bin` pass `vn3k_test_10`.
-- Các bước tiếp theo phải đi theo thứ tự: tạo binary bằng API mới không preserve I/O float → chạy board → profile → compare fidelity → mới benchmark lớn hoặc compile text.
+- Runtime của `vision_encoder_calib500.bin` đã pass nhưng fidelity fail, nên vấn đề hiện tại là **quantization correctness**, không còn là khả năng load/execute trên HTP.
+- `compare_onnx_with_pytorch.py` giúp tách riêng sai số do QDQ quantization trước khi đụng đến QNN runtime.
+- Không nên compile text encoder trước khi xác định fidelity loss nằm ở QDQ ONNX hay ở QNN runtime/I/O.
+- Các bước tiếp theo phải đi theo thứ tự: lấy QDQ ONNX sau quantize → so QDQ ONNX với PyTorch → nếu pass mới debug QNN; nếu fail thì chỉnh PTQ/calibration.
 
 ## 34. Chiến lược tiếp theo cho FN branch của NACIR
 
@@ -2853,3 +2885,55 @@ Nếu detector-off NACIR vẫn giảm nhiều, lỗi nằm ở wiring/training p
 - Claim chưa đúng là: **full NACIR tự động no-op trên clean VN3K**.
 - Để full NACIR clean-safe, cần thêm reliability gate cho FN branch hoặc mặc định tắt FN trên clean benchmark.
 - Với noisy correspondence hiện tại, FP-only là hướng phù hợp hơn vì FP branch có fallback tự nhiên qua GMM separation, còn FN branch chưa có gate đủ chắc.
+
+## 36. Script riêng cho NACIR detector-off
+
+> **Ngày:** 2026-05-29  
+> **Liên quan:** `run_nacir_detector_off.sh`, `run_nacir.sh`, `artifacts/training/logs/output1.log`
+
+### Định nghĩa
+
+- **Detector-off NACIR:** chạy cùng implementation path của NACIR nhưng tắt cả FN detector và FP detector bằng cách đặt epoch kích hoạt lớn hơn tổng số epoch train.
+- **FN detector:** nhánh giảm lực đẩy negative pair nghi là false negative.
+- **FP detector:** nhánh giảm trọng số positive pair nghi là noisy correspondence, dựa trên per-sample loss và GMM.
+
+### Vì sao (WHY)
+
+`output1.log` vẫn xuất hiện `GMM refit` từ epoch 15 dù mục tiêu là chạy với `fn_enable_epoch=999` và `fp_enable_epoch=999`. Điều này cho thấy run đó nhiều khả năng không nhận override, hoặc server dùng bản `run_nacir.sh` cũ chưa passthrough `"$@"`. Cần một script riêng để giảm rủi ro nhầm lẫn khi copy lệnh lên server.
+
+### Làm gì (WHAT)
+
+Tạo `run_nacir_detector_off.sh` làm entrypoint riêng cho clean no-op proof:
+
+- Bật `loss.NACIR=true` để vẫn đi qua NACIR branch trong `tbps.py`.
+- Giữ candidate `fn_prior=0.010`, `epsilon_n=0.60` để nhất quán với NACIR run hiện tại.
+- Tắt detector bằng `loss.nacir_config.fn_enable_epoch=999` và `loss.nacir_config.fp_enable_epoch=999`.
+- Giữ `"$@"` ở cuối để có thể thêm override phụ như logger, seed, hoặc max epoch.
+
+### Làm như thế nào (HOW)
+
+Chạy:
+
+```bash
+bash run_nacir_detector_off.sh
+```
+
+Nếu muốn log riêng:
+
+```bash
+bash run_nacir_detector_off.sh > artifacts/training/logs/nacir_detector_off.log 2>&1
+```
+
+Dấu hiệu run đúng:
+
+```text
+Không có dòng "GMM refit" trong log 60 epoch.
+```
+
+Nếu vẫn thấy `GMM refit`, script trên server không phải bản mới hoặc config override đã bị thay đổi bởi một override phía sau.
+
+### Suy nghĩ & cách tiếp cận
+
+- Script riêng giúp phân biệt rõ ba nhánh: Circle baseline, full NACIR, và NACIR detector-off.
+- Detector-off run không nhằm chứng minh full NACIR tốt hơn; nó chỉ kiểm tra training path của NACIR có suy biến về Circle Loss khi detector bị tắt hay không.
+- Nếu detector-off đạt gần baseline Circle nhưng full NACIR giảm, vấn đề nằm ở detector policy. Nếu detector-off cũng giảm mạnh, cần debug wiring/training path của NACIR.
