@@ -1,5 +1,19 @@
 # Training Changelog
 
+## [2026-06-02] Add NACIR FP-only script
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | config | Added `run_nacir_fp_only.sh` to run NACIR with FN disabled via `fn_enable_epoch=999` while keeping FP detection active at the default epoch | COMPLETE |
+| 2 | MED | docs | Updated the NACIR training report and Vietnamese knowledge base to make FP-only the next experiment after detector-off, with clean and noisy run commands | COMPLETE |
+
+## [2026-06-02] Document NACIR detector-off result
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | docs | Updated NACIR training report with `output2.log`: detector-off run reached T2I R@1 `51.65`, no `GMM refit`, seed remains `2400`, and the result is near-baseline but not a strict reproduction of historical seed-2400 `52.28` | COMPLETE |
+| 2 | MED | docs | Added Vietnamese knowledge entry clarifying that strict same-seed no-op proof needs a current Circle control on the same code/server, while the full NACIR regression still most likely comes from detector policy | COMPLETE |
+
 ## [2026-05-29] Add dedicated NACIR detector-off script
 
 | # | Priority | Type | Action | Status |

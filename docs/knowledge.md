@@ -66,6 +66,8 @@ Phân tích, trade-offs, lý do chọn cách này thay vì cách khác.
 34. [Chiến lược tiếp theo cho FN branch của NACIR](#34-chiến-lược-tiếp-theo-cho-fn-branch-của-nacir)
 35. [Clean no-op proof cho NACIR](#35-clean-no-op-proof-cho-nacir)
 36. [Script riêng cho NACIR detector-off](#36-script-riêng-cho-nacir-detector-off)
+37. [Đánh giá clean detector-off NACIR run](#37-đánh-giá-clean-detector-off-nacir-run)
+38. [Script riêng cho NACIR FP-only](#38-script-riêng-cho-nacir-fp-only)
 
 ---
 
@@ -2937,3 +2939,114 @@ Nếu vẫn thấy `GMM refit`, script trên server không phải bản mới ho
 - Script riêng giúp phân biệt rõ ba nhánh: Circle baseline, full NACIR, và NACIR detector-off.
 - Detector-off run không nhằm chứng minh full NACIR tốt hơn; nó chỉ kiểm tra training path của NACIR có suy biến về Circle Loss khi detector bị tắt hay không.
 - Nếu detector-off đạt gần baseline Circle nhưng full NACIR giảm, vấn đề nằm ở detector policy. Nếu detector-off cũng giảm mạnh, cần debug wiring/training path của NACIR.
+
+## 37. Đánh giá clean detector-off NACIR run
+
+> **Ngày:** 2026-06-02  
+> **Liên quan:** `artifacts/training/logs/output2.log`, `run_nacir_detector_off.sh`, `docs/[train]-2026-05-27.md`
+
+### Định nghĩa
+
+- **Training-level no-op:** full training dùng NACIR branch nhưng tắt detector, kết quả phải gần Circle baseline; nếu cùng seed và cùng code/runtime thì kỳ vọng chặt hơn là gần current Circle control cùng seed.
+- **Seed-best baseline:** kết quả tốt nhất đã ghi nhận cho LoRA + Curriculum Circle, `52.28` T2I R@1 với seed 2400.
+- **Multi-seed baseline:** trung bình nhiều seed của LoRA + Curriculum Circle, `51.52 ± 0.68` T2I R@1.
+
+### Vì sao (WHY)
+
+Sau full NACIR clean run bị giảm xuống `50.70`, cần xác định lỗi nằm ở implementation path của NACIR hay nằm ở detector policy. Detector-off run là phép kiểm tra: nếu tắt cả FN/FP detector mà vẫn tụt mạnh, có khả năng NACIR wiring sai; nếu gần baseline, lỗi nằm ở cách detector can thiệp vào gradient. Vì run detector-off vẫn dùng seed `2400`, so sánh nghiêm ngặt nhất là với Circle baseline seed `2400` chạy lại bằng cùng code/server hiện tại.
+
+### Làm gì (WHAT)
+
+Đọc `output2.log`, kết quả:
+
+```text
+Best checkpoint: epoch=52-val_score=51.65.ckpt
+Test T2I R@1: 51.65
+Test T2I R@5: 78.90
+Test T2I R@10: 87.60
+Test T2I mAP: 57.22
+Test T2I mINP: 51.00
+Test I2T R@1: 53.65
+GMM refit: không xuất hiện
+```
+
+So với baseline:
+
+```text
+Delta vs seed-best 52.28: -0.63 R@1
+Delta vs multi-seed mean 51.52: +0.13 R@1
+Seed: 2400 theo configs/cir_msiglip.yaml, không có override trong run_nacir_detector_off.sh
+```
+
+### Làm như thế nào (HOW)
+
+Kiểm tra log:
+
+```bash
+rg -n "GMM refit|Restoring states|Test Results|test_t2i_R1|test_i2t_R1" artifacts/training/logs/output2.log
+```
+
+Không có dòng `GMM refit`, nên `fp_enable_epoch=999` có vẻ đã được áp dụng đúng. Kết quả `51.65` nằm trong vùng `51.52 ± 0.68`, nên detector-off NACIR pass tiêu chí near-baseline. Tuy nhiên nó chưa chứng minh strict same-seed no-op so với historical `52.28`; để chứng minh phần đó cần một current Circle control:
+
+```bash
+bash run_cir_loss.sh
+```
+
+### Suy nghĩ & cách tiếp cận
+
+- Vì seed vẫn là `2400`, không được giải thích `51.65` là do khác seed. Cách diễn giải đúng là: near-baseline nhưng thấp hơn historical seed-2400 baseline `0.63`.
+- `seed_everything(config.seed)` đặt seed, nhưng training hiện không bật deterministic algorithms và dùng `num_workers=4`, mixed precision CUDA; do đó cùng seed không bảo đảm bit-exact nếu code/runtime thay đổi.
+- Detector-off không chứng minh full NACIR tốt, nhưng chưa có dấu hiệu lỗi wiring lớn. Kết luận chắc nhất cần thêm current Circle control cùng seed/server.
+
+## 38. Script riêng cho NACIR FP-only
+
+> **Ngày:** 2026-06-02  
+> **Liên quan:** `run_nacir_fp_only.sh`, `run_nacir_detector_off.sh`, `docs/[train]-2026-05-27.md`
+
+### Định nghĩa
+
+- **FP-only NACIR:** chạy NACIR nhưng tắt FN detector, chỉ giữ FP detector để down-weight noisy positive/noisy correspondence.
+- **Noisy correspondence:** caption bị tráo trong train set, tạo cặp ảnh-văn bản positive sai; đây là loại nhiễu phù hợp với FP detector hơn FN detector.
+- **Clean safety check:** chạy FP-only trên VN3K sạch để kiểm tra FP detector không làm giảm baseline khi không có noisy positive rõ ràng.
+
+### Vì sao (WHY)
+
+Detector-off run đã cho thấy NACIR branch không có dấu hiệu làm hỏng training lớn khi tắt detector. Full NACIR giảm từ `52.28` xuống `50.70`, nhiều khả năng do FN suppression làm yếu hard-negative mining trên clean data. Vì vậy hướng tiếp theo hợp lý là tắt FN và kiểm tra riêng FP branch.
+
+### Làm gì (WHAT)
+
+Tạo `run_nacir_fp_only.sh`:
+
+- Bật `loss.NACIR=true`.
+- Tắt FN bằng `loss.nacir_config.fn_enable_epoch=999`.
+- Không override `fp_enable_epoch`, nên FP detector vẫn bật theo default `15`.
+- Giữ `"$@"` để có thể thêm noisy overrides hoặc logger overrides.
+
+### Làm như thế nào (HOW)
+
+Clean FP-only:
+
+```bash
+bash run_nacir_fp_only.sh
+```
+
+Noisy FP-only tại `noisy_rate=0.4`:
+
+```bash
+bash run_nacir_fp_only.sh \
+  dataset.noisy_rate=0.4 \
+  dataset.noisy_file=artifacts/training/noiseindex/VN3K_VI_0.4.npy
+```
+
+Dấu hiệu cần theo dõi:
+
+```text
+Clean run: GMM fallback hoặc clean_weight_mean gần 1.0; R@1 không tụt rõ.
+Noisy run: gmm_separation nên tăng; clean_weight_mean/alpha_p_scale_mean nên giảm ở rate đủ cao.
+```
+
+### Suy nghĩ & cách tiếp cận
+
+- Không cần chạy lại Circle control ngay nếu mục tiêu là tiến tiếp theo hướng thực nghiệm; clean FP-only sẽ trả lời nhánh FP có an toàn hay không.
+- Nếu clean FP-only vẫn gần detector-off, có thể chuyển sang noisy A/B với cùng script.
+- Nếu clean FP-only tụt rõ, FP detector/GMM policy cũng chưa đủ an toàn và cần debug trước khi chạy noisy sweep dài.
