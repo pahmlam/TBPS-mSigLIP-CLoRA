@@ -35,6 +35,8 @@ checkpoints/
 .claude/
 ref/
 experiments/
+knowledge/
+docs/knowledge.md
 exported_model/
 noiseindex/
 Log/
