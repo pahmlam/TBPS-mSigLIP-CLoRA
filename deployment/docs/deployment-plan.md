@@ -68,7 +68,7 @@ epoch=56    model_fp16.pt           vision_onnx/                 INT8-quantized 
                                      external weights)                                        as vision)
 ```
 
-### Current status: vision HTP runtime works; real-cal INT8 fidelity failed
+### Current status: vision HTP runtime works; real-cal INT8 fidelity failed at QDQ/PTQ
 
 **What works:**
 - Checkpoint analysis (`deployment/scripts/analyze_checkpoint.py`)
@@ -80,10 +80,12 @@ epoch=56    model_fp16.pt           vision_onnx/                 INT8-quantized 
 - **Baseline sanity tooling** → `deployment/scripts/qnn/compare_qnn_with_pytorch.py` compares QNN outputs to PyTorch/ONNX on the exact same raw inputs.
 - **Real VN3K calibration upload** → dataset `d7x5gzne9`, 500 train samples, accepted by AI Hub.
 - **Real-calibration Python API compile/link** → job `jpr9v62vp` produced `vision_encoder_calib500.bin`, and the binary runs on RB3 HTP without NaN/Inf.
+- **Static ONNX control** → `vision_onnx_static` matches PyTorch on `vn3k_test_10` with `cosine_l2_mean ≈ 1.0`.
+- **QDQ ONNX diagnostic** → downloaded `job_jpv46q07p_qdq_onnx` and compared it against PyTorch on `vn3k_test_10`.
 
 **What still needs to be done:**
-- **Diagnose INT8 fidelity failure**: `vision_encoder_calib500.bin` runs, but QNN-vs-PyTorch `cosine_l2_mean = 0.1300` on `vn3k_test_10`, lower than dummy-cal `0.1727`. This binary is not retrieval-usable.
-- **Isolate where fidelity is lost**: compare the QDQ ONNX quantized model against PyTorch first; only then decide whether to change PTQ/calibration settings or debug QNN I/O/runtime.
+- **Fix PTQ/QDQ fidelity**: QDQ ONNX vs PyTorch already fails with `cosine_l2_mean = 0.1682`; QNN-vs-PyTorch is lower at `0.1300`. The primary failure is therefore quantization fidelity before QNN runtime.
+- **Try better quantization settings**: calibration selection/size, quantization granularity, sensitive op exclusions, or mixed precision.
 - Text encoder: same INT8 compile pipeline on AI Hub
 - Accuracy evaluation: target R@1 ≥ 48% (vs FP32 baseline 52.28%)
 
@@ -219,24 +221,32 @@ Conclusion: dataset `d7x5gzne9` is usable, but this CLI path is not. It preserve
    - Result: runtime pass, fidelity fail.
    - Do not proceed to `vn3k_test_100`, full VN3K R@1, or text encoder yet.
 
-### Phase 3b — Diagnose calibrated INT8 fidelity (current next step)
+### Phase 3b — Diagnose calibrated INT8 fidelity ✅ QDQ checked, ❌ PTQ fidelity failed
 
 1. **Compare QDQ ONNX vs PyTorch**
-   - Download/export the quantized QDQ ONNX model from the successful quantize step.
-   - Run the same `vn3k_test_10` raw inputs through QDQ ONNX locally and compare against PyTorch.
+   - Done: downloaded/extracted QDQ ONNX to `artifacts/deployment/runtime/job_jpv46q07p_qdq_onnx/`.
+   - Ran the same `vn3k_test_10` raw inputs through QDQ ONNX locally and compared against PyTorch.
    - Helper:
      ```bash
      venv/bin/python deployment/scripts/qnn/compare_onnx_with_pytorch.py \
-       --onnx-model artifacts/deployment/qnn_inputs/<downloaded_qdq_onnx_or_dir> \
+       --onnx-model artifacts/deployment/runtime/job_jpv46q07p_qdq_onnx \
        --model-dir artifacts/deployment/exports/exported_model \
        --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
        --precision fp32 \
        --json artifacts/deployment/qnn_outputs/vn3k_test_10_calib500/qdq_vs_pytorch_summary.json \
        --csv artifacts/deployment/qnn_outputs/vn3k_test_10_calib500/qdq_vs_pytorch.csv
      ```
+   - Result:
+     ```text
+     Static ONNX vs PyTorch cosine_l2_mean = 1.0000
+     cosine_l2_mean = 0.1682
+     cosine_l2_min/max = 0.1272 / 0.2157
+     l2_l2_mean = 1.2897
+     any_onnx_nan/inf = false
+     ```
 
 2. **Branch based on the QDQ result**
-   - If QDQ ONNX is already low: fix PTQ/calibration settings first (calibration size/selection, quantization granularity, sensitive op exclusions, or mixed precision).
+   - Current branch: QDQ ONNX is already low, so fix PTQ/calibration settings first (calibration size/selection, quantization granularity, sensitive op exclusions, or mixed precision).
    - If QDQ ONNX is close to PyTorch: debug QNN compile/runtime/I/O (native input/output encodings, selected output tensor, QNN CPU vs HTP comparison).
 
 3. **Resume pipeline only after vision fidelity improves**

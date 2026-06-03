@@ -1,5 +1,19 @@
 # Deployment Changelog
 
+## [2026-06-02] Add PTQ/QDQ remediation plan
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | HIGH | docs | Created `deployment/docs/[deploy]-2026-06-02.md` with the next-step plan, gates, and checklist for fixing vision INT8 PTQ/QDQ fidelity before any further QNN link or text encoder work | COMPLETE |
+| 2 | MED | docs | Added `docs/knowledge.md` entry summarizing the QDQ gate strategy and rationale | COMPLETE |
+
+## [2026-06-02] Diagnose QDQ ONNX fidelity failure
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | HIGH | docs | Updated `deployment/docs/deployment-plan.md` after static ONNX matched PyTorch (`cosine_l2_mean ≈ 1.0`) but QDQ ONNX vs PyTorch showed `cosine_l2_mean = 0.1682`, confirming the main fidelity loss happens at PTQ/QDQ before QNN runtime | COMPLETE |
+| 2 | MED | docs | Added `docs/knowledge.md` entry documenting the QDQ diagnostic command, outputs, and next quantization direction | COMPLETE |
+
 ## [2026-05-27] Record calibrated AI Hub compile failure
 
 | # | Priority | Type | Action | Status |

@@ -51,5 +51,6 @@ artifacts/*
 !artifacts/deployment/
 !artifacts/deployment/**
 artifacts/deployment/exports/
+artifacts/deployment/runtime/
 artifacts/deployment/**/.DS_Store
 artifacts/deployment/**/__pycache__/

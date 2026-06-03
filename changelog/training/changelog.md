@@ -1,5 +1,11 @@
 # Training Changelog
 
+## [2026-06-02] Document mSigLIP image resolution rationale
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | LOW | docs | Added Vietnamese knowledge entry explaining why 256x256 works better for the current mSigLIP setup than the 384x128 ReID convention, covering patch grids and positional embedding resize | COMPLETE |
+
 ## [2026-06-02] Add NACIR FP-only script
 
 | # | Priority | Type | Action | Status |

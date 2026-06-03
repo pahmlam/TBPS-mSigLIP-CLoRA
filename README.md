@@ -356,7 +356,8 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 ├── docs/                              # Project documentation
 │   ├── ARCHITECTURE.md                # Full architecture with diagrams
 │   ├── EXPERIMENT_SUMMARY.md          # Canonical experiment record
-│   └── knowledge.md                   # Vietnamese knowledge base
+│   ├── knowledge.md                   # Vietnamese durable concept/definition base
+│   └── journal/                       # Dated training/model-optimization logs
 │
 ├── deployment/                        # Edge deployment & compression
 │   ├── scripts/
@@ -370,12 +371,24 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 │   ├── docs/
 │   │   ├── deployment-plan.md         # Current deployment status and next steps
 │   │   ├── aihub-experiments.md       # Qualcomm AI Hub compile log
+│   │   ├── journal/                   # Dated deployment logs and decisions
 │   │   ├── system.md                  # RB3 hardware specs
 │   │   └── benchmark-rp.md            # Proxy benchmark results
 │   └── config/qnn/                    # QNN/HTP runtime config JSON files
 │
 └── ref/                               # Reference implementations (RDE, etc.)
 ```
+
+---
+
+## Documentation Convention
+
+- `docs/knowledge.md` stores durable Vietnamese knowledge only: concepts, definitions, mechanisms, and stable trade-offs.
+- `docs/journal/[train]-YYYY-MM-DD.md` stores dated training/model-optimization results: commands, logs, metrics, temporary conclusions, and next experiment decisions.
+- `deployment/docs/journal/[deploy]-YYYY-MM-DD.md` stores dated deployment results: AI Hub jobs, QNN/QDQ fidelity, RB3 runtime, artifacts, and next deploy steps.
+- Reviewer responses and paper wording belong under `knowledge/response.md` or `knowledge/paper/`, not `docs/knowledge.md`.
+- Before adding documentation, classify the content first and confirm the target file unless the user explicitly requested that documentation update.
+- Use the templates in `docs/knowledge.md`, `docs/journal/README.md`, and `deployment/docs/journal/README.md` for new entries.
 
 ---
 

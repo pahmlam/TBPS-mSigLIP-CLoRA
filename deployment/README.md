@@ -25,6 +25,7 @@ deployment/
 │   ├── deployment-plan.md         # ** START HERE ** — full deployment plan, status, next steps
 │   ├── end-to-end-system-design.md # Proposed end-to-end product/system architecture
 │   ├── aihub-experiments.md       # Running log of every qai-hub compile attempt
+│   ├── journal/                   # Dated deployment logs and decisions
 │   ├── system.md                  # RB3 Gen2 hardware specifications
 │   ├── experiment.md              # Benchmark step-by-step guide
 │   └── benchmark-rp.md            # Hardware benchmark results
@@ -35,6 +36,14 @@ deployment/
 ```
 
 All scripts in `scripts/` and `hardware_profiling/` write generated logs under `artifacts/deployment/`.
+
+## Documentation Convention
+
+- `deployment/docs/deployment-plan.md` tracks the current deployment state and next technical steps.
+- `deployment/docs/journal/[deploy]-YYYY-MM-DD.md` stores dated deployment results: AI Hub jobs, QNN/QDQ fidelity, RB3 runtime, artifacts, and decisions.
+- Stable concepts such as QNN, ONNX, HTP, and quantization terminology belong in `docs/knowledge.md`.
+- Before adding deployment documentation, classify whether it is current state, dated journal, durable knowledge, or changelog, and confirm the target file unless the user explicitly requested the update.
+- Use the template in `deployment/docs/journal/README.md` for new dated deployment entries.
 
 ## Deployment Pipeline
 

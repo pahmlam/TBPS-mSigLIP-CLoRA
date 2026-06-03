@@ -137,31 +137,35 @@ The notebook operates on `W` — a dict of extracted embeddings from a checkpoin
 
 - `docs/ARCHITECTURE.md` — Full architecture with diagrams
 - `docs/EXPERIMENT_SUMMARY.md` — Results table and training config (canonical record)
-- `docs/knowledge.md` — Knowledge base in Vietnamese (see rule below)
+- `docs/knowledge.md` — Vietnamese durable knowledge base for concepts/definitions only
+- `docs/journal/` — Dated training/model-optimization research logs (`[train]-YYYY-MM-DD.md`)
 - `knowledge/` — Research notes, paper drafts, noise handling analysis
 - `experiments/` — Experiment logs and ablation notes
 - `ref/rde/` — RDE (CVPR 2024) reference implementation for noise-robust learning
 - `deployment/README.md` — Edge deployment overview
 - `deployment/docs/deployment-plan.md` — **Current deployment state, pipeline status, next steps** (start here for deployment work)
+- `deployment/docs/journal/` — Dated deployment logs (`[deploy]-YYYY-MM-DD.md`)
 - `deployment/docs/aihub-experiments.md` — Running log of every Qualcomm AI Hub compile attempt (rule: append a row on every `qai-hub` invocation — see `.claude/rules/aihub-experiments.md`)
 - `deployment/docs/system.md` — Qualcomm RB3 Gen2 hardware specifications
 
-## Knowledge Documentation Rule
+## Documentation Policy
 
-**Required:** When discussing or implementing any technical/theoretical content task, Claude MUST document related knowledge in `docs/knowledge.md` in Vietnamese.
+Do **not** automatically write to documentation files. Before editing any docs, journal, changelog, README, or paper notes, state the target file(s), what will be recorded, and why, then ask the user to confirm. If the user explicitly asks to create or update documentation in the prompt, that request counts as confirmation for the requested files.
 
-Each knowledge entry must include:
-1. **Definition** — Explain related concepts/terminology
-2. **Why (WHY)** — Why this needs to be done
-3. **What (WHAT)** — Describe the specific solution/action
-4. **How (HOW)** — Technical details, code, commands
-5. **Reasoning & approach** — Trade-offs, rationale for the chosen approach
+Classify documentation before writing:
+- **Knowledge** (`docs/knowledge.md`): durable concepts, definitions, mechanisms, and general trade-offs that should still be true months later.
+- **Training journal** (`docs/journal/[train]-YYYY-MM-DD.md`): training/model-optimization results, commands, logs, metrics, temporary conclusions, and next experiment decisions.
+- **Deployment journal** (`deployment/docs/journal/[deploy]-YYYY-MM-DD.md`): deploy results, AI Hub jobs, QNN/QDQ fidelity, board runtime, artifacts, and next deploy steps.
+- **Changelog** (`changelog/{component}/changelog.md`): completed code/config/docs changes after user-confirmed changelog writing.
+- **Paper notes** (`knowledge/response.md`, `knowledge/paper/`, etc.): reviewer responses, paper wording, and presentation-specific phrasing.
 
-Template is available at the bottom of `docs/knowledge.md`. Update the table of contents when adding new entries.
+Do not put run logs, experiment results, dated progress, reviewer-answer wording, changelog entries, or deployment job results into `docs/knowledge.md`.
+
+Use the templates in `docs/knowledge.md`, `docs/journal/README.md`, and `deployment/docs/journal/README.md` when the user confirms a documentation update.
 
 ## Changelog
 
-After completing a task that modifies code, append an entry to the relevant `changelog/{component}/changelog.md`.
+After completing a task that modifies code/config/docs, ask before appending an entry to the relevant `changelog/{component}/changelog.md`, unless the user already requested changelog updates.
 
 Components:
 - `changelog/training/changelog.md` — training pipeline, model, losses, data, config
