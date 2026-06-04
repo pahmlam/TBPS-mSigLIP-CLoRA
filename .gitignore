@@ -33,6 +33,7 @@ cuhk_test_original_m_siglip
 # Local/generated directories kept out of git
 checkpoints/
 .claude/
+.agents/
 ref/
 experiments/
 knowledge/

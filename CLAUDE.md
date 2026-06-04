@@ -145,6 +145,7 @@ The notebook operates on `W` — a dict of extracted embeddings from a checkpoin
 - `deployment/README.md` — Edge deployment overview
 - `deployment/docs/deployment-plan.md` — **Current deployment state, pipeline status, next steps** (start here for deployment work)
 - `deployment/docs/journal/` — Dated deployment logs (`[deploy]-YYYY-MM-DD.md`)
+- `deployment/docs/journal/[demo-system]-YYYY-MM-DD.md` — Dated modular demo-system logs for `deployment/demo/` scaffold, adapters, CLI workflows, local preflight, and RB3 demo acceptance status
 - `deployment/docs/aihub-experiments.md` — Legacy redirect only; canonical Qualcomm AI Hub job logs are in `deployment/docs/journal/`
 - `deployment/docs/system.md` — Qualcomm RB3 Gen2 hardware specifications
 
@@ -156,6 +157,7 @@ Classify documentation before writing:
 - **Knowledge** (`docs/knowledge.md`): durable concepts, definitions, mechanisms, and general trade-offs that should still be true months later.
 - **Training journal** (`docs/journal/[train]-YYYY-MM-DD.md`): training/model-optimization results, commands, logs, metrics, temporary conclusions, and next experiment decisions.
 - **Deployment journal** (`deployment/docs/journal/[deploy]-YYYY-MM-DD.md`): deploy results, AI Hub jobs, QNN/QDQ fidelity, board runtime, artifacts, and next deploy steps.
+- **Demo system journal** (`deployment/docs/journal/[demo-system]-YYYY-MM-DD.md`): modular demo-system work under `deployment/demo/`, including scaffold/module boundaries, adapters, CLI workflows, local preflight, and RB3 demo acceptance status. Do not use this for AI Hub jobs, QDQ/QNN fidelity, board benchmark logs, training experiments, or changelog entries.
 - **Changelog** (`changelog/{component}/changelog.md`): completed code/config/docs changes after user-confirmed changelog writing.
 - **Paper notes** (`knowledge/response.md`, `knowledge/paper/`, etc.): reviewer responses, paper wording, and presentation-specific phrasing.
 

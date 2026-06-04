@@ -10,7 +10,7 @@ from ..adapters.encoders import FakeTextEncoder, FakeVisionEncoder, OnnxVisionEn
 from ..adapters.sources import build_source
 from ..adapters.spool import DiskSpool
 from ..adapters.tracker import SimpleTracker
-from ..adapters.uploaders import FailingUploader, LocalVectorStoreUploader
+from ..adapters.uploaders import FailingUploader, HttpUploader, LocalVectorStoreUploader
 from ..adapters.vector_store import JsonlVectorStore
 
 
@@ -41,11 +41,18 @@ def build_text_encoder(args):
 
 def build_ingest_components(args):
     vector_store = JsonlVectorStore(Path(args.store))
-    uploader = (
-        LocalVectorStoreUploader(vector_store)
-        if args.upload_mode == "local"
-        else FailingUploader()
-    )
+    if args.upload_mode == "local":
+        uploader = LocalVectorStoreUploader(vector_store)
+    elif args.upload_mode == "http":
+        if not args.backend_url:
+            raise ValueError("--backend-url is required with --upload-mode http")
+        uploader = HttpUploader(
+            backend_url=args.backend_url,
+            board_token=args.board_token,
+            timeout=args.http_timeout,
+        )
+    else:
+        uploader = FailingUploader()
     return {
         "source": build_source(Path(args.source), args.source_type, max_frames=args.max_frames),
         "detector": FullFramePersonDetector(),

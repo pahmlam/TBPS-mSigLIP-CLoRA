@@ -22,7 +22,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--store", default="artifacts/deployment/runtime/vectors.jsonl")
     parser.add_argument("--spool", default="artifacts/deployment/runtime/spool")
     parser.add_argument("--crops", default="artifacts/deployment/runtime/crops")
-    parser.add_argument("--upload-mode", choices=["local", "fail"], default="local")
+    parser.add_argument("--upload-mode", choices=["local", "http", "fail"], default="local")
+    parser.add_argument("--backend-url", help="FastAPI backend URL for --upload-mode http.")
+    parser.add_argument("--board-token", help="Optional bearer token for backend ingest.")
+    parser.add_argument("--http-timeout", type=float, default=10.0)
     parser.add_argument("--tracker-mode", choices=["per_frame", "single"], default="per_frame")
 
     parser.add_argument("--encoder", choices=["fake", "onnx", "qnn"], default="fake")

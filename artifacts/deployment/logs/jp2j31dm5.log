@@ -1,0 +1,57 @@
+[2026-06-04T06:11:20.558+00:00] [INFO] [quantize-post-download] Memory: 1.5GiB | working_set: 1.4GiB | peak: 1.9GiB
+[2026-06-04T06:11:22.544+00:00] [INFO] AIMET version: 2.31.0
+[2026-06-04T06:11:22.593+00:00] [INFO] Using quant scheme: QuantScheme.post_training_tf_enhanced
+[2026-06-04T06:11:29.481+00:00] [INFO] Creating Quantization Simulator...
+[2026-06-04T06:11:32.593+00:00] [INFO] Finished Creating Quantization Simulator
+[2026-06-04T06:11:32.594+00:00] [INFO] Computing Encodings...
+[2026-06-04T06:11:45.036+00:00] [INFO] Memory: 6.4GiB | working_set: 6.0GiB | peak: 6.4GiB
+[2026-06-04T06:12:45.096+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:13:45.157+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:14:45.216+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:15:45.276+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:16:45.336+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:17:45.381+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:18:45.442+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:19:45.496+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:20:45.556+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:21:45.616+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:22:45.656+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:23:45.716+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:24:45.776+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:25:45.836+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:26:45.896+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:27:45.956+00:00] [INFO] Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB
+[2026-06-04T06:28:13.826+00:00] [INFO] Finished Computing Encodings
+[2026-06-04T06:28:13.827+00:00] [INFO] Exporting QDQ ONNX graph from AIMET quantsim...
+[2026-06-04T06:28:18.067+00:00] [INFO] Completed export
+| ---AIMET LOGS---
+| 2026-06-04 06:11:30,340 - Quant - INFO - Selecting DefaultOpInstanceConfigGenerator to compute the specialized config. hw_version:None
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:11:45.036682 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.4GiB | working_set: 6.0GiB | peak: 6.4GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:12:45.096471 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:13:45.157265 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:14:45.216494 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:15:45.276447 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:16:45.336470 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:17:45.381433 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:18:45.442168 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:19:45.496433 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:20:45.556444 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:21:45.616453 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:22:45.656576 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:23:45.716451 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:24:45.776473 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:25:45.836488 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:26:45.896441 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp2j31dm5", "attempt_number": 0, "asctime": "04/Jun/2026:06:27:45.956467 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 7.0GiB | working_set: 6.5GiB | peak: 7.0GiB"}
+| 2026-06-04 06:28:13,828 - Quant - INFO - onnx::QuantizeLinear and DequantizeLinear with INT4/INT16 are only supported in opset >= 21; got opset=18
+| 2026-06-04 06:28:17,774 - Utils - INFO - The opset of the onnx model is updated to 21.
+| ---END AIMET LOGS---
+[2026-06-04T06:28:18.296+00:00] [INFO] ONNX graph successfully converted to QDQ format
+[2026-06-04T06:28:18.296+00:00] [INFO] Computing PSNR between FP32 and INT8 model output...
+[2026-06-04T06:28:24.741+00:00] [INFO] PSNR: {'image_embedding': 17.356414570274723}
+[2026-06-04T06:28:24.817+00:00] [INFO] [quantize-post-quantize] Memory: 7.7GiB | working_set: 7.3GiB | peak: 9.8GiB
+[2026-06-04T06:28:36.870+00:00] [INFO] Uploading asset to https://tetrahub-qprod-userdata.s3.amazonaws.com/models/mqpw3k9on_gTGrnfWb45kJPVlK.onnx.zip?uploadId=PSJ9kk7IdB9DW7vXi265ipFe_b8pF4eKi1XQcVZ8f5_lkeSDQfoyd.7zUc7scsBWQDDMwYByoKrgAQX7khd5_lVQThwrf8cBEfZGXcfhxIL6UzCtdx603Qx3R0CFvtv2&partNumber=1&AWSAccessKeyId=AKIAY25OF7UJV2IL2L3T&Signature=I5%2BMBIZo6
+[2026-06-04T06:28:39.763+00:00] [INFO] Successfully uploaded asset with response status: 200
+[2026-06-04T06:28:40.519+00:00] [INFO] Uploading asset to https://tetrahub-qprod-userdata.s3-accelerate.amazonaws.com/
+[2026-06-04T06:28:40.642+00:00] [INFO] Successfully uploaded asset with response status: 204
+[2026-06-04T06:28:40.642+00:00] [INFO] Successfully computed visualization graph for mqpw3k9on

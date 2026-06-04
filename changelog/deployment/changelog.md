@@ -1,5 +1,16 @@
 # Deployment Changelog
 
+## [2026-06-04] Add PTQ audit and quantize-only gate
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | MED | feature | Added `deployment/scripts/qnn/summarize_raw_inputs.py` to validate prepared QNN raw inputs for byte size, finite values, `[-1,1]` range, and distribution statistics | COMPLETE |
+| 2 | MED | docs | Logged the Phase B audit result in `deployment/docs/journal/[deploy]-2026-06-04.md`: `vn3k_train_calib_500` has 500/500 valid float32 samples and no obvious raw preprocessing defect | COMPLETE |
+| 3 | HIGH | feature | Added `--quantize-only` and `--download-quantized` to `submit_qaihub_quantize_compile.py` so new candidates can stop at QDQ ONNX for fidelity gating before compile/link | COMPLETE |
+| 4 | MED | artifact | Created and audited local `artifacts/deployment/qnn_inputs/vn3k_train_calib_2000` with 2000 valid VN3K train raw inputs for the next AI Hub calibration upload | COMPLETE |
+| 5 | HIGH | docs | Logged quantize job `jgomex415` in `deployment/docs/journal/[deploy]-2026-06-04.md`: calib2000 W8A8 QDQ still failed (`cosine_l2_mean = 0.1692`), so compile/link remains blocked and the next candidate is W8A16 quantize-only | COMPLETE |
+| 6 | HIGH | docs | Logged quantize job `jp2j31dm5` in `deployment/docs/journal/[deploy]-2026-06-04.md`: calib2000 W8A16 QDQ only improved to `cosine_l2_mean = 0.1863`, still far below gate, so compile/link remains blocked and the next direction is exclude/mixed precision or another quantization pipeline | COMPLETE |
+
 ## [2026-06-02] Add PTQ/QDQ remediation plan
 
 | # | Priority | Type | Action | Status |

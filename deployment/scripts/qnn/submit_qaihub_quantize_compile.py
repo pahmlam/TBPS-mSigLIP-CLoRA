@@ -55,6 +55,15 @@ def _calibration_data(value: str):
         ) from exc
 
 
+def _download_model(model: Any, output: Path, label: str) -> Path:
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    downloaded = model.download(str(output))
+    downloaded_path = Path(downloaded).expanduser().resolve() if downloaded else output
+    print(f"Downloaded {label}: {downloaded_path}")
+    return downloaded_path
+
+
 def _find_single_onnx(path: Path) -> Path:
     if path.is_file():
         if path.suffix != ".onnx":
@@ -189,7 +198,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--quantize-options",
         default="",
-        help="Additional cli-like options for submit_quantize_job.",
+        help=(
+            "Additional cli-like options for submit_quantize_job. If the value "
+            "starts with '--', pass it with equals, e.g. "
+            "--quantize-options=--lite_mp."
+        ),
     )
     parser.add_argument(
         "--compile-options",
@@ -215,6 +228,19 @@ def parse_args() -> argparse.Namespace:
         help="Wait for quantize, compile, and link jobs to finish.",
     )
     parser.add_argument(
+        "--quantize-only",
+        action="store_true",
+        help=(
+            "Stop after submit_quantize_job produces a QDQ target model. "
+            "Use this for the QDQ-vs-PyTorch fidelity gate before compile/link."
+        ),
+    )
+    parser.add_argument(
+        "--download-quantized",
+        type=Path,
+        help="Optional path to download the quantized QDQ target model after --wait.",
+    )
+    parser.add_argument(
         "--download",
         type=Path,
         help="Optional path to download the linked QNN context binary after --wait.",
@@ -231,6 +257,9 @@ def main() -> None:
     args = parse_args()
 
     import qai_hub as hub
+
+    if (args.download or args.download_quantized) and not args.wait:
+        raise RuntimeError("--download and --download-quantized require --wait")
 
     model = args.model.expanduser().resolve()
     input_specs = _parse_input_specs(args.input_specs)
@@ -269,6 +298,17 @@ def main() -> None:
             f"Status: {quantize_status or quantize_job.get_status()}"
         )
 
+    if args.download_quantized:
+        _download_model(quantized_model, args.download_quantized, "quantized QDQ model")
+
+    if args.quantize_only:
+        print("\nQuantize-only flow complete.")
+        print("Next checks:")
+        print("  1. Extract/download the QDQ ONNX model if needed.")
+        print("  2. Run compare_onnx_with_pytorch.py on vn3k_test_10.")
+        print("  3. Only compile/link if the QDQ fidelity gate passes.")
+        return
+
     print("Submitting compile/link jobs")
     print(f"  device:          {args.device}")
     print(f"  input_specs:     {input_specs}")
@@ -301,8 +341,6 @@ def main() -> None:
         print(f"Link status: {link_job.wait()}")
 
     if args.download:
-        if not args.wait:
-            raise RuntimeError("--download requires --wait")
         output = args.download.expanduser().resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
         downloaded = link_job.download_target_model(str(output))
