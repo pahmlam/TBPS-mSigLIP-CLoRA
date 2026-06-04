@@ -97,7 +97,7 @@ epoch=56    model_fp16.pt           vision_onnx/                 INT8-quantized 
 
 ## 4. Root Cause (RESOLVED): HTP Rejects Floating-Point I/O
 
-After 11 attempts (see `aihub-experiments.md` for detailed log), the root cause is confirmed and resolved:
+After the AI Hub attempts now recorded in `deployment/docs/journal/[deploy]-2026-04-15.md` and `deployment/docs/journal/[deploy]-2026-05-06.md`, the root cause is confirmed and resolved:
 
 **HTP V68 on QCS6490 requires INT8 or INT16 tensors at the I/O boundary.** Internal compute can use FP16 via fused ops, but the tensors crossing the CPU↔DSP boundary must be integer-quantized. This is a hardware/driver-level constraint, not a bug or flag we can override.
 
@@ -284,7 +284,8 @@ Conclusion: dataset `d7x5gzne9` is usable, but this CLI path is not. It preserve
 
 | Path | Purpose |
 |------|---------|
-| `deployment/docs/aihub-experiments.md` | **Running log** of every qai-hub compile attempt — always update after each run |
+| `deployment/docs/journal/` | **Canonical dated deploy journal** for AI Hub jobs, QNN/QDQ fidelity, RB3 runtime, artifacts, and decisions |
+| `deployment/docs/aihub-experiments.md` | Legacy redirect to the dated deploy journal; do not write new entries |
 | `deployment/docs/system.md` | RB3 hardware specs (verified on-device) |
 | `deployment/docs/experiment.md` | Benchmark methodology for proxy models (MobileNetV2, ResNet18) |
 | `deployment/docs/benchmark-rp.md` | Proxy model results (PyTorch CPU vs ONNX Runtime) + SDK status |

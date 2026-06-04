@@ -370,7 +370,7 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 │   ├── hardware_profiling/            # RB3 hardware tests with proxy models
 │   ├── docs/
 │   │   ├── deployment-plan.md         # Current deployment status and next steps
-│   │   ├── aihub-experiments.md       # Qualcomm AI Hub compile log
+│   │   ├── aihub-experiments.md       # Legacy redirect to deployment journal
 │   │   ├── journal/                   # Dated deployment logs and decisions
 │   │   ├── system.md                  # RB3 hardware specs
 │   │   └── benchmark-rp.md            # Proxy benchmark results
@@ -489,7 +489,7 @@ Current progress:
 | Production calibration | Pending | Replace dummy calibration with real VN3K image/text calibration data |
 | Quantized accuracy check | Pending | Target: R@1 within acceptable drop from FP32 baseline |
 
-Key deployment finding: QCS6490 HTP rejects floating-point I/O. The working path is INT8 I/O and INT8 quantization for HTP context binaries. See [`deployment/docs/deployment-plan.md`](deployment/docs/deployment-plan.md) and [`deployment/docs/aihub-experiments.md`](deployment/docs/aihub-experiments.md) for the detailed status and compile log.
+Key deployment finding: QCS6490 HTP rejects floating-point I/O. The working path is INT8 I/O and INT8 quantization for HTP context binaries. See [`deployment/docs/deployment-plan.md`](deployment/docs/deployment-plan.md) for current status and [`deployment/docs/journal/`](deployment/docs/journal/) for dated AI Hub/QNN job logs.
 
 Quick deployment commands:
 

@@ -145,7 +145,7 @@ The notebook operates on `W` — a dict of extracted embeddings from a checkpoin
 - `deployment/README.md` — Edge deployment overview
 - `deployment/docs/deployment-plan.md` — **Current deployment state, pipeline status, next steps** (start here for deployment work)
 - `deployment/docs/journal/` — Dated deployment logs (`[deploy]-YYYY-MM-DD.md`)
-- `deployment/docs/aihub-experiments.md` — Running log of every Qualcomm AI Hub compile attempt (rule: append a row on every `qai-hub` invocation — see `.claude/rules/aihub-experiments.md`)
+- `deployment/docs/aihub-experiments.md` — Legacy redirect only; canonical Qualcomm AI Hub job logs are in `deployment/docs/journal/`
 - `deployment/docs/system.md` — Qualcomm RB3 Gen2 hardware specifications
 
 ## Documentation Policy
