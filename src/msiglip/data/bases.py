@@ -76,6 +76,98 @@ def inject_noisy_correspondence(
     return dataset, real_correspondences
 
 
+def inject_false_negative_labels(
+    dataset: list[tuple],
+    fn_noisy_rate: float,
+    fn_noisy_file: str | None = None,
+) -> tuple[list[tuple], np.ndarray]:
+    """Inject synthetic false negatives by splitting train labels.
+
+    For selected identities with at least two samples, half of their samples are
+    assigned a new fake PID. The image, image_id, and caption stay unchanged.
+    This makes same-person samples become labeled negatives during training.
+
+    Args:
+        dataset: list of (pid, image_id, img_path, caption) tuples (mutated in-place).
+        fn_noisy_rate: target fraction of samples whose PID should be changed.
+        fn_noisy_file: path to .npy storing the full PID mapping for reproducibility.
+
+    Returns:
+        The mutated dataset and a boolean array (1=PID changed, 0=unchanged).
+    """
+    nums = len(dataset)
+    if nums == 0:
+        return dataset, np.zeros(0, dtype=np.int32)
+    if fn_noisy_rate <= 0:
+        logger.info(
+            f"False-negative label noise: rate={fn_noisy_rate}, changed=0, "
+            f"unchanged={nums}, total={nums}"
+        )
+        return dataset, np.zeros(nums, dtype=np.int32)
+
+    original_pids = np.asarray([sample[0] for sample in dataset], dtype=np.int64)
+    image_ids = [sample[1] for sample in dataset]
+    images = [sample[2] for sample in dataset]
+    captions = [sample[3] for sample in dataset]
+
+    if fn_noisy_file and os.path.exists(fn_noisy_file):
+        logger.info(f"Loading false-negative PID mapping from {fn_noisy_file}")
+        mapped_pids = np.load(fn_noisy_file).astype(np.int64)
+        if len(mapped_pids) != nums:
+            raise ValueError(
+                f"False-negative PID mapping length mismatch: got {len(mapped_pids)}, expected {nums}"
+            )
+    else:
+        mapped_pids = original_pids.copy()
+        if fn_noisy_rate > 0:
+            rng = np.random.default_rng(123)
+            target_changes = int(fn_noisy_rate * nums)
+            next_fake_pid = int(original_pids.max()) + 1
+
+            pid_to_indices: dict[int, list[int]] = {}
+            for idx, pid in enumerate(original_pids):
+                pid_to_indices.setdefault(int(pid), []).append(idx)
+
+            eligible_pids = [pid for pid, indices in pid_to_indices.items() if len(indices) >= 2]
+            rng.shuffle(eligible_pids)
+
+            num_changed = 0
+            for pid in eligible_pids:
+                if num_changed >= target_changes:
+                    break
+
+                indices = np.asarray(pid_to_indices[pid], dtype=np.int64)
+                rng.shuffle(indices)
+                split_size = max(1, len(indices) // 2)
+                remaining_budget = target_changes - num_changed
+                split_size = min(split_size, remaining_budget)
+                if split_size <= 0:
+                    break
+
+                selected = indices[:split_size]
+                mapped_pids[selected] = next_fake_pid
+                next_fake_pid += 1
+                num_changed += split_size
+
+        if fn_noisy_file:
+            dirname = os.path.dirname(fn_noisy_file)
+            if dirname:
+                os.makedirs(dirname, exist_ok=True)
+            np.save(fn_noisy_file, mapped_pids)
+
+    changed = (mapped_pids != original_pids).astype(np.int32)
+    for i in range(nums):
+        dataset[i] = (int(mapped_pids[i]), image_ids[i], images[i], captions[i])
+
+    num_changed = int(np.sum(changed))
+    logger.info(
+        f"False-negative label noise: rate={fn_noisy_rate}, changed={num_changed}, "
+        f"unchanged={nums - num_changed}, total={nums}"
+    )
+
+    return dataset, changed
+
+
 class BaseDataset(object):
     """
     Base class for all datasets before loaded into DataLoader

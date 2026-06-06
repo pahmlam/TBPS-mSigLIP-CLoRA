@@ -25,8 +25,13 @@ NACIR: false
 nacir_config:
   # EMA similarity statistics (for Bayesian FN detection on the negative branch)
   ema_beta: 0.99
-  fn_prior: 0.01
-  epsilon_n: 0.1
+  fn_prior: 0.003
+  epsilon_n: 0.85
+  fn_safe_gate: true
+  fn_prob_threshold: 0.80
+  fn_pos_sigma_k: 1.0
+  fn_max_suppress_frac: 0.05
+  fn_min_pos_neg_gap: 0.0
   # Per-sample loss tracking (for GMM-based FP detection on the positive branch)
   loss_ema_alpha: 0.9
   epsilon_p: 0.2
@@ -34,5 +39,5 @@ nacir_config:
   gmm_min_separation: 1.0
   # Curriculum epoch gates for detector activation.
   # FN turns on first (EMA stabilizes fast); FP turns on later (GMM needs history).
-  fn_enable_epoch: 11
+  fn_enable_epoch: 21
   fp_enable_epoch: 15

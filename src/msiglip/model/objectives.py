@@ -191,6 +191,11 @@ def compute_noise_aware_circle(
     clean_weights: torch.Tensor | None = None,
     epsilon_n: float = 0.1,
     epsilon_p: float = 0.2,
+    fn_safe_gate: bool = True,
+    fn_prob_threshold: float = 0.8,
+    fn_pos_sigma_k: float = 1.0,
+    fn_max_suppress_frac: float = 0.05,
+    fn_min_pos_neg_gap: float = 0.0,
 ) -> tuple:
     """
     Noise-Aware Circle Loss (Idea C — unified FN + FP handling).
@@ -211,6 +216,12 @@ def compute_noise_aware_circle(
             When provided, alpha_p is softened by min(w[i], w[j]) per positive pair.
         epsilon_n: floor for FN suppression: alpha_n *= max(1 - P_fn, epsilon_n).
         epsilon_p: floor for FP suppression: alpha_p *= max(pair_w, epsilon_p).
+        fn_safe_gate: when True, only suppress negatives that pass conservative
+            FN evidence checks. This keeps clean data close to vanilla Circle.
+        fn_prob_threshold: minimum P(FN) required for a negative to be suppressed.
+        fn_pos_sigma_k: candidate negatives must satisfy s_n >= mu_pos - k*sigma_pos.
+        fn_max_suppress_frac: maximum fraction of negative pairs to suppress.
+        fn_min_pos_neg_gap: minimum required mu_pos - mu_neg before FN gate can act.
 
     Returns:
         loss: scalar tensor (requires_grad).
@@ -221,6 +232,10 @@ def compute_noise_aware_circle(
             'clean_weight_mean': mean clean weight over batch (1.0 if FP disabled)
             'alpha_n_scale_mean': mean FN-softening factor applied
             'alpha_p_scale_mean': mean FP-softening factor applied
+            'fn_selected_frac': fraction of negatives selected by the FN gate
+            'fn_gate_active': 1.0 iff at least one negative was suppressed
+            'fn_prob_max': max P(FN) over negatives
+            'fn_prob_selected_mean': mean P(FN) over selected negatives
     """
     image_features = F.normalize(image_features, dim=1, p=2)
     text_features = F.normalize(text_features, dim=1, p=2)
@@ -244,6 +259,10 @@ def compute_noise_aware_circle(
         "s_n": s_n.detach(),
         "per_sample_loss": torch.zeros(B, device=sim_mat.device),
         "fn_prob_mean": 0.0,
+        "fn_prob_max": 0.0,
+        "fn_prob_selected_mean": 0.0,
+        "fn_selected_frac": 0.0,
+        "fn_gate_active": 0.0,
         "clean_weight_mean": 1.0,
         "alpha_n_scale_mean": 1.0,
         "alpha_p_scale_mean": 1.0,
@@ -273,8 +292,42 @@ def compute_noise_aware_circle(
             sigma_neg=fn_stats["sigma_neg"],
             fn_prior=fn_stats["fn_prior"],
         )
-        fn_scale = torch.clamp_min(1.0 - fn_probs, min=epsilon_n)
         diagnostics["fn_prob_mean"] = fn_probs.mean().item()
+        diagnostics["fn_prob_max"] = fn_probs.max().item()
+
+        if fn_safe_gate:
+            mu_pos = float(fn_stats["mu_pos"])
+            sigma_pos = max(float(fn_stats["sigma_pos"]), 1e-6)
+            mu_neg = float(fn_stats["mu_neg"])
+            pos_neg_gap = mu_pos - mu_neg
+
+            candidate_mask = (
+                (fn_probs >= fn_prob_threshold)
+                & (s_n.detach() >= (mu_pos - fn_pos_sigma_k * sigma_pos))
+                & (pos_neg_gap > fn_min_pos_neg_gap)
+            )
+
+            max_selected = int(math.floor(max(fn_max_suppress_frac, 0.0) * s_n.numel()))
+            selected_mask = torch.zeros_like(candidate_mask)
+            if max_selected > 0 and candidate_mask.any():
+                candidate_indices = candidate_mask.nonzero(as_tuple=False).squeeze(1)
+                candidate_probs = fn_probs[candidate_indices]
+                topk = min(max_selected, candidate_indices.numel())
+                topk_indices = torch.topk(candidate_probs, k=topk).indices
+                selected_mask[candidate_indices[topk_indices]] = True
+
+            if selected_mask.any():
+                selected_probs = fn_probs[selected_mask]
+                fn_scale[selected_mask] = torch.clamp_min(1.0 - selected_probs, min=epsilon_n)
+                diagnostics["fn_selected_frac"] = selected_mask.float().mean().item()
+                diagnostics["fn_gate_active"] = 1.0
+                diagnostics["fn_prob_selected_mean"] = selected_probs.mean().item()
+        else:
+            fn_scale = torch.clamp_min(1.0 - fn_probs, min=epsilon_n)
+            diagnostics["fn_selected_frac"] = 1.0
+            diagnostics["fn_gate_active"] = 1.0
+            diagnostics["fn_prob_selected_mean"] = fn_probs.mean().item()
+
         diagnostics["alpha_n_scale_mean"] = fn_scale.mean().item()
 
     alpha_n_tilde = alpha_n * fn_scale

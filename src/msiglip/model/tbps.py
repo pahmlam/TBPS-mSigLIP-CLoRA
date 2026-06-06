@@ -292,6 +292,11 @@ class TBPS(nn.Module):
                 clean_weights=clean_weights,
                 epsilon_n=self.noise_state.epsilon_n,
                 epsilon_p=self.noise_state.epsilon_p,
+                fn_safe_gate=self.noise_state.fn_safe_gate,
+                fn_prob_threshold=self.noise_state.fn_prob_threshold,
+                fn_pos_sigma_k=self.noise_state.fn_pos_sigma_k,
+                fn_max_suppress_frac=self.noise_state.fn_max_suppress_frac,
+                fn_min_pos_neg_gap=self.noise_state.fn_min_pos_neg_gap,
             )
 
             final_nacir_loss = nacir_loss
@@ -312,6 +317,11 @@ class TBPS(nn.Module):
                     clean_weights=clean_weights,
                     epsilon_n=self.noise_state.epsilon_n,
                     epsilon_p=self.noise_state.epsilon_p,
+                    fn_safe_gate=self.noise_state.fn_safe_gate,
+                    fn_prob_threshold=self.noise_state.fn_prob_threshold,
+                    fn_pos_sigma_k=self.noise_state.fn_pos_sigma_k,
+                    fn_max_suppress_frac=self.noise_state.fn_max_suppress_frac,
+                    fn_min_pos_neg_gap=self.noise_state.fn_min_pos_neg_gap,
                 )
                 final_nacir_loss = (nacir_loss + aug_nacir_loss) / 2
 
@@ -332,6 +342,10 @@ class TBPS(nn.Module):
                 "nacir_clean_weight_mean": torch.tensor(diag["clean_weight_mean"], device=image_pooler_output.device),
                 "nacir_alpha_n_scale_mean": torch.tensor(diag["alpha_n_scale_mean"], device=image_pooler_output.device),
                 "nacir_alpha_p_scale_mean": torch.tensor(diag["alpha_p_scale_mean"], device=image_pooler_output.device),
+                "nacir_fn_selected_frac": torch.tensor(diag["fn_selected_frac"], device=image_pooler_output.device),
+                "nacir_fn_gate_active": torch.tensor(diag["fn_gate_active"], device=image_pooler_output.device),
+                "nacir_fn_prob_max": torch.tensor(diag["fn_prob_max"], device=image_pooler_output.device),
+                "nacir_fn_prob_selected_mean": torch.tensor(diag["fn_prob_selected_mean"], device=image_pooler_output.device),
                 "nacir_fn_active": torch.tensor(1.0 if fn_active else 0.0, device=image_pooler_output.device),
                 "nacir_fp_active": torch.tensor(1.0 if fp_active else 0.0, device=image_pooler_output.device),
             })

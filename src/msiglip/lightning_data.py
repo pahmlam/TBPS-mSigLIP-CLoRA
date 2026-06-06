@@ -14,6 +14,7 @@ from msiglip.data.bases import (
     ImageDataset,
     ImageTextDataset,
     TextDataset,
+    inject_false_negative_labels,
     inject_noisy_correspondence,
 )
 from msiglip.data.cuhkpedes import CUHKPEDES
@@ -131,6 +132,32 @@ class TBPSDataModule(pl.LightningDataModule):
                 noisy_file=noisy_file,
             )
 
+        # --- Synthetic false-negative label injection ---
+        fn_noisy_rate = self.config.dataset.get("fn_noisy_rate", 0.0)
+        if fn_noisy_rate > 0:
+            fn_noisy_file = self.config.dataset.get("fn_noisy_file", None)
+            if fn_noisy_file is None:
+                artifacts_root = self.config.get("paths", {}).get(
+                    "artifacts_root", "artifacts"
+                )
+                noiseindex_dir = os.path.join(
+                    get_original_cwd(), artifacts_root, "training", "noiseindex"
+                )
+                os.makedirs(noiseindex_dir, exist_ok=True)
+                fn_noisy_file = os.path.join(
+                    noiseindex_dir,
+                    f"{self.config.dataset.dataset_name}_FN_{fn_noisy_rate}.npy",
+                )
+
+            if not hasattr(self.dataset, "original_train"):
+                self.dataset.original_train = list(self.dataset.train)
+
+            self.dataset.train, self.fn_label_changes = inject_false_negative_labels(
+                dataset=self.dataset.train,
+                fn_noisy_rate=fn_noisy_rate,
+                fn_noisy_file=fn_noisy_file,
+            )
+
         if stage == "fit" or stage is None:
             self.train_set = ImageTextDataset(
                 dataset=self.dataset.train,
@@ -149,6 +176,10 @@ class TBPSDataModule(pl.LightningDataModule):
 
             if noisy_rate > 0:
                 self.train_set.real_correspondences = self.real_correspondences
+                self.train_set.original_dataset = self.dataset.original_train
+
+            if fn_noisy_rate > 0:
+                self.train_set.fn_label_changes = self.fn_label_changes
                 self.train_set.original_dataset = self.dataset.original_train
 
             logger.info("Validation set is available")
@@ -309,4 +340,3 @@ class TBPSDataModule(pl.LightningDataModule):
             num_workers=self.config.dataset.num_workers,
             drop_last=False,
         )
-

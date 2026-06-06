@@ -8,3 +8,5 @@ num_workers: 2
 proportion: null
 noisy_rate: 0.0
 noisy_file: null
+fn_noisy_rate: 0.0
+fn_noisy_file: null
