@@ -5,10 +5,14 @@ Thư mục này ghi tiến độ theo ngày cho phần deploy và tối ưu pipe
 ## Quy ước file
 
 - Tên file: `[deploy]-YYYY-MM-DD.md`
+- Tên file kế hoạch/checklist: `[deploy-plan]-YYYY-MM-DD.md`
 - Tên file demo system: `[demo-system]-YYYY-MM-DD.md`
 - Mỗi ngày append vào file cùng ngày nếu file đã tồn tại.
 - Nội dung phù hợp: AI Hub job, QNN/QDQ fidelity, RB3 runtime, artifact, command, log quan trọng, kết luận tạm thời, quyết định deploy tiếp theo.
 - Nội dung demo system phù hợp: scaffold/module boundary của `deployment/demo/`, adapter, CLI workflow, local preflight, trạng thái RB3 demo acceptance.
+- Với một kế hoạch deploy đang chạy, chỉ giữ **một plan checklist** trong file `[deploy-plan]`, ví dụ `deployment/docs/journal/[deploy-plan]-2026-06-06.md`.
+- Các file ngày sau khi chưa tạo kế hoạch mới chỉ ghi kết quả run trong ngày, chẩn đoán, và việc tiếp theo; không lặp lại checklist tổng.
+- Nếu kết quả trong ngày làm thay đổi trạng thái kế hoạch, cập nhật checklist tổng ở file `[deploy-plan]` và ghi trong daily journal rằng trạng thái đã được phản ánh ở đó.
 
 ## Không ghi ở đây
 
@@ -18,7 +22,58 @@ Thư mục này ghi tiến độ theo ngày cho phần deploy và tối ưu pipe
 - AI Hub jobs, QDQ/QNN fidelity, board benchmark logs không ghi vào `[demo-system]`; các nội dung đó thuộc `[deploy]`.
 - Training/model optimization không ghi ở đây; dùng `docs/journal/[train]-YYYY-MM-DD.md`.
 
+## Template file kế hoạch / plan checklist
+
+Dùng khi bắt đầu một kế hoạch deploy mới có nhiều phase hoặc nhiều run nối tiếp. Khi kế hoạch này còn hiệu lực, các ngày sau cập nhật checklist ở chính file này.
+
+````markdown
+# [Deploy Plan] YYYY-MM-DD - Kế hoạch ...
+
+> **Ngày:** YYYY-MM-DD
+> **Thiết bị / Runtime:** RB3 / QNN HTP / ONNX Runtime / AI Hub
+> **Model / Artifact nguồn:** checkpoint, ONNX, QDQ, hoặc QNN binary
+> **Mục tiêu:** Câu ngắn mô tả kế hoạch đang mở khóa điều gì
+> **Plan checklist hiện hành:** file này
+> **Trạng thái:** DONE / PARTIAL / BLOCKED / FOLLOW-UP
+> **Cập nhật checklist gần nhất:** YYYY-MM-DD
+
+---
+
+## 1. Tóm tắt quyết định
+
+- Gate hiện tại.
+- Blocker chính.
+- Điều chưa được phép claim hoặc mở rộng.
+
+## 2. Gate bắt buộc
+
+| Gate | Ngưỡng | Ý nghĩa |
+|---|---:|---|
+| ... | ... | ... |
+
+## 3. Checklist tổng của kế hoạch
+
+### Phase A - ...
+
+- [ ] Việc cần làm
+- [ ] Việc cần làm
+
+## 4. Command / Quy trình đang mở
+
+```bash
+...
+```
+
+## 5. Thứ tự ưu tiên
+
+1. Việc tiếp theo gần nhất.
+2. Nhánh xử lý nếu fail.
+3. Gate để được đi tiếp.
+````
+
 ## Template file theo ngày
+
+Dùng cho daily journal khi đã có plan checklist. File ngày không chứa checklist tổng; chỉ link đến `[deploy-plan]` và ghi kết quả/chẩn đoán/việc tiếp theo của ngày đó.
 
 ```markdown
 # [Deploy] YYYY-MM-DD - Chủ đề chính
@@ -27,6 +82,7 @@ Thư mục này ghi tiến độ theo ngày cho phần deploy và tối ưu pipe
 > **Thiết bị / Runtime:** RB3 / QNN HTP / ONNX Runtime / AI Hub
 > **Model / Artifact nguồn:** checkpoint, ONNX, QDQ, hoặc QNN binary
 > **Mục tiêu:** Câu ngắn mô tả đang muốn xác minh điều gì
+> **Plan checklist:** `deployment/docs/journal/[deploy-plan]-YYYY-MM-DD.md`
 > **Trạng thái cuối ngày:** DONE / PARTIAL / BLOCKED / FOLLOW-UP
 
 ---
@@ -41,6 +97,7 @@ Thư mục này ghi tiến độ theo ngày cho phần deploy và tối ưu pipe
 
 - Trạng thái pipeline trước ngày hôm nay.
 - Artifact đầu vào và blocker hiện tại.
+- File plan checklist đang được follow.
 - Link tới knowledge nếu cần định nghĩa khái niệm.
 
 ## 3. Job / Command / Artifact
@@ -62,8 +119,9 @@ Thư mục này ghi tiến độ theo ngày cho phần deploy và tối ưu pipe
 
 ## 6. Quyết định tiếp theo
 
-- [ ] Việc tiếp theo 1
-- [ ] Việc tiếp theo 2
+- Việc tiếp theo gần nhất.
+- Có cập nhật plan checklist không, và cập nhật ở file nào.
+- Gate để được compile/link, benchmark rộng hơn, hoặc chuyển sang phase mới.
 
 ## 7. Câu hỏi mở / Rủi ro
 

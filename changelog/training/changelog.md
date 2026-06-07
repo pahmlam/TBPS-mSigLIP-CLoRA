@@ -1,5 +1,15 @@
 # Training Changelog
 
+## [2026-06-06] Make NACIR clean-safe as main training method
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | HIGH | feature | Added conservative FN gating to NACIR so negative suppression only triggers for high-confidence FN candidates, preserves Circle hard-negative mining on clean VN3K, and logs selected-fraction/probability diagnostics | COMPLETE |
+| 2 | HIGH | config | Updated `configs/loss/cir_msiglip.yaml` and `run_nacir.sh` to use clean-safe NACIR defaults instead of the earlier aggressive FN override | COMPLETE |
+| 3 | HIGH | feature | Added synthetic false-negative label injection with `dataset.fn_noisy_rate` / `dataset.fn_noisy_file`, reproducible fake-PID mapping, and clean val/test behavior for robustness experiments | COMPLETE |
+| 4 | MED | test | Added and ran focused unit tests for NACIR clean-safe behavior and FN injection; local verification passed with `venv/bin/python -m unittest discover tests`, `compileall`, and `git diff --check` | COMPLETE |
+| 5 | LOW | docs | Added `docs/journal/[train]-2026-06-06.md` with the clean acceptance target, robustness plan, diagnostics to inspect, and next experiment commands | COMPLETE |
+
 ## [2026-06-02] Document mSigLIP image resolution rationale
 
 | # | Priority | Type | Action | Status |

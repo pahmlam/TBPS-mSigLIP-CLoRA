@@ -3,6 +3,7 @@
 .ruff_cache/
 .venv/
 venv/
+aimet-venv/
 
 # Generated artifacts and runtime outputs
 artifacts/
@@ -57,3 +58,4 @@ artifacts/deployment/exports/
 artifacts/deployment/runtime/
 artifacts/deployment/**/.DS_Store
 artifacts/deployment/**/__pycache__/
+

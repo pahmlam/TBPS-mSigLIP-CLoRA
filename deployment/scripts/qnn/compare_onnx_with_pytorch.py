@@ -149,7 +149,13 @@ def main() -> None:
         else input_dir / "manifest.csv"
     )
 
-    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    session_options = ort.SessionOptions()
+    session_options.log_severity_level = 3
+    session = ort.InferenceSession(
+        str(onnx_path),
+        sess_options=session_options,
+        providers=["CPUExecutionProvider"],
+    )
     input_meta = session.get_inputs()[0]
     output_meta = (
         next(output for output in session.get_outputs() if output.name == args.output_name)
