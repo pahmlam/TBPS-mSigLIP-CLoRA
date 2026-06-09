@@ -17,6 +17,13 @@ SS: true
 simclr_temperature: 0.1
 ss_loss_weight: 0.4
 
+PART_ALIGN: false
+part_align_loss_weight: 0.05
+part_align_temperature: 0.07
+part_align_num_parts: 4
+part_align_warmup_epoch: 5
+part_align_ramp_epoch: 15
+
 # Noise-Aware Circle Loss (Idea C — unified FN + FP detection)
 # When NACIR is true, the regular CIR branch is skipped in tbps.py.
 # Reuses the same circle_loss_weight / circle_margin / circle_gamma as CIR.

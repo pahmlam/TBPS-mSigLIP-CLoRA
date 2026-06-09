@@ -162,8 +162,19 @@ class TBPS(nn.Module):
         logit_scale = self.backbone.logit_scale.exp()
         logit_scale.data = torch.clamp(logit_scale.data, max=100)
 
-        image_pooler_output = self.encode_image(images)
-        caption_pooler_output = self.encode_text(caption_input)
+        part_align_enabled = self.config.loss.get("PART_ALIGN", None)
+        if part_align_enabled:
+            image_pooler_output, image_last_hidden = self.encode_image(
+                images, return_last_hidden=True
+            )
+            caption_pooler_output, text_last_hidden = self.encode_text(
+                caption_input, return_last_hidden=True
+            )
+        else:
+            image_pooler_output = self.encode_image(images)
+            caption_pooler_output = self.encode_text(caption_input)
+            image_last_hidden = None
+            text_last_hidden = None
 
         ret.update({"temperature": self.backbone.logit_scale})
         ret.update({"bias": self.backbone.logit_bias})
@@ -366,5 +377,56 @@ class TBPS(nn.Module):
                 intermodal_weight=self.config.loss.citc_intermodal_weight,
             )
             ret.update({"citc_loss": loss * self.config.loss.citc_loss_weight})
+
+        # --- E. Part-Token Local Alignment (training-only auxiliary loss) ---
+        if part_align_enabled:
+            part_target_weight = self.config.loss.get("part_align_loss_weight", 0.05)
+            part_warmup_epoch = int(self.config.loss.get("part_align_warmup_epoch", 5))
+            part_ramp_epoch = int(self.config.loss.get("part_align_ramp_epoch", 15))
+
+            if current_epoch <= part_warmup_epoch:
+                current_part_weight = 0.0
+            elif part_ramp_epoch <= 0:
+                current_part_weight = part_target_weight
+            elif current_epoch <= part_warmup_epoch + part_ramp_epoch:
+                progress = (current_epoch - part_warmup_epoch) / part_ramp_epoch
+                current_part_weight = progress * part_target_weight
+            else:
+                current_part_weight = part_target_weight
+
+            ret.update({
+                "part_align_loss_weight": torch.tensor(
+                    current_part_weight, device=image_pooler_output.device
+                )
+            })
+
+            if current_part_weight > 0:
+                image_size = self.config.get("img_size", None)
+                patch_size = self.config.backbone.vision_config.patch_size
+                image_grid_hw = None
+                if image_size is not None:
+                    image_grid_hw = (
+                        int(image_size[0] // patch_size),
+                        int(image_size[1] // patch_size),
+                    )
+
+                part_align_loss = objectives.compute_part_token_alignment(
+                    image_tokens=image_last_hidden,
+                    text_tokens=text_last_hidden,
+                    attention_mask=batch["caption_attention_mask"],
+                    pids=batch["pids"],
+                    num_parts=self.config.loss.get("part_align_num_parts", 4),
+                    temperature=self.config.loss.get("part_align_temperature", 0.07),
+                    image_grid_hw=image_grid_hw,
+                )
+                ret.update({"part_align_loss": part_align_loss * current_part_weight})
+            else:
+                ret.update({
+                    "part_align_loss": torch.tensor(
+                        0.0,
+                        device=image_pooler_output.device,
+                        requires_grad=True,
+                    )
+                })
 
         return ret

@@ -9,6 +9,7 @@ uv run trainer.py -cn cir_msiglip \
     \
     optimizer=cir_test \
     optimizer.param_groups.default.lr=1e-4 \
+    loss.NACIR=false \
     \
-    +lora=default \
+    +lora=attn_ffn_r32_pissa \
     "$@"

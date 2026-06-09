@@ -99,6 +99,142 @@ def compute_citc(
     )
 
 
+def _zero_loss_like(*tensors):
+    zero_loss = None
+    for tensor in tensors:
+        if tensor is not None and tensor.requires_grad:
+            term = tensor.sum() * 0.0
+            zero_loss = term if zero_loss is None else zero_loss + term
+
+    if zero_loss is not None:
+        return zero_loss
+
+    device = None
+    for tensor in tensors:
+        if tensor is not None:
+            device = tensor.device
+            break
+
+    return torch.tensor(0.0, device=device, requires_grad=True)
+
+
+def _resolve_patch_tokens(image_tokens, image_grid_hw=None):
+    seq_len = image_tokens.shape[1]
+
+    if image_grid_hw is not None:
+        grid_h, grid_w = int(image_grid_hw[0]), int(image_grid_hw[1])
+        num_patches = grid_h * grid_w
+        if seq_len == num_patches:
+            return image_tokens, grid_h, grid_w
+        if seq_len == num_patches + 1:
+            return image_tokens[:, 1:], grid_h, grid_w
+
+        raise ValueError(
+            f"Image token length {seq_len} does not match grid {grid_h}x{grid_w}"
+        )
+
+    grid_size = int(math.sqrt(seq_len))
+    if grid_size * grid_size == seq_len:
+        return image_tokens, grid_size, grid_size
+
+    grid_size = int(math.sqrt(seq_len - 1))
+    if grid_size * grid_size == seq_len - 1:
+        return image_tokens[:, 1:], grid_size, grid_size
+
+    raise ValueError(f"Cannot infer image patch grid from {seq_len} tokens")
+
+
+def _pool_vertical_parts(image_tokens, num_parts, image_grid_hw=None):
+    image_tokens, grid_h, grid_w = _resolve_patch_tokens(image_tokens, image_grid_hw)
+    batch_size, _, dim = image_tokens.shape
+    patches = image_tokens.reshape(batch_size, grid_h, grid_w, dim)
+
+    num_parts = max(int(num_parts), 1)
+    pooled_parts = []
+    for part_idx in range(num_parts):
+        start = int(part_idx * grid_h / num_parts)
+        end = int((part_idx + 1) * grid_h / num_parts)
+        end = max(end, start + 1)
+        pooled_parts.append(patches[:, start:end].mean(dim=(1, 2)))
+
+    return torch.stack(pooled_parts, dim=1)
+
+
+def _build_text_token_mask(attention_mask):
+    token_mask = attention_mask.bool().clone()
+    if token_mask.numel() == 0:
+        return token_mask
+
+    batch_size, seq_len = token_mask.shape
+    token_mask[:, 0] = False
+
+    lengths = attention_mask.long().sum(dim=1)
+    last_indices = (lengths - 1).clamp(min=0, max=seq_len - 1)
+    row_indices = torch.arange(batch_size, device=attention_mask.device)
+    token_mask[row_indices, last_indices] = False
+
+    return token_mask
+
+
+def compute_part_token_alignment(
+    image_tokens,
+    text_tokens,
+    attention_mask,
+    pids,
+    num_parts=4,
+    temperature=0.07,
+    image_grid_hw=None,
+):
+    """
+    Training-only part/token local alignment loss.
+
+    Image patch tokens are pooled into vertical body parts. Each valid text
+    token scores an image by its maximum cosine similarity to those parts.
+    The resulting image-text score matrix is optimized with bidirectional
+    multi-positive contrastive targets from person IDs.
+    """
+    if image_tokens.ndim != 3 or text_tokens.ndim != 3:
+        raise ValueError("image_tokens and text_tokens must be rank-3 tensors")
+    if attention_mask.ndim != 2:
+        raise ValueError("attention_mask must be a rank-2 tensor")
+
+    token_mask = _build_text_token_mask(attention_mask)
+    active_samples = token_mask.sum(dim=1) > 0
+    if not active_samples.any():
+        return _zero_loss_like(image_tokens, text_tokens)
+
+    image_tokens = image_tokens[active_samples]
+    text_tokens = text_tokens[active_samples]
+    token_mask = token_mask[active_samples]
+    pids = pids[active_samples]
+
+    image_parts = _pool_vertical_parts(image_tokens, num_parts, image_grid_hw)
+    image_parts = F.normalize(image_parts, dim=-1, p=2)
+    text_tokens = F.normalize(text_tokens, dim=-1, p=2)
+
+    local_sim = torch.einsum("ipd,jtd->ijtp", image_parts, text_tokens)
+    token_scores = local_sim.max(dim=-1).values
+
+    token_mask_float = token_mask.float()
+    token_counts = token_mask_float.sum(dim=1).clamp_min(1.0)
+    score_mat = (
+        token_scores * token_mask_float.unsqueeze(0)
+    ).sum(dim=2) / token_counts.unsqueeze(0)
+
+    temperature = max(float(temperature), 1e-6)
+    logits_i2t = score_mat / temperature
+    logits_t2i = logits_i2t.t()
+
+    pids_col = pids.view(-1, 1)
+    targets = torch.eq(pids_col, pids_col.t()).float()
+    targets = targets / targets.sum(dim=1, keepdim=True).clamp_min(1.0)
+
+    loss_i2t = -torch.sum(F.log_softmax(logits_i2t, dim=1) * targets, dim=1)
+    loss_t2i = -torch.sum(F.log_softmax(logits_t2i, dim=1) * targets, dim=1)
+
+    return (loss_i2t.mean() + loss_t2i.mean()) / 2
+
+
 def compute_cross_modal_circle(image_features, text_features, pids, m=0.25, gamma=128):
     """
     Circle Loss between 2 modalities.
