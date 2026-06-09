@@ -154,6 +154,27 @@ def _check_model(path: Path) -> None:
     onnx.checker.check_model(str(path))
 
 
+def _get_default_opset(model: onnx.ModelProto) -> int | None:
+    for opset in model.opset_import:
+        if opset.domain in ("", "ai.onnx"):
+            return int(opset.version)
+    return None
+
+
+def _bump_default_opset(model: onnx.ModelProto, target_opset: int | None) -> int | None:
+    current_opset = _get_default_opset(model)
+    if target_opset is None:
+        return current_opset
+    if current_opset is None:
+        raise ValueError("Model has no default ai.onnx opset import")
+    for opset in model.opset_import:
+        if opset.domain in ("", "ai.onnx"):
+            if opset.version < target_opset:
+                opset.version = target_opset
+            return int(opset.version)
+    return current_opset
+
+
 def _smoke_load(path: Path) -> dict[str, object]:
     import onnxruntime as ort
 
@@ -250,6 +271,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--blocks", default="4,5,6,7,8,9,10,11")
     parser.add_argument(
+        "--all-activations",
+        action="store_true",
+        help="Tune every activation QDQ pair instead of filtering by encoder blocks.",
+    )
+    parser.add_argument(
         "--max-abs",
         type=float,
         default=None,
@@ -260,6 +286,15 @@ def parse_args() -> argparse.Namespace:
         choices=("keep", "int16", "uint16"),
         default="keep",
         help="Target dtype for selected activation QuantizeLinear zero-points.",
+    )
+    parser.add_argument(
+        "--bump-opset",
+        type=int,
+        default=None,
+        help=(
+            "Bump default ai.onnx opset before saving. Required for standard "
+            "ONNX int16/uint16 Q/DQ on older source models."
+        ),
     )
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--smoke-load", action="store_true")
@@ -278,6 +313,13 @@ def main() -> None:
     output_onnx = output_dir / src_onnx.name
 
     model = onnx.load(src_onnx, load_external_data=True)
+    original_opset = _get_default_opset(model)
+    final_opset = _bump_default_opset(model, args.bump_opset)
+    if args.target_dtype in {"int16", "uint16"} and (final_opset or 0) < 21:
+        raise ValueError(
+            "--target-dtype int16/uint16 requires ai.onnx opset >= 21. "
+            "Pass --bump-opset 21 for older source models."
+        )
     graph = model.graph
     initializers = {
         initializer.name: numpy_helper.to_array(initializer)
@@ -288,6 +330,8 @@ def main() -> None:
     node_index_by_name = {node.name: index for index, node in enumerate(graph.node)}
     ranges = _block_ranges(graph)
     selected_blocks = _parse_int_csv(args.blocks)
+    if not selected_blocks and not args.all_activations:
+        raise ValueError("--blocks must not be empty unless --all-activations is set")
 
     selected_pairs = []
     changed_rows = []
@@ -304,7 +348,7 @@ def main() -> None:
         block = _block_for_index(q_index, ranges)
         if block is None:
             block = _block_for_index(producer_index, ranges)
-        if block not in selected_blocks:
+        if not args.all_activations and block not in selected_blocks:
             continue
         if len(q_node.input) < 3:
             continue
@@ -348,8 +392,11 @@ def main() -> None:
         "source_model": str(src_onnx),
         "output_model": str(output_onnx),
         "blocks": sorted(selected_blocks),
+        "all_activations": args.all_activations,
         "max_abs": args.max_abs,
         "target_dtype": args.target_dtype,
+        "original_default_opset": original_opset,
+        "final_default_opset": final_opset,
         "num_selected_activation_qdq_pairs": len(selected_pairs),
         "num_changed_activation_qdq_pairs": len(changed_rows),
         "changed_pairs": changed_rows,
