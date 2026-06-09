@@ -17,6 +17,7 @@ class LoraConfigVariantsTest(unittest.TestCase):
 
     def test_all_new_lora_configs_instantiate(self):
         names = [
+            "attn_ffn_r16",
             "attn_ffn_r32",
             "attn_ffn_r64",
             "attn_ffn_r32_rslora",
