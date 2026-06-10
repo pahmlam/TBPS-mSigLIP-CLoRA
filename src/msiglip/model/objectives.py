@@ -454,12 +454,19 @@ def compute_noise_aware_circle(
 
             if selected_mask.any():
                 selected_probs = fn_probs[selected_mask]
-                fn_scale[selected_mask] = torch.clamp_min(1.0 - selected_probs, min=epsilon_n)
+                selected_scale = torch.clamp_min(
+                    1.0 - selected_probs,
+                    min=epsilon_n,
+                ).to(dtype=fn_scale.dtype, device=fn_scale.device)
+                fn_scale[selected_mask] = selected_scale
                 diagnostics["fn_selected_frac"] = selected_mask.float().mean().item()
                 diagnostics["fn_gate_active"] = 1.0
                 diagnostics["fn_prob_selected_mean"] = selected_probs.mean().item()
         else:
-            fn_scale = torch.clamp_min(1.0 - fn_probs, min=epsilon_n)
+            fn_scale = torch.clamp_min(1.0 - fn_probs, min=epsilon_n).to(
+                dtype=alpha_n.dtype,
+                device=alpha_n.device,
+            )
             diagnostics["fn_selected_frac"] = 1.0
             diagnostics["fn_gate_active"] = 1.0
             diagnostics["fn_prob_selected_mean"] = fn_probs.mean().item()

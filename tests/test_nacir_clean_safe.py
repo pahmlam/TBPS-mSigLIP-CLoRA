@@ -110,6 +110,32 @@ class NACIRCleanSafeTest(unittest.TestCase):
         self.assertAlmostEqual(diag["alpha_n_scale_mean"], 0.85, places=5)
         self.assertAlmostEqual(diag["fn_selected_frac"], 1.0, places=5)
 
+    def test_fn_gate_supports_fp16_features(self):
+        image_features = torch.ones(20, 16, dtype=torch.float16)
+        text_features = torch.ones(20, 16, dtype=torch.float16)
+        pids = torch.arange(20)
+        fn_stats = {
+            "mu_pos": 1.0,
+            "sigma_pos": 0.2,
+            "mu_neg": -1.0,
+            "sigma_neg": 0.2,
+            "fn_prior": 0.5,
+        }
+
+        loss, diag = compute_noise_aware_circle(
+            image_features,
+            text_features,
+            pids,
+            fn_stats=fn_stats,
+            epsilon_n=0.85,
+            fn_safe_gate=True,
+            fn_prob_threshold=0.8,
+            fn_max_suppress_frac=0.05,
+        )
+
+        self.assertTrue(torch.isfinite(loss))
+        self.assertGreater(diag["fn_selected_frac"], 0.0)
+
     def test_fp_clean_weights_path_is_unchanged(self):
         torch.manual_seed(2402)
         image_features = torch.randn(6, 16)
