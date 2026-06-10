@@ -6,8 +6,8 @@
 > **Artifact nguồn hiện tại:** `artifacts/deployment/runtime/job_jpe2lnmvp_qdq_onnx/model.onnx`
 > **Calibration dataset:** `d7jzjy1m2` / `msiglip-vision-vn3k-train-calib-2000`
 > **Plan checklist hiện hành:** file này
-> **Trạng thái:** FOLLOW-UP - ORT/INT16 QDQ surgery không deployable trên QNN HTP; nhánh active là vision-only QAT/fine-tune-aware quantization rồi AI Hub/QNN-native quantizer
-> **Cập nhật checklist gần nhất:** 2026-06-09
+> **Trạng thái:** FOLLOW-UP - ORT/INT16 QDQ surgery không deployable trên QNN HTP; QAT v1/v1b server fail clean-preservation gate; nhánh active là sửa QAT objective với clean-consistency rồi mới quay lại AI Hub/QNN-native quantizer
+> **Cập nhật checklist gần nhất:** 2026-06-10
 
 ---
 
@@ -37,7 +37,7 @@ Ngày 2026-06-09 đã thử hướng không dùng AIMET bằng ONNX Runtime stat
 
 Sau đó đã thử INT16 activation encoding tuning từ `jpe2lnmvp`. Candidate `jpe2lnmvp_blocks_0_11_int16_opset21` đạt local QDQ gần gate (`cosine_l2_mean = 0.947065`, `cosine_l2_min = 0.925417`) nhưng compile/link vẫn fail: compile job `jgd03w76p` SUCCESS, link job `jp0kjyd25` FAIL do tensor nội bộ `add_103_updated` còn floating-point.
 
-Quyết định tiếp theo: không compile/link thêm candidate `_float`, ORT QDQ, hoặc INT16 QDQ surgery cùng pattern; chuyển sang vision-only QAT/fine-tune-aware quantization rồi để AI Hub/QNN-native quantizer tạo QDQ deployable.
+Quyết định tiếp theo: không compile/link thêm candidate `_float`, ORT QDQ, hoặc INT16 QDQ surgery cùng pattern. QAT v1/v1b server ngày 2026-06-10 đã fail gate nội bộ vì clean student drift xa teacher (`val_clean` mean chỉ `0.7929` rồi `0.6533`), nên chưa export ONNX hoặc submit AI Hub. Nhánh active chuyển sang sửa QAT objective để thêm clean-consistency path trước khi chạy server v2.
 
 ---
 
@@ -75,7 +75,10 @@ Chỉ chạy `vn3k_test_100` cho candidate đã pass QDQ local. Không chạy fu
 | ORT W8A16 compile/link | Compile PASS nhiều lần, link FAIL ổn định quanh `gelu_10_DequantizeLinear_Output` hoặc exit code 14; không có deployable `.bin` |
 | INT16 encoding tuning | Local gần gate với `jpe2lnmvp_blocks_0_11_int16_opset21`: mean `0.947065`, min `0.925417`; compile `jgd03w76p` PASS, link `jp0kjyd25` FAIL vì `add_103_updated` còn floating-point |
 | QAT tooling | `deployment/scripts/qnn/train_vision_quant_robust.py` được tạo để train vision-only student với fake-quant activation noise ở blocks 4-11 |
-| Next active branch | Vision-only QAT/fine-tune-aware quantization, export FP32, rồi AI Hub/QNN-native quantizer |
+| QAT v1 server | FAIL gate nội bộ: `lr=1e-5`, `mse_weight=0.05`, `500` steps, `val_clean` mean/min `0.7929/0.6806`, `val_fake_quant` mean/min `0.7912/0.6832`; không export/submit |
+| QAT v1b server | FAIL gate nội bộ: `lr=1e-6`, `mse_weight=0.1`, `500` steps, `val_clean` mean/min `0.6533/0.4248`, `val_fake_quant` mean/min `0.4427/0.3029`; không export/submit |
+| QAT clean-consistency tooling | DONE: script đã thêm `clean_weight` / `clean_mse_weight`, smoke CPU 1 step pass với `val_clean` mean `0.999737` |
+| Next active branch | Chạy QAT v2 trên server GPU với clean-consistency objective trước khi quay lại AI Hub/QNN-native quantizer |
 
 Các kết quả cũ vẫn nằm trong daily journal/report:
 
@@ -352,8 +355,12 @@ Kiểm tra dependency local hiện tại: `aimet_torch`, `aimet_onnx`, và `aime
 - [x] Thiết kế QAT/fine-tune-aware quantization tối thiểu cho vision encoder, ưu tiên activation path blocks 4-11.
 - [x] Tạo script `deployment/scripts/qnn/train_vision_quant_robust.py`.
 - [x] Chạy QAT smoke `--max-steps 1 --batch-size 1`: pass trên CPU, clean student còn gần teacher, fake-quant vẫn lệch mạnh do mới train 1 step.
-- [ ] Chạy QAT v1 trên Ubuntu RTX 3060 server.
-- [ ] Export QAT candidate sang FP32 ONNX bằng `deployment/scripts/onnx/export.py`.
+- [x] Chạy QAT v1 trên Ubuntu RTX 3060 server: FAIL gate nội bộ, `val_clean` mean `0.7929`, `val_fake_quant` mean `0.7912`.
+- [x] Chạy QAT v1b với `lr=1e-6`, `mse_weight=0.1`: FAIL gate nội bộ, `val_clean` mean `0.6533`, `val_fake_quant` mean `0.4427`.
+- [x] Sửa QAT objective để thêm clean-consistency loss trong cùng batch.
+- [x] Chạy smoke CPU 1 step sau khi sửa script: PASS, `val_clean` mean `0.999737`, `val_fake_quant` mean `0.086960`.
+- [ ] Chạy QAT v2 trên server GPU.
+- [ ] Export QAT candidate sang FP32 ONNX bằng `deployment/scripts/onnx/export.py` chỉ khi gate nội bộ pass.
 - [ ] Submit AI Hub native quantize-only từ QAT ONNX, sau đó chạy `compare_onnx_with_pytorch.py` trên `vn3k_test_10`.
 - [ ] Chỉ mở `vn3k_test_100` nếu QAT/native QDQ pass hoặc near-pass gate `vn3k_test_10`.
 
@@ -387,8 +394,12 @@ Kiểm tra dependency local hiện tại: `aimet_torch`, `aimet_onnx`, và `aime
 - [x] Script lưu output dạng export FP32 ở `artifacts/deployment/exports/exported_model_qat_v1/` gồm `config.yaml`, `model_fp32.pt`, summary, và danh sách trainable params.
 - [x] Chạy `python -m py_compile deployment/scripts/qnn/train_vision_quant_robust.py`.
 - [x] Chạy CPU smoke 1 step: `val_clean cosine_l2_mean = 0.999737`, `val_fake_quant cosine_l2_mean = 0.086960`.
-- [ ] Chạy QAT v1 trên server GPU.
-- [ ] Export ONNX từ `exported_model_qat_v1`.
+- [x] Chạy QAT v1 trên server GPU: FAIL gate nội bộ vì clean drift (`val_clean` mean `0.7929`).
+- [x] Chạy QAT v1b trên server GPU với LR thấp hơn/MSE cao hơn: FAIL gate nội bộ và tệ hơn v1 (`val_clean` mean `0.6533`).
+- [x] Thêm clean-consistency objective vào script QAT.
+- [x] Chạy smoke CPU 1 step: PASS với `clean_weight=1.0`, `clean_mse_weight=0.05`.
+- [ ] Chạy QAT v2 trên server GPU.
+- [ ] Export ONNX từ candidate QAT chỉ khi `val_clean` giữ gần teacher và fake-quant cải thiện.
 - [ ] Submit AI Hub native quantize-only với `--quantize-options=--lite_mp`.
 - [ ] So QDQ native với PyTorch trên `vn3k_test_10`, rồi `vn3k_test_100` nếu pass hoặc near-pass.
 - [ ] Nếu QDQ native đạt production gate hoặc near-pass diagnostic gate, thử compile/link một lần.
@@ -403,7 +414,7 @@ python3 deployment/scripts/qnn/train_vision_quant_robust.py \
   --max-val-samples 1
 ```
 
-Command QAT v1 trên server GPU:
+Command QAT v1 trên server GPU (đã chạy, fail gate nội bộ; giữ lại để tham chiếu, không dùng tiếp nếu chưa sửa objective):
 
 ```bash
 python3 deployment/scripts/qnn/train_vision_quant_robust.py \
@@ -412,6 +423,20 @@ python3 deployment/scripts/qnn/train_vision_quant_robust.py \
   --lr 1e-5 \
   --mse-weight 0.05 \
   --device auto
+```
+
+Command QAT v2 trên server GPU sau khi thêm clean-consistency:
+
+```bash
+python3 deployment/scripts/qnn/train_vision_quant_robust.py \
+  --batch-size 4 \
+  --epochs 1 \
+  --lr 1e-5 \
+  --mse-weight 0.05 \
+  --clean-weight 1.0 \
+  --clean-mse-weight 0.05 \
+  --device auto \
+  --output-dir artifacts/deployment/exports/exported_model_qat_v2
 ```
 
 Command export và AI Hub native quantize:

@@ -230,6 +230,18 @@ def _distillation_loss(
     return cosine_loss + mse_weight * mse_loss, cosine_loss, mse_loss
 
 
+def _weighted_distillation_loss(
+    student: torch.Tensor,
+    teacher: torch.Tensor,
+    cosine_weight: float,
+    mse_weight: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    cosine = _batch_cosine(student, teacher)
+    cosine_loss = 1.0 - cosine.mean()
+    mse_loss = F.mse_loss(student.float(), teacher.float())
+    return cosine_weight * cosine_loss + mse_weight * mse_loss, cosine_loss, mse_loss
+
+
 @torch.no_grad()
 def _evaluate(
     teacher: nn.Module,
@@ -317,6 +329,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--mse-weight", type=float, default=0.05)
+    parser.add_argument(
+        "--clean-weight",
+        type=float,
+        default=1.0,
+        help=(
+            "Weight for clean student-vs-teacher cosine consistency. Set 0 to "
+            "recover the original fake-quant-only objective."
+        ),
+    )
+    parser.add_argument(
+        "--clean-mse-weight",
+        type=float,
+        default=0.05,
+        help="MSE weight for the clean student-vs-teacher consistency path.",
+    )
     parser.add_argument("--fake-quant-bits", type=int, default=8)
     parser.add_argument("--fake-quant-eps", type=float, default=1e-8)
     parser.add_argument("--start-layer", type=int, default=4)
@@ -409,12 +436,23 @@ def main() -> None:
             optimizer.zero_grad(set_to_none=True)
             with torch.no_grad():
                 teacher_output = teacher.encode_image(images).detach()
-            student_output = student.encode_image(images)
-            loss, cosine_loss, mse_loss = _distillation_loss(
-                student_output,
+
+            with fake_quant.disabled():
+                clean_student_output = student.encode_image(images)
+            fake_student_output = student.encode_image(images)
+
+            clean_loss, clean_cosine_loss, clean_mse_loss = _weighted_distillation_loss(
+                clean_student_output,
+                teacher_output,
+                cosine_weight=args.clean_weight,
+                mse_weight=args.clean_mse_weight,
+            )
+            fake_loss, fake_cosine_loss, fake_mse_loss = _distillation_loss(
+                fake_student_output,
                 teacher_output,
                 mse_weight=args.mse_weight,
             )
+            loss = fake_loss + clean_loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(
                 [parameter for parameter in student.parameters() if parameter.requires_grad],
@@ -422,19 +460,34 @@ def main() -> None:
             )
             optimizer.step()
 
-            cos_mean = _batch_cosine(student_output.detach(), teacher_output).mean().item()
+            clean_cos_mean = (
+                _batch_cosine(clean_student_output.detach(), teacher_output).mean().item()
+            )
+            fake_cos_mean = (
+                _batch_cosine(fake_student_output.detach(), teacher_output).mean().item()
+            )
             row = {
                 "epoch": epoch,
                 "step": global_step,
                 "loss": float(loss.detach().cpu()),
-                "cosine_loss": float(cosine_loss.detach().cpu()),
-                "mse_loss": float(mse_loss.detach().cpu()),
-                "train_cosine_l2_mean": cos_mean,
+                "fake_loss": float(fake_loss.detach().cpu()),
+                "fake_cosine_loss": float(fake_cosine_loss.detach().cpu()),
+                "fake_mse_loss": float(fake_mse_loss.detach().cpu()),
+                "fake_train_cosine_l2_mean": fake_cos_mean,
+                "clean_loss": float(clean_loss.detach().cpu()),
+                "clean_cosine_loss": float(clean_cosine_loss.detach().cpu()),
+                "clean_mse_loss": float(clean_mse_loss.detach().cpu()),
+                "clean_train_cosine_l2_mean": clean_cos_mean,
+                # Keep the legacy key for quick comparisons with earlier summaries.
+                "train_cosine_l2_mean": fake_cos_mean,
             }
             history.append(row)
             print(
                 "step={step} epoch={epoch} loss={loss:.6f} "
-                "cos={train_cosine_l2_mean:.6f} mse={mse_loss:.6f}".format(**row)
+                "fake_cos={fake_train_cosine_l2_mean:.6f} "
+                "fake_mse={fake_mse_loss:.6f} "
+                "clean_cos={clean_train_cosine_l2_mean:.6f} "
+                "clean_mse={clean_mse_loss:.6f}".format(**row)
             )
 
             global_step += 1
@@ -470,6 +523,8 @@ def main() -> None:
         "lr": args.lr,
         "weight_decay": args.weight_decay,
         "mse_weight": args.mse_weight,
+        "clean_weight": args.clean_weight,
+        "clean_mse_weight": args.clean_mse_weight,
         "fake_quant_bits": args.fake_quant_bits,
         "layer_range": [args.start_layer, args.end_layer],
         "train_visual_projection": not args.no_train_visual_projection,
