@@ -24,6 +24,42 @@ part_align_num_parts: 4
 part_align_warmup_epoch: 5
 part_align_ramp_epoch: 15
 
+# Multilingual Noise Evidence Bank for Hard-Negative TBPS (MNEB-HN)
+# Disabled by default. When enabled, the vanilla Circle branch remains intact;
+# FN/FP correction is added only through auxiliary losses.
+MNEB: false
+
+mneb_config:
+  evidence_bank:
+    enabled: true
+    queue_size: 4096
+    topk: 20
+    ema_beta: 0.99
+    loss_ema_alpha: 0.9
+    min_seen_epochs: 3
+    min_gmm_samples: 50
+    gmm_interval: 5
+    min_gmm_separation: 1.0
+    clean_threshold: 0.5
+  fnm_aux:
+    enabled: false
+    weight: 0.05
+    enable_epoch: 15
+    temperature: 0.07
+    margin: 0.25
+    theta_fn: 0.8
+    fn_prior: 0.003
+    max_candidate_frac: 0.02
+    min_pos_neg_gap: 0.0
+    local_agreement: true
+  rde_aux:
+    enabled: false
+    weight: 0.05
+    enable_epoch: 15
+    margin: 0.2
+    temperature: 0.07
+    uncertain_policy: "no_op"
+
 # Noise-Aware Circle Loss (Idea C — FP-noise handling by default)
 # When NACIR is true, the regular CIR branch is skipped in tbps.py.
 # Reuses the same circle_loss_weight / circle_margin / circle_gamma as CIR.

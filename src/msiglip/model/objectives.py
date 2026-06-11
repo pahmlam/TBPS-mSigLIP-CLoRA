@@ -193,20 +193,55 @@ def compute_part_token_alignment(
     The resulting image-text score matrix is optimized with bidirectional
     multi-positive contrastive targets from person IDs.
     """
+    score_mat, active_samples = compute_part_token_score_matrix(
+        image_tokens=image_tokens,
+        text_tokens=text_tokens,
+        attention_mask=attention_mask,
+        num_parts=num_parts,
+        image_grid_hw=image_grid_hw,
+    )
+    if not active_samples.any():
+        return _zero_loss_like(image_tokens, text_tokens)
+
+    score_mat = score_mat[active_samples][:, active_samples]
+    pids = pids[active_samples]
+
+    per_sample_loss = compute_branch_per_sample_contrastive_loss(
+        score_mat=score_mat,
+        pids=pids,
+        temperature=temperature,
+    )
+    return per_sample_loss.mean()
+
+
+def compute_part_token_score_matrix(
+    image_tokens,
+    text_tokens,
+    attention_mask,
+    num_parts=4,
+    image_grid_hw=None,
+):
+    """
+    Compute the local part-token image/text score matrix.
+
+    Returns:
+        score_mat: (B, B) matrix where row i is image i and column j is text j.
+        active_samples: (B,) bool mask for captions with at least one content token.
+    """
     if image_tokens.ndim != 3 or text_tokens.ndim != 3:
         raise ValueError("image_tokens and text_tokens must be rank-3 tensors")
     if attention_mask.ndim != 2:
         raise ValueError("attention_mask must be a rank-2 tensor")
+    if image_tokens.shape[0] != text_tokens.shape[0]:
+        raise ValueError("image_tokens and text_tokens must have the same batch size")
 
     token_mask = _build_text_token_mask(attention_mask)
     active_samples = token_mask.sum(dim=1) > 0
+    batch_size = image_tokens.shape[0]
     if not active_samples.any():
-        return _zero_loss_like(image_tokens, text_tokens)
-
-    image_tokens = image_tokens[active_samples]
-    text_tokens = text_tokens[active_samples]
-    token_mask = token_mask[active_samples]
-    pids = pids[active_samples]
+        score_mat = image_tokens.new_zeros(batch_size, batch_size)
+        score_mat = score_mat + image_tokens.sum() * 0.0 + text_tokens.sum() * 0.0
+        return score_mat, active_samples
 
     image_parts = _pool_vertical_parts(image_tokens, num_parts, image_grid_hw)
     image_parts = F.normalize(image_parts, dim=-1, p=2)
@@ -221,6 +256,21 @@ def compute_part_token_alignment(
         token_scores * token_mask_float.unsqueeze(0)
     ).sum(dim=2) / token_counts.unsqueeze(0)
 
+    return score_mat, active_samples
+
+
+def compute_branch_per_sample_contrastive_loss(score_mat, pids, temperature=0.07):
+    """
+    Per-sample bidirectional multi-positive contrastive loss for a score matrix.
+    """
+    if score_mat.ndim != 2 or score_mat.shape[0] != score_mat.shape[1]:
+        raise ValueError("score_mat must be a square rank-2 tensor")
+
+    batch_size = score_mat.shape[0]
+    if batch_size == 0:
+        return score_mat.new_zeros((0,))
+
+    pids = pids.to(score_mat.device)
     temperature = max(float(temperature), 1e-6)
     logits_i2t = score_mat / temperature
     logits_t2i = logits_i2t.t()
@@ -232,7 +282,136 @@ def compute_part_token_alignment(
     loss_i2t = -torch.sum(F.log_softmax(logits_i2t, dim=1) * targets, dim=1)
     loss_t2i = -torch.sum(F.log_softmax(logits_t2i, dim=1) * targets, dim=1)
 
-    return (loss_i2t.mean() + loss_t2i.mean()) / 2
+    return (loss_i2t + loss_t2i) / 2
+
+
+def compute_fnm_auxiliary_loss(
+    image_features,
+    text_features,
+    pids,
+    fn_candidate_mask,
+    fn_prob_matrix=None,
+    theta_fn=0.8,
+    margin=0.25,
+    temperature=0.07,
+):
+    """
+    FNM-style auxiliary correction for high-confidence false negatives.
+
+    The Circle negative branch is not modified. High-confidence FN candidates
+    are treated as soft positives only in this auxiliary contrastive objective.
+    """
+    if fn_candidate_mask is None:
+        return _zero_loss_like(image_features, text_features)
+
+    image_features = F.normalize(image_features, dim=1, p=2)
+    text_features = F.normalize(text_features, dim=1, p=2)
+    score_mat = image_features @ text_features.t()
+
+    pids = pids.to(score_mat.device)
+    pids_col = pids.view(-1, 1)
+    pos_mask = torch.eq(pids_col, pids_col.t())
+    fn_candidate_mask = fn_candidate_mask.to(score_mat.device).bool() & (~pos_mask)
+    if not fn_candidate_mask.any():
+        return _zero_loss_like(image_features, text_features)
+
+    if fn_prob_matrix is None:
+        candidate_weights = fn_candidate_mask.float()
+    else:
+        fn_prob_matrix = fn_prob_matrix.to(score_mat.device).float()
+        denom = max(1.0 - float(theta_fn), 1e-6)
+        candidate_weights = ((fn_prob_matrix - float(theta_fn)) / denom).clamp(0.0, 1.0)
+        candidate_weights = candidate_weights * fn_candidate_mask.float()
+
+    if candidate_weights.sum() <= 0:
+        return _zero_loss_like(image_features, text_features)
+
+    soft_targets = pos_mask.float() + candidate_weights
+    row_targets = soft_targets / soft_targets.sum(dim=1, keepdim=True).clamp_min(1.0)
+    col_targets = soft_targets.t()
+    col_targets = col_targets / col_targets.sum(dim=1, keepdim=True).clamp_min(1.0)
+
+    temperature = max(float(temperature), 1e-6)
+    candidate_margin = float(margin) * fn_candidate_mask.float()
+    logits_i2t = (score_mat - candidate_margin) / temperature
+    logits_t2i = logits_i2t.t()
+
+    loss_i2t = -torch.sum(F.log_softmax(logits_i2t, dim=1) * row_targets, dim=1)
+    loss_t2i = -torch.sum(F.log_softmax(logits_t2i, dim=1) * col_targets, dim=1)
+
+    row_active = candidate_weights.sum(dim=1) > 0
+    col_active = candidate_weights.sum(dim=0) > 0
+    losses = []
+    if row_active.any():
+        losses.append(loss_i2t[row_active].mean())
+    if col_active.any():
+        losses.append(loss_t2i[col_active].mean())
+    if not losses:
+        return _zero_loss_like(image_features, text_features)
+    return torch.stack(losses).mean()
+
+
+def compute_rde_auxiliary_loss(
+    global_score_mat,
+    local_score_mat,
+    pids,
+    consensus_labels,
+    margin=0.2,
+    temperature=0.07,
+):
+    """
+    RDE-style auxiliary TAL loss from global/local clean/noisy consensus.
+
+    Label convention: 1 = confident clean, 0 = confident noisy, -1 = uncertain.
+    Only confident-clean anchors contribute. Uncertain samples are ignored.
+    Confident noisy positives are excluded rather than scaling Circle positives.
+    """
+    if global_score_mat.ndim != 2 or global_score_mat.shape[0] != global_score_mat.shape[1]:
+        raise ValueError("global_score_mat must be a square rank-2 tensor")
+
+    pids = pids.to(global_score_mat.device)
+    consensus_labels = consensus_labels.to(global_score_mat.device)
+
+    if (consensus_labels == 1).sum() == 0:
+        return _zero_loss_like(global_score_mat, local_score_mat)
+
+    def _branch_loss(score_mat):
+        if score_mat is None:
+            return None
+
+        score_mat = score_mat.to(global_score_mat.device)
+        labels = consensus_labels
+        known = labels >= 0
+        clean = labels == 1
+        pids_col = pids.view(-1, 1)
+        same_pid = torch.eq(pids_col, pids_col.t())
+
+        pos_mask = same_pid & clean.view(1, -1)
+        neg_mask = (~same_pid) & known.view(1, -1)
+        anchor_mask = clean & pos_mask.any(dim=1) & neg_mask.any(dim=1)
+        if not anchor_mask.any():
+            return _zero_loss_like(score_mat)
+
+        neg_inf = torch.finfo(score_mat.dtype).min
+        temperature_safe = max(float(temperature), 1e-6)
+        pos_scores = score_mat.masked_fill(~pos_mask, neg_inf)
+        neg_scores = score_mat.masked_fill(~neg_mask, neg_inf)
+        pos_lse = temperature_safe * torch.logsumexp(pos_scores / temperature_safe, dim=1)
+        neg_lse = temperature_safe * torch.logsumexp(neg_scores / temperature_safe, dim=1)
+        return F.softplus((neg_lse - pos_lse + float(margin)) / temperature_safe)[anchor_mask].mean()
+
+    global_i2t = _branch_loss(global_score_mat)
+    global_t2i = _branch_loss(global_score_mat.t())
+    branch_losses = [loss for loss in (global_i2t, global_t2i) if loss is not None]
+
+    if local_score_mat is not None:
+        local_i2t = _branch_loss(local_score_mat)
+        local_t2i = _branch_loss(local_score_mat.t())
+        branch_losses.extend(loss for loss in (local_i2t, local_t2i) if loss is not None)
+
+    if not branch_losses:
+        return _zero_loss_like(global_score_mat, local_score_mat)
+    return torch.stack(branch_losses).mean()
 
 
 def compute_cross_modal_circle(image_features, text_features, pids, m=0.25, gamma=128):

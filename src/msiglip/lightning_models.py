@@ -222,11 +222,29 @@ class LitTBPS(L.LightningModule):
         Diagnostics (GMM separation, component means/stds, fallback flag) are
         logged to W&B under keys prefixed with "gmm_".
         """
+        epoch = self.trainer.current_epoch
+        evidence_bank = getattr(self.model, "evidence_bank", None)
+        if evidence_bank is not None:
+            try:
+                diag = evidence_bank.refit_epoch(epoch)
+                logger.info(
+                    f"[epoch {epoch}] MNEB refit: "
+                    f"global_fallback={bool(diag.get('global_fallback', 1.0))}, "
+                    f"local_fallback={bool(diag.get('local_fallback', 1.0))}, "
+                    f"clean_frac={diag.get('consensus_clean_frac', 0.0):.3f}, "
+                    f"uncertain_frac={diag.get('consensus_uncertain_frac', 1.0):.3f}"
+                )
+                self.log_dict(
+                    {f"mneb_{k}": float(v) for k, v in diag.items()},
+                    on_epoch=True,
+                )
+            except Exception as e:
+                logger.error(f"MNEB refit failed at epoch {epoch}: {e}")
+
         noise_state = getattr(self.model, "noise_state", None)
         if noise_state is None:
             return
 
-        epoch = self.trainer.current_epoch
         if epoch < noise_state.fp_enable_epoch:
             return
         if (epoch - noise_state.fp_enable_epoch) % noise_state.gmm_refit_interval != 0:

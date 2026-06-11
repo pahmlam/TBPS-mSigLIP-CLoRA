@@ -1,5 +1,16 @@
 # Training Changelog
 
+## [2026-06-12] Add optional MNEB-HN noise framework
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | HIGH | feature | Added optional `MNEB` framework with `EvidenceMemoryBank` buffers for global/local embeddings, per-sample loss EMA, clean probabilities, FN statistics, FIFO sample queue, sparse top-k stability diagnostics, and global/local consensus labels | COMPLETE |
+| 2 | HIGH | feature | Extended loss objectives with reusable part-token score matrices, per-sample branch contrastive loss, FNM-style auxiliary correction, and RDE-style auxiliary loss while keeping Circle Loss untouched | COMPLETE |
+| 3 | HIGH | feature | Wired MNEB into `TBPS` as a separate disabled-by-default path: `MNEB` and `NACIR` are mutually exclusive, vanilla Circle still runs unchanged, and FNM/RDE effects only enter through `fnm_aux_loss` / `rde_aux_loss` when enabled | COMPLETE |
+| 4 | MED | config | Added `loss.MNEB: false` and `loss.mneb_config` groups for evidence bank, FNM auxiliary loss, and RDE auxiliary loss in `configs/loss/cir_msiglip.yaml`; all training effects remain disabled by default | COMPLETE |
+| 5 | MED | feature | Added Lightning epoch-end MNEB refit/logging under `mneb_` diagnostics while preserving the existing NACIR GMM refit path | COMPLETE |
+| 6 | MED | test | Added evidence-bank, MNEB objective, and lightweight TBPS integration tests; verification passed with targeted unittest, full `unittest discover`, `compileall`, and `git diff --check` | COMPLETE |
+
 ## [2026-06-06] Make NACIR clean-safe as main training method
 
 | # | Priority | Type | Action | Status |
