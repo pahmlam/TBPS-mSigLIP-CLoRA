@@ -13,4 +13,5 @@ uv run trainer.py -cn cir_msiglip \
     +lora=default \
     \
     loss.NACIR=true \
+    loss.nacir_config.fn_detector=off \
     "$@"

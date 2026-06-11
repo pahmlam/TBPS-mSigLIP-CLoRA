@@ -2,7 +2,7 @@
 Noise-Aware Circle Loss state management (Idea C).
 
 This module provides `NoiseAwareCircleState`, an `nn.Module` that owns:
-  - Running EMA of positive/negative similarity distributions (for Bayesian FN detection)
+  - Running EMA of positive/negative similarity distributions (for optional FN detection)
   - Per-sample EMA of Circle Loss values (for GMM-based FP detection)
   - 2-component 1D GMM fit (pure PyTorch, no sklearn dependency)
 
@@ -56,14 +56,17 @@ class NoiseAwareCircleState(nn.Module):
         self.fn_prior: float = float(_get("fn_prior", 0.01))
         self.epsilon_n: float = float(_get("epsilon_n", 0.1))
         self.epsilon_p: float = float(_get("epsilon_p", 0.2))
+        self.fn_detector: str = str(_get("fn_detector", "off"))
         self.fn_safe_gate: bool = bool(_get("fn_safe_gate", True))
         self.fn_prob_threshold: float = float(_get("fn_prob_threshold", 0.8))
         self.fn_pos_sigma_k: float = float(_get("fn_pos_sigma_k", 1.0))
         self.fn_max_suppress_frac: float = float(_get("fn_max_suppress_frac", 0.05))
         self.fn_min_pos_neg_gap: float = float(_get("fn_min_pos_neg_gap", 0.0))
+        self.fn_mutual_topk: int = int(_get("fn_mutual_topk", 2))
+        self.fn_mutual_min_sim: float = float(_get("fn_mutual_min_sim", -1.0))
         self.gmm_refit_interval: int = int(_get("gmm_refit_interval", 5))
         self.gmm_min_separation: float = float(_get("gmm_min_separation", 1.0))
-        self.fn_enable_epoch: int = int(_get("fn_enable_epoch", 11))
+        self.fn_enable_epoch: int = int(_get("fn_enable_epoch", 999))
         self.fp_enable_epoch: int = int(_get("fp_enable_epoch", 15))
 
         # -------- FN detection buffers (EMA similarity stats) --------

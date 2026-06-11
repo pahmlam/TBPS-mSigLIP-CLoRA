@@ -13,8 +13,6 @@ uv run trainer.py -cn cir_msiglip \
     +lora=default \
     \
     loss.NACIR=true \
-    loss.nacir_config.fn_prior=0.010 \
-    loss.nacir_config.epsilon_n=0.60 \
-    loss.nacir_config.fn_enable_epoch=999 \
+    loss.nacir_config.fn_detector=off \
     loss.nacir_config.fp_enable_epoch=999 \
     "$@"

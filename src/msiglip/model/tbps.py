@@ -42,6 +42,7 @@ class TBPS(nn.Module):
             self.noise_state = NoiseAwareCircleState(num_train_samples, nacir_cfg)
             logger.info(
                 f"NACIR enabled: num_train_samples={num_train_samples}, "
+                f"fn_detector={self.noise_state.fn_detector}, "
                 f"fn_enable_epoch={self.noise_state.fn_enable_epoch}, "
                 f"fp_enable_epoch={self.noise_state.fp_enable_epoch}"
             )
@@ -284,7 +285,10 @@ class TBPS(nn.Module):
             circle_gamma = self.config.loss.get("circle_gamma", 128)
 
             # --- Gate detectors by curriculum epoch ---
-            fn_active = current_epoch >= self.noise_state.fn_enable_epoch
+            fn_active = (
+                self.noise_state.fn_detector != "off"
+                and current_epoch >= self.noise_state.fn_enable_epoch
+            )
             fp_active = current_epoch >= self.noise_state.fp_enable_epoch
 
             fn_stats = self.noise_state.get_fn_stats_dict() if fn_active else None
@@ -308,6 +312,9 @@ class TBPS(nn.Module):
                 fn_pos_sigma_k=self.noise_state.fn_pos_sigma_k,
                 fn_max_suppress_frac=self.noise_state.fn_max_suppress_frac,
                 fn_min_pos_neg_gap=self.noise_state.fn_min_pos_neg_gap,
+                fn_detector=self.noise_state.fn_detector,
+                fn_mutual_topk=self.noise_state.fn_mutual_topk,
+                fn_mutual_min_sim=self.noise_state.fn_mutual_min_sim,
             )
 
             final_nacir_loss = nacir_loss
@@ -333,13 +340,17 @@ class TBPS(nn.Module):
                     fn_pos_sigma_k=self.noise_state.fn_pos_sigma_k,
                     fn_max_suppress_frac=self.noise_state.fn_max_suppress_frac,
                     fn_min_pos_neg_gap=self.noise_state.fn_min_pos_neg_gap,
+                    fn_detector=self.noise_state.fn_detector,
+                    fn_mutual_topk=self.noise_state.fn_mutual_topk,
+                    fn_mutual_min_sim=self.noise_state.fn_mutual_min_sim,
                 )
                 final_nacir_loss = (nacir_loss + aug_nacir_loss) / 2
 
             ret.update({"nacir_loss": final_nacir_loss * current_circle_weight})
 
             # --- Update state (no_grad operations) ---
-            self.noise_state.update_ema_stats(diag["s_p"], diag["s_n"])
+            if self.noise_state.fn_detector != "off":
+                self.noise_state.update_ema_stats(diag["s_p"], diag["s_n"])
             if "id" in batch:
                 self.noise_state.update_sample_losses(
                     batch["id"], diag["per_sample_loss"]
@@ -357,6 +368,9 @@ class TBPS(nn.Module):
                 "nacir_fn_gate_active": torch.tensor(diag["fn_gate_active"], device=image_pooler_output.device),
                 "nacir_fn_prob_max": torch.tensor(diag["fn_prob_max"], device=image_pooler_output.device),
                 "nacir_fn_prob_selected_mean": torch.tensor(diag["fn_prob_selected_mean"], device=image_pooler_output.device),
+                "nacir_fn_candidate_frac": torch.tensor(diag["fn_candidate_frac"], device=image_pooler_output.device),
+                "nacir_fn_selected_sim_mean": torch.tensor(diag["fn_selected_sim_mean"], device=image_pooler_output.device),
+                "nacir_fn_detector_mutual": torch.tensor(diag["fn_detector_mutual"], device=image_pooler_output.device),
                 "nacir_fn_active": torch.tensor(1.0 if fn_active else 0.0, device=image_pooler_output.device),
                 "nacir_fp_active": torch.tensor(1.0 if fp_active else 0.0, device=image_pooler_output.device),
             })

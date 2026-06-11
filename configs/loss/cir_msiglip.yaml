@@ -24,13 +24,15 @@ part_align_num_parts: 4
 part_align_warmup_epoch: 5
 part_align_ramp_epoch: 15
 
-# Noise-Aware Circle Loss (Idea C — unified FN + FP detection)
+# Noise-Aware Circle Loss (Idea C — FP-noise handling by default)
 # When NACIR is true, the regular CIR branch is skipped in tbps.py.
 # Reuses the same circle_loss_weight / circle_margin / circle_gamma as CIR.
 NACIR: false
 
 nacir_config:
-  # EMA similarity statistics (for Bayesian FN detection on the negative branch)
+  # FN detection is off by default because it can weaken Circle hard-negative mining
+  # on clean VN3K. Use mutual_topk/bayesian only for explicit FN ablations.
+  fn_detector: "off"  # options: off, mutual_topk, bayesian
   ema_beta: 0.99
   fn_prior: 0.003
   epsilon_n: 0.85
@@ -39,12 +41,14 @@ nacir_config:
   fn_pos_sigma_k: 1.0
   fn_max_suppress_frac: 0.05
   fn_min_pos_neg_gap: 0.0
+  fn_mutual_topk: 2
+  fn_mutual_min_sim: -1.0
   # Per-sample loss tracking (for GMM-based FP detection on the positive branch)
   loss_ema_alpha: 0.9
   epsilon_p: 0.2
   gmm_refit_interval: 5
   gmm_min_separation: 1.0
   # Curriculum epoch gates for detector activation.
-  # FN turns on first (EMA stabilizes fast); FP turns on later (GMM needs history).
-  fn_enable_epoch: 21
+  # FN is disabled by default; FP turns on later because GMM needs history.
+  fn_enable_epoch: 999
   fp_enable_epoch: 15

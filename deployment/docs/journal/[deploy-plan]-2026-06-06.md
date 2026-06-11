@@ -78,7 +78,9 @@ Chỉ chạy `vn3k_test_100` cho candidate đã pass QDQ local. Không chạy fu
 | QAT v1 server | FAIL gate nội bộ: `lr=1e-5`, `mse_weight=0.05`, `500` steps, `val_clean` mean/min `0.7929/0.6806`, `val_fake_quant` mean/min `0.7912/0.6832`; không export/submit |
 | QAT v1b server | FAIL gate nội bộ: `lr=1e-6`, `mse_weight=0.1`, `500` steps, `val_clean` mean/min `0.6533/0.4248`, `val_fake_quant` mean/min `0.4427/0.3029`; không export/submit |
 | QAT clean-consistency tooling | DONE: script đã thêm `clean_weight` / `clean_mse_weight`, smoke CPU 1 step pass với `val_clean` mean `0.999737` |
-| Next active branch | Chạy QAT v2 trên server GPU với clean-consistency objective trước khi quay lại AI Hub/QNN-native quantizer |
+| QAT v2-v5 full blocks 4-11 | FAIL gate: v4 cân bằng nhất (`clean 0.9505/0.8998`, `fake 0.7539/0.6337`), nhưng chưa đủ để export/submit |
+| QAT blocks 6-11 v1 | FAIL gate nhưng promising: `clean 0.9297/0.8606`, `fake 0.8460/0.7515`; fake tốt nhất đến hiện tại |
+| Next active branch | Chạy blocks 6-11 v2 với clean constraint cao hơn trước khi quay lại AI Hub/QNN-native quantizer |
 
 Các kết quả cũ vẫn nằm trong daily journal/report:
 
@@ -359,8 +361,10 @@ Kiểm tra dependency local hiện tại: `aimet_torch`, `aimet_onnx`, và `aime
 - [x] Chạy QAT v1b với `lr=1e-6`, `mse_weight=0.1`: FAIL gate nội bộ, `val_clean` mean `0.6533`, `val_fake_quant` mean `0.4427`.
 - [x] Sửa QAT objective để thêm clean-consistency loss trong cùng batch.
 - [x] Chạy smoke CPU 1 step sau khi sửa script: PASS, `val_clean` mean `0.999737`, `val_fake_quant` mean `0.086960`.
-- [ ] Chạy QAT v2 trên server GPU.
-- [ ] Export QAT candidate sang FP32 ONNX bằng `deployment/scripts/onnx/export.py` chỉ khi gate nội bộ pass.
+- [x] Chạy QAT v2-v5 full blocks 4-11 trên server/local metadata review: tất cả FAIL gate nội bộ; v4 là điểm cân bằng tốt nhất nhưng fake thấp.
+- [x] Chạy QAT blocks 6-11 v1 trên server: FAIL clean gate nhưng fake tốt nhất (`0.8460` mean).
+- [ ] Chạy QAT blocks 6-11 v2 với clean constraint cao hơn.
+- [ ] Export QAT candidate sang FP32 ONNX bằng `deployment/scripts/onnx/export.py` chỉ khi gate nội bộ pass hoặc near-pass có lý do rõ.
 - [ ] Submit AI Hub native quantize-only từ QAT ONNX, sau đó chạy `compare_onnx_with_pytorch.py` trên `vn3k_test_10`.
 - [ ] Chỉ mở `vn3k_test_100` nếu QAT/native QDQ pass hoặc near-pass gate `vn3k_test_10`.
 
@@ -398,7 +402,12 @@ Kiểm tra dependency local hiện tại: `aimet_torch`, `aimet_onnx`, và `aime
 - [x] Chạy QAT v1b trên server GPU với LR thấp hơn/MSE cao hơn: FAIL gate nội bộ và tệ hơn v1 (`val_clean` mean `0.6533`).
 - [x] Thêm clean-consistency objective vào script QAT.
 - [x] Chạy smoke CPU 1 step: PASS với `clean_weight=1.0`, `clean_mse_weight=0.05`.
-- [ ] Chạy QAT v2 trên server GPU.
+- [x] Chạy QAT v2 trên server GPU: FAIL, `clean 0.9396/0.8913`, `fake 0.7826/0.6492`.
+- [x] Chạy QAT v3 full blocks 4-11: FAIL, clean pass nhưng fake tụt (`clean 0.9596/0.9201`, `fake 0.7238/0.5700`).
+- [x] Chạy QAT v4 full blocks 4-11: FAIL nhưng cân bằng nhất full-window (`clean 0.9505/0.8998`, `fake 0.7539/0.6337`).
+- [x] Chạy QAT v5 full blocks 4-11: FAIL; local/server đều không hơn v4.
+- [x] Chạy QAT blocks 6-11 v1: FAIL clean gate nhưng fake tốt nhất (`clean 0.9297/0.8606`, `fake 0.8460/0.7515`).
+- [ ] Chạy QAT blocks 6-11 v2 với `clean_weight=1.5`, `clean_mse_weight=0.075`.
 - [ ] Export ONNX từ candidate QAT chỉ khi `val_clean` giữ gần teacher và fake-quant cải thiện.
 - [ ] Submit AI Hub native quantize-only với `--quantize-options=--lite_mp`.
 - [ ] So QDQ native với PyTorch trên `vn3k_test_10`, rồi `vn3k_test_100` nếu pass hoặc near-pass.
@@ -437,6 +446,22 @@ python3 deployment/scripts/qnn/train_vision_quant_robust.py \
   --clean-mse-weight 0.05 \
   --device auto \
   --output-dir artifacts/deployment/exports/exported_model_qat_v2
+```
+
+Command QAT blocks 6-11 v2:
+
+```bash
+python3 deployment/scripts/qnn/train_vision_quant_robust.py \
+  --batch-size 4 \
+  --epochs 1 \
+  --lr 1e-5 \
+  --mse-weight 0.05 \
+  --clean-weight 1.5 \
+  --clean-mse-weight 0.075 \
+  --start-layer 6 \
+  --end-layer 11 \
+  --device auto \
+  --output-dir artifacts/deployment/exports/exported_model_qat_blocks_6_11_v2
 ```
 
 Command export và AI Hub native quantize:

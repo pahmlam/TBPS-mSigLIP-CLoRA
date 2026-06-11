@@ -317,6 +317,66 @@ def _bayesian_fn_prob(
     return (log_num - log_denom).exp().clamp(0.0, 1.0)
 
 
+def _mutual_topk_negative_mask(
+    sim_mat: torch.Tensor,
+    pos_mask: torch.Tensor,
+    neg_indices: torch.Tensor,
+    fn_stats: dict,
+    fn_pos_sigma_k: float,
+    fn_min_pos_neg_gap: float,
+    fn_mutual_topk: int,
+    fn_mutual_min_sim: float,
+) -> torch.Tensor:
+    """Select negative pairs that are reciprocal cross-modal top-k neighbors."""
+    if fn_stats is None or neg_indices.numel() == 0:
+        return torch.zeros(neg_indices.shape[0], dtype=torch.bool, device=sim_mat.device)
+
+    mu_pos = float(fn_stats["mu_pos"])
+    sigma_pos = max(float(fn_stats["sigma_pos"]), 1e-6)
+    mu_neg = float(fn_stats["mu_neg"])
+    if (mu_pos - mu_neg) <= fn_min_pos_neg_gap:
+        return torch.zeros(neg_indices.shape[0], dtype=torch.bool, device=sim_mat.device)
+
+    topk = max(int(fn_mutual_topk), 0)
+    if topk <= 0:
+        return torch.zeros(neg_indices.shape[0], dtype=torch.bool, device=sim_mat.device)
+
+    sim_for_gate = sim_mat.detach().float()
+    neg_mask = ~pos_mask
+    max_neg_per_row = int(neg_mask.sum(dim=1).max().item())
+    max_neg_per_col = int(neg_mask.sum(dim=0).max().item())
+    if max_neg_per_row <= 0 or max_neg_per_col <= 0:
+        return torch.zeros(neg_indices.shape[0], dtype=torch.bool, device=sim_mat.device)
+
+    row_k = min(topk, max_neg_per_row)
+    col_k = min(topk, max_neg_per_col)
+    neg_inf = torch.finfo(sim_for_gate.dtype).min
+
+    row_scores = sim_for_gate.masked_fill(~neg_mask, neg_inf)
+    row_topk_idx = torch.topk(row_scores, k=row_k, dim=1).indices
+    row_topk_mask = torch.zeros_like(neg_mask)
+    row_topk_mask.scatter_(1, row_topk_idx, True)
+    row_topk_mask &= neg_mask
+
+    col_scores = sim_for_gate.masked_fill(~neg_mask, neg_inf)
+    col_topk_idx = torch.topk(col_scores, k=col_k, dim=0).indices
+    col_topk_mask = torch.zeros_like(neg_mask)
+    col_topk_mask.scatter_(0, col_topk_idx, True)
+    col_topk_mask &= neg_mask
+
+    sim_threshold = max(
+        float(fn_mutual_min_sim),
+        mu_pos - float(fn_pos_sigma_k) * sigma_pos,
+    )
+    candidate_mat = (
+        row_topk_mask
+        & col_topk_mask
+        & neg_mask
+        & (sim_for_gate >= sim_threshold)
+    )
+    return candidate_mat[neg_indices[:, 0], neg_indices[:, 1]]
+
+
 def compute_noise_aware_circle(
     image_features: torch.Tensor,
     text_features: torch.Tensor,
@@ -332,6 +392,9 @@ def compute_noise_aware_circle(
     fn_pos_sigma_k: float = 1.0,
     fn_max_suppress_frac: float = 0.05,
     fn_min_pos_neg_gap: float = 0.0,
+    fn_detector: str = "off",
+    fn_mutual_topk: int = 2,
+    fn_mutual_min_sim: float = -1.0,
 ) -> tuple:
     """
     Noise-Aware Circle Loss (Idea C — unified FN + FP handling).
@@ -358,6 +421,9 @@ def compute_noise_aware_circle(
         fn_pos_sigma_k: candidate negatives must satisfy s_n >= mu_pos - k*sigma_pos.
         fn_max_suppress_frac: maximum fraction of negative pairs to suppress.
         fn_min_pos_neg_gap: minimum required mu_pos - mu_neg before FN gate can act.
+        fn_detector: "off" (default), "mutual_topk", or "bayesian".
+        fn_mutual_topk: k for reciprocal image-text top-k FN candidate mining.
+        fn_mutual_min_sim: absolute minimum similarity for mutual candidates.
 
     Returns:
         loss: scalar tensor (requires_grad).
@@ -372,6 +438,9 @@ def compute_noise_aware_circle(
             'fn_gate_active': 1.0 iff at least one negative was suppressed
             'fn_prob_max': max P(FN) over negatives
             'fn_prob_selected_mean': mean P(FN) over selected negatives
+            'fn_candidate_frac': fraction of negatives passing detector candidates
+            'fn_selected_sim_mean': mean similarity over selected negatives
+            'fn_detector_mutual': 1.0 iff mutual-topk detector is used
     """
     image_features = F.normalize(image_features, dim=1, p=2)
     text_features = F.normalize(text_features, dim=1, p=2)
@@ -397,6 +466,9 @@ def compute_noise_aware_circle(
         "fn_prob_mean": 0.0,
         "fn_prob_max": 0.0,
         "fn_prob_selected_mean": 0.0,
+        "fn_candidate_frac": 0.0,
+        "fn_selected_sim_mean": 0.0,
+        "fn_detector_mutual": 0.0,
         "fn_selected_frac": 0.0,
         "fn_gate_active": 0.0,
         "clean_weight_mean": 1.0,
@@ -419,57 +491,106 @@ def compute_noise_aware_circle(
 
     # ------------------ FN softening (negative branch) ------------------
     fn_scale = torch.ones_like(alpha_n)
-    if fn_stats is not None:
-        fn_probs = _bayesian_fn_prob(
-            s_n.detach(),
-            mu_pos=fn_stats["mu_pos"],
-            sigma_pos=fn_stats["sigma_pos"],
-            mu_neg=fn_stats["mu_neg"],
-            sigma_neg=fn_stats["sigma_neg"],
-            fn_prior=fn_stats["fn_prior"],
+    fn_detector = str(fn_detector or "off").lower()
+    if fn_detector not in {"off", "bayesian", "mutual_topk"}:
+        raise ValueError(
+            "fn_detector must be one of {'off', 'bayesian', 'mutual_topk'}, "
+            f"got {fn_detector!r}"
         )
-        diagnostics["fn_prob_mean"] = fn_probs.mean().item()
-        diagnostics["fn_prob_max"] = fn_probs.max().item()
 
-        if fn_safe_gate:
-            mu_pos = float(fn_stats["mu_pos"])
-            sigma_pos = max(float(fn_stats["sigma_pos"]), 1e-6)
-            mu_neg = float(fn_stats["mu_neg"])
-            pos_neg_gap = mu_pos - mu_neg
+    if fn_stats is not None and fn_detector != "off":
+        selected_scores = None
 
-            candidate_mask = (
-                (fn_probs >= fn_prob_threshold)
-                & (s_n.detach() >= (mu_pos - fn_pos_sigma_k * sigma_pos))
-                & (pos_neg_gap > fn_min_pos_neg_gap)
+        if fn_detector == "mutual_topk":
+            diagnostics["fn_detector_mutual"] = 1.0
+            candidate_mask = _mutual_topk_negative_mask(
+                sim_mat=sim_mat,
+                pos_mask=pos_mask,
+                neg_indices=neg_indices,
+                fn_stats=fn_stats,
+                fn_pos_sigma_k=fn_pos_sigma_k,
+                fn_min_pos_neg_gap=fn_min_pos_neg_gap,
+                fn_mutual_topk=fn_mutual_topk,
+                fn_mutual_min_sim=fn_mutual_min_sim,
             )
-
-            max_selected = int(math.floor(max(fn_max_suppress_frac, 0.0) * s_n.numel()))
+            diagnostics["fn_candidate_frac"] = candidate_mask.float().mean().item()
+            max_selected = int(
+                math.floor(max(fn_max_suppress_frac, 0.0) * s_n.numel())
+            )
             selected_mask = torch.zeros_like(candidate_mask)
             if max_selected > 0 and candidate_mask.any():
                 candidate_indices = candidate_mask.nonzero(as_tuple=False).squeeze(1)
-                candidate_probs = fn_probs[candidate_indices]
+                candidate_scores = s_n.detach().float()[candidate_indices]
                 topk = min(max_selected, candidate_indices.numel())
-                topk_indices = torch.topk(candidate_probs, k=topk).indices
+                topk_indices = torch.topk(candidate_scores, k=topk).indices
                 selected_mask[candidate_indices[topk_indices]] = True
 
             if selected_mask.any():
-                selected_probs = fn_probs[selected_mask]
-                selected_scale = torch.clamp_min(
-                    1.0 - selected_probs,
-                    min=epsilon_n,
-                ).to(dtype=fn_scale.dtype, device=fn_scale.device)
+                selected_scores = s_n.detach()[selected_mask]
+                selected_scale = torch.full_like(
+                    fn_scale[selected_mask],
+                    fill_value=float(epsilon_n),
+                )
                 fn_scale[selected_mask] = selected_scale
-                diagnostics["fn_selected_frac"] = selected_mask.float().mean().item()
-                diagnostics["fn_gate_active"] = 1.0
-                diagnostics["fn_prob_selected_mean"] = selected_probs.mean().item()
         else:
-            fn_scale = torch.clamp_min(1.0 - fn_probs, min=epsilon_n).to(
-                dtype=alpha_n.dtype,
-                device=alpha_n.device,
+            fn_probs = _bayesian_fn_prob(
+                s_n.detach(),
+                mu_pos=fn_stats["mu_pos"],
+                sigma_pos=fn_stats["sigma_pos"],
+                mu_neg=fn_stats["mu_neg"],
+                sigma_neg=fn_stats["sigma_neg"],
+                fn_prior=fn_stats["fn_prior"],
             )
-            diagnostics["fn_selected_frac"] = 1.0
+            diagnostics["fn_prob_mean"] = fn_probs.mean().item()
+            diagnostics["fn_prob_max"] = fn_probs.max().item()
+
+            if fn_safe_gate:
+                mu_pos = float(fn_stats["mu_pos"])
+                sigma_pos = max(float(fn_stats["sigma_pos"]), 1e-6)
+                mu_neg = float(fn_stats["mu_neg"])
+                pos_neg_gap = mu_pos - mu_neg
+
+                candidate_mask = (
+                    (fn_probs >= fn_prob_threshold)
+                    & (s_n.detach() >= (mu_pos - fn_pos_sigma_k * sigma_pos))
+                    & (pos_neg_gap > fn_min_pos_neg_gap)
+                )
+                diagnostics["fn_candidate_frac"] = candidate_mask.float().mean().item()
+
+                max_selected = int(
+                    math.floor(max(fn_max_suppress_frac, 0.0) * s_n.numel())
+                )
+                selected_mask = torch.zeros_like(candidate_mask)
+                if max_selected > 0 and candidate_mask.any():
+                    candidate_indices = candidate_mask.nonzero(as_tuple=False).squeeze(1)
+                    candidate_probs = fn_probs[candidate_indices]
+                    topk = min(max_selected, candidate_indices.numel())
+                    topk_indices = torch.topk(candidate_probs, k=topk).indices
+                    selected_mask[candidate_indices[topk_indices]] = True
+
+                if selected_mask.any():
+                    selected_probs = fn_probs[selected_mask]
+                    selected_scores = s_n.detach()[selected_mask]
+                    selected_scale = torch.clamp_min(
+                        1.0 - selected_probs,
+                        min=epsilon_n,
+                    ).to(dtype=fn_scale.dtype, device=fn_scale.device)
+                    fn_scale[selected_mask] = selected_scale
+                    diagnostics["fn_prob_selected_mean"] = selected_probs.mean().item()
+            else:
+                fn_scale = torch.clamp_min(1.0 - fn_probs, min=epsilon_n).to(
+                    dtype=alpha_n.dtype,
+                    device=alpha_n.device,
+                )
+                selected_mask = torch.ones_like(fn_probs, dtype=torch.bool)
+                selected_scores = s_n.detach()
+                diagnostics["fn_candidate_frac"] = 1.0
+                diagnostics["fn_prob_selected_mean"] = fn_probs.mean().item()
+
+        if selected_scores is not None and selected_scores.numel() > 0:
+            diagnostics["fn_selected_frac"] = selected_mask.float().mean().item()
             diagnostics["fn_gate_active"] = 1.0
-            diagnostics["fn_prob_selected_mean"] = fn_probs.mean().item()
+            diagnostics["fn_selected_sim_mean"] = selected_scores.float().mean().item()
 
         diagnostics["alpha_n_scale_mean"] = fn_scale.mean().item()
 
