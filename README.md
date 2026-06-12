@@ -18,7 +18,7 @@ To address this, we propose an efficient optimization framework that integrates 
 | Track | Current state | Next step |
 |---|---|---|
 | **Main training result** | LoRA + Curriculum Circle Loss reaches **52.28% R@1** on VN3K and **59.35% R@1** on PRW-TPS-CN | Preserve as the reported baseline |
-| **NACIR** | Implemented as an experimental replacement for the auxiliary Circle branch; `run_nacir.sh` is available | Validate in `notebooks/workspace.ipynb`, then run clean/noisy ablations |
+| **MNEB-HN** | Implemented as an optional modular noise-robust extension; `run_mneb_hn.sh` is available | Validate clean no-op on VN3K, then test natural noise on CUHK-PEDES |
 | **Noisy correspondence** | RDE-style caption-shuffle noise is integrated via `dataset.noisy_rate` and `run_noise_experiments.sh` | Use for robustness experiments, mainly FP/noisy-positive validation |
 | **Deployment** | LoRA merge, FP16/FP32 export, ONNX export, and **vision INT8 HTP compile** are working | Compile text encoder, benchmark on RB3, then repeat with real calibration data |
 
@@ -94,185 +94,122 @@ The curriculum schedule for $\alpha_5(t)$ prevents early disruption of global al
 
 ---
 
-## Experimental Extension: NACIR (Noise-Aware Circle Loss)
+## Experimental Extension: MNEB-HN
 
-> Status: **experimental / results pending**. This section documents ongoing work and does not modify or reinterpret the reported Circle Loss results above.
+> Status: **experimental / results pending**. This section documents the next noise-robust framework and does not modify or reinterpret the reported Circle Loss results above.
 
 ### Motivation
 
-Cross-modal Circle Loss is effective for hard-negative mining, but its strength can become a weakness under label noise. In TBPS, two noise regimes are especially harmful:
+Cross-modal Circle Loss is effective because it keeps strong pressure on hard negatives. A noise-robust extension must therefore be conservative: if a pair may simply be a true hard negative, the framework should leave Circle Loss alone. The current design treats uncertain noise evidence as a no-op and applies FN/FP correction only through auxiliary losses.
 
-| Noise type | Label says | True relation | Failure mode |
+The target noise regimes are:
+
+| Noise type | Label says | True relation | MNEB-HN response |
 |---|---|---|---|
-| False Negative (FN) | Negative | Same person / semantically matching | Circle Loss pushes matching embeddings apart |
-| False Positive (FP) | Positive | Different person / wrong caption | Circle Loss pulls mismatched embeddings together |
+| False Negative (FN) | Negative | Same person / semantically matching | Add an FNM-style auxiliary correction for high-confidence FN candidates |
+| False Positive (FP) | Positive | Different person / wrong caption | Add an RDE-style auxiliary loss from global/local clean-noisy consensus |
+| Hard Negative (HN) | Negative | Different but visually/textually similar | Keep the original Circle Loss responsible for separation |
 
-NACIR is designed as a drop-in replacement for the auxiliary Circle Loss branch. When its detectors are inactive or uncertain, it degenerates exactly to the original Circle Loss; when label noise is detected, it suppresses the corresponding branch-specific gradient.
+### Framework Design
 
-### Mathematical Formulation
+MNEB-HN stands for **Multilingual Noise Evidence Bank for Hard-Negative TBPS**. It keeps the main objective unchanged:
 
-Let $s_{ij}=\mathbf{v}_i^\top\mathbf{u}_j$ be cosine similarity between normalized image and text embeddings. The original Circle Loss uses:
-
-$$\alpha_p^{ij}=[1+m-s_{ij}]_+, \qquad \alpha_n^{ij}=[s_{ij}+m]_+$$
-
-NACIR introduces branch-specific noise-aware weights:
-
-$$\widetilde{\alpha}_n^{ij} = \alpha_n^{ij}\cdot\max(1-P_{\text{FN}}(s_{ij}), \epsilon_n)$$
-
-$$\widetilde{\alpha}_p^{ij} = \alpha_p^{ij}\cdot\max(w_{ij}, \epsilon_p)$$
-
-where:
-
-- $P_{\text{FN}}(s_{ij})$ is the Bayesian posterior that a labeled negative pair is actually a false negative.
-- $w_{ij}$ is the clean-pair probability for a positive pair, computed from per-sample clean weights.
-- $\epsilon_n$ and $\epsilon_p$ are safety floors that prevent total gradient collapse.
-
-The resulting Noise-Aware Circle Loss is:
-
-$$
-\mathcal{L}_{\text{NACIR}} =
-\log\left[
-1+
-\sum_{j\in\mathcal{N}} e^{\gamma\,\widetilde{\alpha}_n^j(s_n^j-m)}
-\cdot
-\sum_{i\in\mathcal{P}} e^{-\gamma\,\widetilde{\alpha}_p^i(s_p^i-(1-m))}
-\right]
+$$\mathcal{L}_{\text{main}} =
+\mathcal{L}_{N\text{-}ITC}
++ \alpha_5(t)\mathcal{L}_{\text{circle}}
++ 0.1\mathcal{L}_{C\text{-}ITC}
++ 0.4\mathcal{L}_{SS}
 $$
 
-#### False-negative detector
+When enabled, MNEB-HN adds a cross-epoch evidence memory bank and optional auxiliary terms:
 
-NACIR models positive and negative similarity distributions with running Gaussian statistics:
-
-$$f_+(s)=\mathcal{N}(s;\mu_+,\sigma_+), \qquad f_-(s)=\mathcal{N}(s;\mu_-,\sigma_-)$$
-
-For a labeled negative pair with similarity $s$, the false-negative posterior is:
-
-$$
-P_{\text{FN}}(s)=
-\frac{\pi_{\text{FN}} f_+(s)}
-{\pi_{\text{FN}} f_+(s)+(1-\pi_{\text{FN}})f_-(s)}
+$$\mathcal{L}_{\text{MNEB-HN}} =
+\mathcal{L}_{\text{main}}
++ \lambda_{\text{FN}}\mathcal{L}_{\text{fnm-aux}}
++ \lambda_{\text{FP}}\mathcal{L}_{\text{rde-aux}}
 $$
 
-If a negative pair lies in the positive distribution region, NACIR reduces the negative-branch force by scaling $\alpha_n$ with $1-P_{\text{FN}}(s)$.
+The key constraint is that MNEB-HN **does not mutate Circle Loss weights**. It never directly suppresses Circle's $\alpha_n$ or $\alpha_p$. Instead:
 
-#### False-positive detector
+- `EvidenceMemoryBank` stores global/local embeddings, per-sample loss EMA, clean probabilities, seen counts, FIFO sample IDs, FN similarity statistics, and global/local consensus labels.
+- `FNMStyleAuxLoss` acts only when high-confidence FN candidates are found; otherwise it returns a grad-safe zero.
+- `RDEStyleAuxLoss` acts only for confident clean/noisy consensus; uncertain samples no-op.
+- Local evidence reuses the existing part-token path and adds no new trainable projection heads in v1.
 
-NACIR tracks an exponential moving average of per-sample Circle Loss values and periodically fits a two-component 1D Gaussian mixture model:
+### Default Safety
 
-$$p(\ell)=\pi_c\mathcal{N}(\ell;\mu_c,\sigma_c^2)+\pi_n\mathcal{N}(\ell;\mu_n,\sigma_n^2)$$
+MNEB-HN is disabled by default in `configs/loss/cir_msiglip.yaml`:
 
-The lower-loss component is treated as clean. The clean probability is:
+```yaml
+MNEB: false
 
-$$
-w_i=P(\text{clean}\mid \ell_i)
-$$
+mneb_config:
+  evidence_bank:
+    enabled: true
+  fnm_aux:
+    enabled: false
+  rde_aux:
+    enabled: false
+```
 
-For a positive pair $(i,j)$, the implementation uses:
+Behavior guarantees:
 
-$$w_{ij}=\min(w_i,w_j)$$
+| Setting | Training effect |
+|---|---|
+| `MNEB=false` | Identical baseline path: no evidence bank, no hidden-state request, no auxiliary losses |
+| `MNEB=true`, aux disabled | Evidence/diagnostics only; total loss remains the baseline objective |
+| `fnm_aux.enabled=true` | FN correction enters only through `fnm_aux_loss` |
+| `rde_aux.enabled=true` | FP correction enters only through `rde_aux_loss` |
 
-If the GMM components are not sufficiently separated, NACIR falls back to $w_i=1$ for all samples, making the FP branch a no-op.
+### How to Run MNEB-HN
 
-### Curriculum and Safety
-
-NACIR reuses the same Circle Loss curriculum weight:
-
-| Epoch | NACIR weight | FN detector | FP detector | Notes |
-|---|---:|---|---|---|
-| 0-5 | 0 | off | off | Global alignment warmup |
-| 6-10 | ramp | off | off | NACIR behaves as vanilla Circle Loss |
-| 11-14 | ramp | on | off | EMA similarity statistics have stabilized |
-| 15-20 | ramp | on | on | GMM-based FP detection begins |
-| 21-60 | 0.1 | on | on | Stable phase |
-
-Default hyperparameters:
-
-| Parameter | Value |
-|---|---:|
-| `fn_prior` | 0.01 |
-| `epsilon_n` | 0.1 |
-| `epsilon_p` | 0.2 |
-| `ema_beta` | 0.99 |
-| `loss_ema_alpha` | 0.9 |
-| `gmm_refit_interval` | 5 |
-| `gmm_min_separation` | 1.0 |
-| `fn_enable_epoch` | 11 |
-| `fp_enable_epoch` | 15 |
-
-### Validation Protocol
-
-Before launching a full training run, NACIR should be validated in `notebooks/workspace.ipynb`.
-
-Recommended notebook checks:
-
-1. **Clean no-op:** `NACIR(detectors off)` must match vanilla Circle Loss with absolute difference `< 1e-4`.
-2. **Synthetic FN:** split true PIDs into fake labels and verify that known false negatives receive higher $P_{\text{FN}}$ and lower negative-branch gradient than vanilla Circle Loss.
-3. **Synthetic FP:** replace a controlled fraction of text embeddings with different-PID text embeddings and verify that corrupted samples receive lower clean weights.
-4. **No collapse:** NACIR should preserve at least 30% of the vanilla negative-branch gradient in controlled tests.
-
-### How to Run NACIR
-
-#### Notebook validation
-
-Open `notebooks/workspace.ipynb` and run:
-
-1. Sections 0-3 to load the checkpoint and build the aligned loss batch.
-2. Section 4.5 for standard NACIR diagnostics.
-3. Section 4.6 for controlled clean/FN/FP validation.
-
-The new validation section prints a PASS/FAIL greenlight table. Full training should only be launched after the controlled checks pass.
-
-#### Full training
-
-Run the dedicated NACIR script:
+Run the dedicated script:
 
 ```bash
-./run_nacir.sh
+./run_mneb_hn.sh
 ```
 
 If the script is not executable on your machine:
 
 ```bash
-bash run_nacir.sh
+bash run_mneb_hn.sh
 ```
 
-For robustness experiments, `run_noise_experiments.sh` runs the RDE-style noisy-correspondence sweep for Circle Loss. To compare NACIR under the same noise setting, keep the same `dataset.noisy_rate` / `dataset.noisy_file` overrides and add `loss.NACIR=true` to the training command or create a NACIR-specific noise sweep script.
+For evidence-only diagnostics without auxiliary training effects:
+
+```bash
+./run_mneb_hn.sh loss.mneb_config.fnm_aux.enabled=false loss.mneb_config.rde_aux.enabled=false
+```
 
 Key diagnostics to monitor:
 
 | Metric | Expected behavior |
 |---|---|
-| `nacir_fn_active` | 0 before epoch 11, 1 from epoch 11 onward |
-| `nacir_fp_active` | 0 before epoch 15, 1 from epoch 15 onward |
-| `nacir_alpha_n_scale_mean` | near 1.0 on clean data; lower when FN-like negatives are detected |
-| `nacir_clean_weight_mean` | near 1.0 on clean data; lower under FP/noisy-correspondence settings |
-| `gmm_separation` | should exceed `gmm_min_separation` before FP suppression is trusted |
-| `gmm_fallback` | 1 means FP detector is inactive and safely falls back to uniform weights |
+| `mneb_seen_frac` | Increases as the bank observes training samples |
+| `mneb_local_seen_frac` | Tracks local evidence coverage when part-token hidden states are available |
+| `mneb_fn_stats_ready` | 1 once in-batch positive/negative similarity statistics are initialized |
+| `mneb_consensus_clean_frac` | Confident clean fraction from global/local agreement |
+| `mneb_consensus_noisy_frac` | Confident noisy fraction from global/local agreement |
+| `mneb_consensus_uncertain_frac` | Should remain high when evidence is weak; uncertainty is a safe no-op |
+| `fnm_aux_loss` | Non-zero only when high-confidence FN candidates pass the gates |
+| `rde_aux_loss` | Non-zero only when consensus labels provide confident anchors |
 
-### Results Template (Pending)
+### Validation Plan
 
-#### Clean VN3K
+Clean VN3K is treated as the no-regression benchmark. The expected behavior is that noise modules mostly no-op and true hard negatives remain under Circle Loss.
 
 | Method | Seed | R@1 | R@5 | R@10 | mAP | mINP | Notes |
 |---|---:|---:|---:|---:|---:|---:|---|
 | LoRA + Curriculum Circle | 2400 | 52.28 | 79.55 | 88.03 | 57.32 | 50.57 | Existing result |
-| LoRA + NACIR | TBD | TBD | TBD | TBD | TBD | TBD | Pending |
+| LoRA + Curriculum Circle + MNEB-HN | TBD | TBD | TBD | TBD | TBD | TBD | Pending |
 
-#### Robustness under synthetic noisy correspondence
+CUHK-PEDES is the main natural-noise validation target:
 
-| Noise rate | Circle R@1 | NACIR R@1 | Delta | `gmm_separation` | `gmm_fallback` | Notes |
-|---:|---:|---:|---:|---:|---:|---|
-| 0.0 | TBD | TBD | TBD | TBD | TBD | Pending |
-| 0.1 | TBD | TBD | TBD | TBD | TBD | Pending |
-| 0.2 | TBD | TBD | TBD | TBD | TBD | Pending |
-| 0.4 | TBD | TBD | TBD | TBD | TBD | Pending |
-
-### Current Conclusion
-
-Pending. NACIR should only replace the auxiliary Circle Loss branch if it satisfies both conditions:
-
-1. **No clean regression:** clean VN3K performance remains within an acceptable tolerance of the existing Circle Loss baseline.
-2. **Noise robustness:** under controlled or real noisy-correspondence settings, NACIR degrades less than vanilla Circle Loss.
+| Dataset | Baseline target | MNEB-HN target | Notes |
+|---|---:|---:|---|
+| VN3K | Preserve 52.28 R@1 seed-2400 region | No clean regression | Clean multilingual benchmark |
+| CUHK-PEDES | Improve beyond current full-CUHK 71.85 R@1 | Close English SOTA gap | Natural FN/FP noise benchmark |
+| Synthetic FP/FN stress tests | Detector precision and no-op rate | Hard-negative preservation | Caption shuffle, PID split, and mixed noise |
 
 ---
 
@@ -333,15 +270,15 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 │   └── utils/                         # Metrics, visualization, tokenizer utilities
 ├── trainer.py                         # Backward-compatible wrapper
 ├── test.py                            # Backward-compatible wrapper
-├── notebooks/workspace.ipynb          # Notebook lab for embedding/loss/NACIR validation
+├── notebooks/workspace.ipynb          # Notebook lab for embedding/loss validation
 ├── run_cir_loss.sh                    # LoRA + Curriculum Circle Loss training
-├── run_nacir.sh                       # NACIR training script
+├── run_mneb_hn.sh                     # MNEB-HN noise-robust training script
 ├── run_noise_experiments.sh           # RDE-style noisy-correspondence sweep
 ├── run_full_finetune.sh               # Full fine-tuning baseline
 ├── configs/                           # Hydra configuration
 │   ├── cir_msiglip.yaml               # Main config
 │   ├── paths/default.yaml             # Centralized data/artifact paths
-│   ├── loss/cir_msiglip.yaml          # Loss flags, Circle, NACIR config
+│   ├── loss/cir_msiglip.yaml          # Loss flags, Circle, MNEB-HN config
 │   └── ...                            # backbone, trainer, optimizer, dataset, tokenizer, logger, aug
 ├── artifacts/                         # Ignored generated outputs
 │   ├── training/                      # Hydra runs, multirun, noisy index files
@@ -436,15 +373,19 @@ This runs the proposed method: LoRA + mSigLIP + Auxiliary Circle Loss with a war
 ./run_cir_loss.sh
 ```
 
-### Train NACIR (Experimental)
+### Train MNEB-HN (Experimental)
 
-This runs the Noise-Aware Circle Loss branch with the current default NACIR configuration.
+This runs the modular noise-robust extension on top of the current LoRA + Curriculum Circle baseline. The script enables the evidence bank, FNM-style auxiliary loss, and RDE-style auxiliary loss while leaving Circle Loss unchanged.
 
 ```bash
-./run_nacir.sh
+./run_mneb_hn.sh
 ```
 
-Run `notebooks/workspace.ipynb` first if changing NACIR internals. The notebook contains controlled clean/FN/FP validation blocks and should be treated as the gate before full training.
+For evidence-only diagnostics without auxiliary loss effects:
+
+```bash
+./run_mneb_hn.sh loss.mneb_config.fnm_aux.enabled=false loss.mneb_config.rde_aux.enabled=false
+```
 
 ### Run Noisy-Correspondence Sweeps
 
