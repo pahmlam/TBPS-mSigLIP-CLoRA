@@ -114,20 +114,11 @@ The target noise regimes are:
 
 MNEB-HN stands for **Multilingual Noise Evidence Bank for Hard-Negative TBPS**. It keeps the main objective unchanged:
 
-$$\mathcal{L}_{\text{main}} =
-\mathcal{L}_{N\text{-}ITC}
-+ \alpha_5(t)\mathcal{L}_{\text{circle}}
-+ 0.1\mathcal{L}_{C\text{-}ITC}
-+ 0.4\mathcal{L}_{SS}
-$$
+$$\mathcal{L}_{\text{main}} = \mathcal{L}_{N\text{-}ITC} + \alpha_5(t)\mathcal{L}_{\text{circle}} + 0.1\mathcal{L}_{C\text{-}ITC} + 0.4\mathcal{L}_{SS}$$
 
 When enabled, MNEB-HN adds a cross-epoch evidence memory bank and optional auxiliary terms:
 
-$$\mathcal{L}_{\text{MNEB-HN}} =
-\mathcal{L}_{\text{main}}
-+ \lambda_{\text{FN}}\mathcal{L}_{\text{fnm-aux}}
-+ \lambda_{\text{FP}}\mathcal{L}_{\text{rde-aux}}
-$$
+$$\mathcal{L}_{\text{MNEB-HN}} = \mathcal{L}_{\text{main}} + \lambda_{\text{FN}}\mathcal{L}_{\text{fnm-aux}} + \lambda_{\text{FP}}\mathcal{L}_{\text{rde-aux}} $$
 
 The key constraint is that MNEB-HN **does not mutate Circle Loss weights**. It never directly suppresses Circle's $\alpha_n$ or $\alpha_p$. Instead:
 
