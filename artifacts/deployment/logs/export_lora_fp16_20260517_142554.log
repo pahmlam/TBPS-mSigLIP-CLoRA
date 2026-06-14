@@ -1,7 +1,0 @@
-Logging to: /Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/logs/export_lora_fp16_20260517_142554.log
-usage: export.py [-h] --ckpt CKPT [--output-dir OUTPUT_DIR]
-
-options:
-  -h, --help            show this help message and exit
-  --ckpt CKPT
-  --output-dir OUTPUT_DIR

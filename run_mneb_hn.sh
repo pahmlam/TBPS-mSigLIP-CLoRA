@@ -10,10 +10,11 @@ uv run trainer.py -cn cir_msiglip \
     optimizer=cir_test \
     optimizer.param_groups.default.lr=1e-4 \
     \
-    +lora=default \
+    +lora=attn_ffn_r32 \
     \
     loss.MNEB=true \
     loss.NACIR=false \
+    loss.PART_ALIGN=true \
     loss.mneb_config.evidence_bank.enabled=true \
     loss.mneb_config.fnm_aux.enabled=true \
     loss.mneb_config.rde_aux.enabled=true \

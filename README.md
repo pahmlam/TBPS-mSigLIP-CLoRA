@@ -309,17 +309,6 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 
 ---
 
-## Documentation Convention
-
-- `docs/knowledge.md` stores durable Vietnamese knowledge only: concepts, definitions, mechanisms, and stable trade-offs.
-- `docs/journal/[train]-YYYY-MM-DD.md` stores dated training/model-optimization results: commands, logs, metrics, temporary conclusions, and next experiment decisions.
-- `deployment/docs/journal/[deploy]-YYYY-MM-DD.md` stores dated deployment results: AI Hub jobs, QNN/QDQ fidelity, RB3 runtime, artifacts, and next deploy steps.
-- Reviewer responses and paper wording belong under `knowledge/response.md` or `knowledge/paper/`, not `docs/knowledge.md`.
-- Before adding documentation, classify the content first and confirm the target file unless the user explicitly requested that documentation update.
-- Use the templates in `docs/knowledge.md`, `docs/journal/README.md`, and `deployment/docs/journal/README.md` for new entries.
-
----
-
 ##  Installation
 
 ### 1. Clone and Setup

@@ -136,14 +136,29 @@ def _load_pytorch_model(model_dir: Path, precision: str, device: str):
 
 
 def _vector_stats(values: list[float]) -> dict:
+    has_nan = any(math.isnan(value) for value in values)
+    has_inf = any(math.isinf(value) for value in values)
+    if has_nan or has_inf:
+        return {
+            "min": math.nan,
+            "max": math.nan,
+            "mean": math.nan,
+            "std": math.nan,
+            "norm": math.nan,
+            "has_nan": has_nan,
+            "has_inf": has_inf,
+            "finite_count": sum(math.isfinite(value) for value in values),
+        }
+
     return {
         "min": min(values),
         "max": max(values),
         "mean": sum(values) / len(values),
         "std": statistics.pstdev(values),
         "norm": math.sqrt(sum(value * value for value in values)),
-        "has_nan": any(math.isnan(value) for value in values),
-        "has_inf": any(math.isinf(value) for value in values),
+        "has_nan": has_nan,
+        "has_inf": has_inf,
+        "finite_count": len(values),
     }
 
 

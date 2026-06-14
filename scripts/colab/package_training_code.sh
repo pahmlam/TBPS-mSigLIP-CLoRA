@@ -43,14 +43,24 @@ require_file configs
 require_file scripts/training_paths.sh
 require_file tests/test_lora_configs.py
 require_file tests/test_part_alignment_loss.py
+require_file tests/test_evidence_bank.py
+require_file tests/test_mneb_objectives.py
+require_file tests/test_mneb_integration.py
 require_file notebooks/colab_training_experiments.ipynb
 require_file trainer.py
 require_file test.py
 require_file pyproject.toml
 require_file README.md
+require_file run_mneb_hn.sh
+require_file src/msiglip/model/evidence_bank.py
+require_file src/msiglip/data/prw_tps_cn.py
 require_file configs/loss/cir_msiglip.yaml
+require_file configs/dataset/prw_tps_cn.yaml
 require_file configs/lora/attn_ffn_r16.yaml
 require_file configs/lora/attn_ffn_r32.yaml
+require_file configs/lora/attn_ffn_r32_pissa.yaml
+require_file configs/lora/attn_ffn_r32_dora.yaml
+require_file configs/lora/attn_ffn_r32_rslora.yaml
 
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
@@ -97,6 +107,8 @@ Excluded by whitelist:
 
 Expected Colab-side external assets:
 - VN3K/
+- CUHK-PEDES/ (for natural-noise English experiments)
+- PRW-TPS-CN/ (for Chinese experiments)
 - m_siglip_checkpoints/model.safetensors
 EOF
 
@@ -125,13 +137,23 @@ assert_archive_absent '(^|/)__pycache__/' "__pycache__"
 assert_archive_absent '\\.pyc$' "pyc files"
 
 assert_archive_present "configs/loss/cir_msiglip.yaml"
+assert_archive_present "configs/dataset/prw_tps_cn.yaml"
 assert_archive_present "configs/lora/attn_ffn_r16.yaml"
 assert_archive_present "configs/lora/attn_ffn_r32.yaml"
+assert_archive_present "configs/lora/attn_ffn_r32_pissa.yaml"
+assert_archive_present "configs/lora/attn_ffn_r32_dora.yaml"
+assert_archive_present "configs/lora/attn_ffn_r32_rslora.yaml"
 assert_archive_present "tests/test_lora_configs.py"
 assert_archive_present "tests/test_part_alignment_loss.py"
+assert_archive_present "tests/test_evidence_bank.py"
+assert_archive_present "tests/test_mneb_objectives.py"
+assert_archive_present "tests/test_mneb_integration.py"
 assert_archive_present "notebooks/colab_training_experiments.ipynb"
 assert_archive_present "trainer.py"
 assert_archive_present "src/msiglip/train.py"
+assert_archive_present "src/msiglip/model/evidence_bank.py"
+assert_archive_present "src/msiglip/data/prw_tps_cn.py"
+assert_archive_present "run_mneb_hn.sh"
 
 echo
 echo "Colab extract command template:"

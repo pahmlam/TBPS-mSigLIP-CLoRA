@@ -2,194 +2,324 @@
 
 ## Project Overview
 
-**mSigLIP** — Multilingual Text-Based Person Search (TBPS) using Cross-Modal Circle Loss with Curriculum Learning and LoRA.
+**mSigLIP** - Multilingual Text-Based Person Search (TBPS) using mSigLIP, LoRA, Curriculum Circle Loss, optional Part-Token Alignment, and optional noise-robust MNEB-HN modules.
 
-Workspace consists of 2 parts:
-1. **Training & Model Optimization** (root) — Train and optimize model performance
-2. **Edge Deployment & Compression** (`deployment/`) — Compress model and deploy on edge devices (Qualcomm RB3 Gen2)
+Workspace consists of two main parts:
 
-- **Task**: Align person images and Vietnamese text descriptions in a shared 768-dim embedding space
-- **Backbone**: `siglip-base-patch16-256-multilingual` with LoRA (r=32, alpha=64, ~3-5% trainable params)
-- **Benchmark**: VnPersonSearch (VN3K) — current best **R@1 = 52.28%** (LoRA + Curriculum Circle Loss, seed 2400)
-- **Primary metric**: text-to-image R@1
-- **Target device**: Qualcomm RB3 Gen2 (QCS6490, 4GB RAM, ARM64)
+1. **Training & Model Optimization** at the repository root.
+2. **Edge Deployment & Compression** under `deployment/` for Qualcomm RB3 Gen2.
+
+Core task:
+
+- Align person images and multilingual text descriptions in a shared 768-dim embedding space.
+- Primary metric: text-to-image Rank@1.
+- Backbone: `siglip-base-patch16-256-multilingual`.
+- Preferred adapter family: LoRA on attention + FFN targets, currently `+lora=attn_ffn_r32`.
+- Target languages/datasets:
+  - VN3K / VnPersonSearch: Vietnamese, treated as clean.
+  - CUHK-PEDES: English, main natural-noise benchmark.
+  - PRW-TPS-CN: Chinese, multilingual generalization benchmark.
+- Target deployment device: Qualcomm RB3 Gen2 / QCS6490, 4GB RAM, ARM64.
+
+Current result state:
+
+| Result | Status |
+|---|---|
+| `52.28` VN3K T2I R@1 | Historical/paper Circle + LoRA baseline, seed 2400 |
+| `52.83` VN3K T2I R@1 | Attn+FFN LoRA r32, batch64, accum2 |
+| `53.00` VN3K T2I R@1 / `53.25` I2T R@1 | Current best experimental VN3K result: Part Align + Attn+FFN LoRA r32, batch64, epoch 50 |
+| PiSSA r32 | Rejected for current VN3K setup; peaked around `47.58` in the observed run |
+| MNEB-HN | Implemented, experimental, disabled by default, target is CUHK-PEDES natural noise |
 
 ## Module Hierarchy
 
-### Part 1: Training & Model Optimization (root)
+### Training & Model Optimization
 
-```
-trainer.py                          # Entry point (Hydra)
-├── src/msiglip/lightning_data.py               # TBPSDataModule (data loading, augmentation)
-│   ├── src/msiglip/data/vn3k_vi.py             # VN3K Vietnamese dataset
-│   ├── src/msiglip/data/vn3k_en.py             # VN3K English dataset
-│   ├── src/msiglip/data/vn3k_mixed.py          # VN3K mixed-language dataset
-│   ├── src/msiglip/data/cuhkpedes.py           # CUHK-PEDES dataset
-│   ├── src/msiglip/data/prw_tps_cn.py          # PRW-TPS-CN (Chinese) dataset
-│   ├── src/msiglip/data/cuhk_10_percent_vn3k_mix.py  # 10% CUHK + VN3K mix
-│   ├── src/msiglip/data/bases.py               # ImageTextDataset, ImageDataset, TextDataset
-│   ├── src/msiglip/data/sampler.py             # RandomIdentitySampler
-│   └── src/msiglip/data/augmentation/          # Image & text augmentation pools
-│
-├── src/msiglip/lightning_models.py             # LitTBPS (PyTorch Lightning module)
-│   ├── src/msiglip/model/build.py              # build_backbone_with_proper_layer_resize()
-│   │   └── src/msiglip/model/siglip/           # mSigLIP model implementation
-│   ├── src/msiglip/model/lora.py               # get_lora_model() via PEFT
-│   ├── src/msiglip/model/tbps.py               # TBPS (forward pass, loss computation)
-│   │   ├── src/msiglip/model/objectives.py     # Loss functions (N-ITC, Circle, C-ITC, SimCLR)
-│   │   └── src/msiglip/model/reid_objectives.py # ReID-specific objectives
-│   └── src/msiglip/solver/
-│       ├── build.py                # Optimizer with param groups
-│       └── lr_scheduler.py         # Cosine LR with warmup
-│
-├── test.py                         # Evaluation script
-├── notebooks/workspace.ipynb                 # Experiment notebook (analysis, loss playground)
-├── src/msiglip/utils/                          # Metrics, visualization, tokenizer utils
-├── scripts/                        # Helper scripts (checkpoint prep, extraction)
-├── experiments/                    # Experiment logs & ablation notes
-└── knowledge/                      # Research notes & paper drafts
+```text
+trainer.py                                      # Hydra entry point
+test.py                                         # Evaluation entry point
+src/msiglip/lightning_data.py                   # TBPSDataModule
+src/msiglip/lightning_models.py                 # LitTBPS
+src/msiglip/data/
+  vn3k_vi.py                                    # VN3K Vietnamese
+  vn3k_en.py                                    # VN3K English
+  vn3k_mixed.py                                 # VN3K mixed-language
+  cuhkpedes.py                                  # CUHK-PEDES
+  cuhk_10_percent_vn3k_mix.py                   # 10% CUHK + VN3K mix
+  prw_tps_cn.py                                 # PRW-TPS-CN Chinese
+  bases.py                                      # ImageTextDataset, ImageDataset, TextDataset
+  sampler.py                                    # RandomIdentitySampler
+src/msiglip/model/
+  build.py                                      # Backbone construction
+  lora.py                                       # PEFT LoRA setup
+  tbps.py                                       # Forward pass and loss routing
+  objectives.py                                 # N-ITC, Circle, C-ITC, SimCLR, Part Align, MNEB aux
+  evidence_bank.py                              # MNEB-HN EvidenceMemoryBank
+  reid_objectives.py                            # ReID-specific objectives
+src/msiglip/solver/
+  build.py                                      # Optimizer param groups
+  lr_scheduler.py                               # Cosine LR with warmup
+configs/
+  cir_msiglip.yaml                              # Main Hydra config
+  loss/cir_msiglip.yaml                         # Loss flags and MNEB/NACIR config
+  lora/*.yaml                                   # LoRA variants
+  dataset/*.yaml                                # VN3K, CUHK, PRW dataset configs
+notebooks/
+  workspace.ipynb                               # Local research/loss playground
+  colab_training_experiments.ipynb              # Colab training workflow
+scripts/colab/package_training_code.sh          # Colab code packaging
 ```
 
-### Part 2: Edge Deployment & Compression (deployment/)
+### Edge Deployment & Compression
 
-```
+```text
 deployment/
-├── scripts/                            # mSigLIP deployment pipeline
-│   ├── analyze_checkpoint.py           # Shared: Analyze checkpoint (size, RAM, compat)
-│   ├── inference_test.py              # Shared: Test inference on target device
-│   ├── lora_fp16/                      # Step 1: LoRA merge + FP16 export
-│   │   └── export.py                   #   Merge LoRA → FP16/FP32 state dict
-│   └── onnx/                           # Step 2: ONNX conversion
-│       └── export.py                   #   FP16/FP32 state dict → ONNX
-├── hardware_profiling/                 # RB3 hardware capability testing (proxy models)
-│   ├── benchmark.py                    # PyTorch CPU vs ONNX Runtime
-│   ├── snpe_benchmark.py              # Qualcomm SNPE (DSP/HTP)
-│   ├── collect_sysinfo.sh             # Collect system info
-│   ├── install_deps.sh                # Install dependencies
-│   └── run_all.sh                     # Master script
-├── docs/                               # Deployment documentation
-│   ├── system.md                       # RB3 hardware specifications
-│   ├── experiment.md                   # Benchmark guide
-│   └── benchmark-rp.md                # Benchmark results
-├── config/qnn/                         # QNN/HTP runtime config JSON files
-└── deploy_utils.py                     # Shared utilities (TeeLogger)
+  scripts/                                      # Export, ONNX, QNN, diagnostics
+  config/qnn/                                   # QNN/HTP runtime config
+  docs/                                         # Deployment docs and journals
+  hardware_profiling/                           # RB3 profiling helpers
+  deploy_utils.py                               # Shared deployment utilities
+artifacts/deployment/                           # Generated deployment outputs and logs
 ```
 
-Generated deployment outputs and logs belong under `artifacts/deployment/`.
+Do not put generated deployment outputs outside `artifacts/deployment/` unless the user explicitly asks.
 
 ## Loss Functions
 
-Total loss = `1.0*N-ITC + curriculum*Circle + 0.1*C-ITC + 0.4*SimCLR`
+Default main objective:
 
-| Loss | Weight | Role |
-|------|--------|------|
-| N-ITC | 1.0 | Primary alignment (sigmoid contrastive, +MVS augmentation) |
-| Circle Loss | 0→0.1 (curriculum) | Hard-negative mining (m=0.25, gamma=128) |
-| C-ITC | 0.1 | Cyclic consistency regularization |
-| SimCLR | 0.4 | Self-supervised visual consistency |
+```text
+1.0 * N-ITC/MVS + curriculum * Circle + 0.1 * C-ITC + 0.4 * SimCLR
+```
 
-**Curriculum schedule**: epoch 0-5 weight=0, epoch 6-20 linear ramp to 0.1, epoch 21-60 stable at 0.1.
+Important details:
 
-All loss functions live in `src/msiglip/model/objectives.py`. Loss routing and curriculum logic in `src/msiglip/model/tbps.py`. Config flags in `configs/loss/cir_msiglip.yaml`.
+- N-ITC is the primary sigmoid image-text alignment loss.
+- MVS is part of the N-ITC path and must not be accidentally dropped from descriptions of the baseline.
+- Circle Loss is the hard-negative core with `m=0.25`, `gamma=128`.
+- Circle curriculum: epoch 0-5 off, epoch 6-20 linear ramp to `0.1`, epoch 21-60 stable at `0.1`.
+- C-ITC weight is `0.1`.
+- SimCLR/SS weight is `0.4`.
+- Optional `PART_ALIGN` adds part-token local alignment, currently useful with `attn_ffn_r32`.
 
-## Configuration System (Hydra)
+All training losses live in `src/msiglip/model/objectives.py`; routing and curriculum logic live in `src/msiglip/model/tbps.py`; flags live in `configs/loss/cir_msiglip.yaml`.
 
-Main config: `configs/cir_msiglip.yaml` composes sub-configs:
-- `configs/loss/cir_msiglip.yaml` — loss flags and weights
-- `configs/backbone/m_siglip.yaml` — backbone settings
-- `configs/trainer/best_msiglip.yaml` — training hyperparams (60 epochs, bf16-mixed)
-- `configs/optimizer/cir_test.yaml` — AdamW with param groups
-- `configs/scheduler/tbps_clip.yaml` — cosine LR + warmup
-- `configs/lora/default.yaml` — LoRA config
-- `configs/dataset/vn3k_vi.yaml` — dataset paths (also: vn3k_en, vn3k_mixed, cuhk_pedes, cuhk_pedes_10_percent, prw_tps_cn)
-- `configs/tokenizer/m_siglip.yaml` — tokenizer settings
-- `configs/logger/default.yaml` — W&B logger config
-- `configs/aug/siglip.yaml` — augmentation settings
+## Optional Noise Framework: MNEB-HN
 
-## Critical Workflow Rule
+MNEB-HN means **Multilingual Noise Evidence Bank for Hard-Negative TBPS**.
 
-**Training costs hours. Always validate ideas in `notebooks/workspace.ipynb` first.**
+Status:
 
-Research cycle:
-1. **Ideate** — propose loss/architecture change
-2. **Implement** — modify code (objectives.py, tbps.py, configs)
-3. **Validate** — test in notebooks/workspace.ipynb on frozen embeddings (seconds, not hours)
-4. **Train** — only when good signs are confirmed (run_cir_loss.sh)
-5. **Analyze** — compare results against `EXPERIMENT_SUMMARY.md`
+- Implemented as an optional module.
+- Disabled by default: `loss.MNEB=false`.
+- MNEB and NACIR are mutually exclusive.
+- With MNEB disabled, the baseline path must remain unchanged.
+- With MNEB enabled and aux losses disabled, it collects/logs evidence only and must not affect total loss.
+- MNEB never mutates Circle Loss `alpha_n` or `alpha_p`.
+- FN/FP corrections enter only through `fnm_aux_loss` and `rde_aux_loss`.
 
-## notebooks/workspace.ipynb Conventions
+Core modules:
 
-The notebook operates on `W` — a dict of extracted embeddings from a checkpoint:
-- `W['image_feats']`, `W['text_feats']` — L2-normalized embeddings (N × 768)
-- `W['image_pids']`, `W['text_pids']` — person ID labels
-- `W['logit_scale']`, `W['logit_bias']` — learned parameters
+- `src/msiglip/model/evidence_bank.py`
+  - `EvidenceMemoryBank`
+  - global/local embeddings
+  - loss EMA
+  - clean probabilities
+  - seen counts
+  - FIFO sample IDs
+  - FN stats
+  - global/local consensus labels
+- `src/msiglip/model/objectives.py`
+  - `compute_part_token_score_matrix`
+  - `compute_part_token_alignment`
+  - `compute_branch_per_sample_contrastive_loss`
+  - `compute_fnm_auxiliary_loss`
+  - `compute_rde_auxiliary_loss`
+- `src/msiglip/lightning_models.py`
+  - epoch-end evidence-bank refit and `mneb_*` diagnostics.
 
-**Sections**: 0=Setup, 1=Load & Extract, 2=Similarity Analysis, 3=Loss Playground, 4=Gradient Analysis (most important), 5=Embedding Visualization, 6=Retrieval Metrics, 7=A/B Comparison, 8=Mini Fine-Tune
+Recommended interpretation:
 
-**Good signs before training**:
-- Gradient energy on top-10% hard negatives > N-ITC baseline (Section 4)
-- Clear pos/neg separation in similarity histogram (Section 2)
-- Loss value finite, similar scale to baselines (Section 3)
-- t-SNE clusters tight, >90% points above y=x in scatter (Section 5)
-- R@1 stable or improved after mini fine-tune (Section 8)
+- VN3K is clean, so MNEB should mostly no-op there. A high `mneb_consensus_uncertain_frac` on VN3K can be a good clean-safe signal.
+- CUHK-PEDES is the main target for natural FN/FP noise robustness.
+- Evidence-only runs are diagnostics, not a new training objective.
+
+Common scripts:
+
+```bash
+bash run_mneb_hn.sh
+bash run_mneb_hn.sh loss.mneb_config.fnm_aux.enabled=false loss.mneb_config.rde_aux.enabled=false
+```
+
+## NACIR Status
+
+NACIR remains in the repo for legacy experiments and ablations, but it is not the current main direction.
+
+Important conclusions:
+
+- NACIR-lite failed as a main clean VN3K framework because the FN branch can mistake true hard negatives for false negatives and weaken Circle Loss.
+- NACIR-FP used a single GMM over per-sample Circle loss and is weaker than the current MNEB/RDE-style consensus design.
+- Do not present NACIR as the recommended framework unless the user explicitly asks for NACIR-specific work.
+- Existing NACIR scripts such as `run_nacir.sh`, `run_nacir_fp_only.sh`, and `run_nacir_detector_off.sh` are legacy/ablation paths.
+
+## LoRA Variants
+
+Configured variants live under `configs/lora/`:
+
+- `default.yaml`: original LoRA target set.
+- `attn_ffn_r16.yaml`: attention + FFN, rank 16.
+- `attn_ffn_r32.yaml`: attention + FFN, rank 32; current preferred adapter config.
+- `attn_ffn_r64.yaml`: attention + FFN, rank 64; candidate capacity ablation, more memory.
+- `attn_ffn_r32_pissa.yaml`: PiSSA initialization; rejected for current VN3K setup.
+- `attn_ffn_r32_dora.yaml`: DoRA; can cost more VRAM/compute.
+- `attn_ffn_r32_rslora.yaml`: rsLoRA; candidate ablation.
+
+Preferred clean VN3K recipe right now:
+
+```bash
+bash run_part_align_lora_attn_ffn_r32.sh
+```
+
+MNEB recipe builds on that recipe:
+
+```bash
+bash run_mneb_hn.sh
+```
+
+## Configuration System
+
+Main Hydra config: `configs/cir_msiglip.yaml`.
+
+Important config groups:
+
+- `configs/loss/cir_msiglip.yaml`: N-ITC/MVS, Circle, C-ITC, SimCLR, Part Align, MNEB, NACIR.
+- `configs/backbone/m_siglip.yaml`: mSigLIP backbone.
+- `configs/trainer/best_msiglip.yaml`: Lightning trainer defaults.
+- `configs/optimizer/cir_test.yaml`: AdamW param groups.
+- `configs/scheduler/tbps_clip.yaml`: cosine LR with warmup.
+- `configs/lora/*.yaml`: LoRA variants.
+- `configs/dataset/vn3k_vi.yaml`
+- `configs/dataset/vn3k_en.yaml`
+- `configs/dataset/vn3k_mixed.yaml`
+- `configs/dataset/cuhk_pedes.yaml`
+- `configs/dataset/cuhk_pedes_10_percent.yaml`
+- `configs/dataset/prw_tps_cn.yaml`
+- `configs/tokenizer/m_siglip.yaml`
+- `configs/logger/default.yaml`
+- `configs/aug/siglip.yaml`
+
+## Experiment Workflow
+
+Training is expensive. Prefer this sequence:
+
+1. Inspect the current journal and relevant config/script.
+2. Validate loss/architecture ideas in `notebooks/workspace.ipynb` when feasible.
+3. Run focused unit tests.
+4. Launch full training only when the change has a clear reason.
+5. Record results in the dated training journal when the user asks for documentation.
+
+For Colab:
+
+- Use `notebooks/colab_training_experiments.ipynb`.
+- Package the code with `scripts/colab/package_training_code.sh`.
+- The package includes `src/`, `configs/`, `scripts/`, `tests/`, `run_*.sh`, and the Colab notebook.
+- External Colab assets are expected separately:
+  - `VN3K/`
+  - `CUHK-PEDES/`
+  - `PRW-TPS-CN/`
+  - `m_siglip_checkpoints/model.safetensors`
+
+## Tests
+
+Useful focused checks:
+
+```bash
+venv/bin/python -m unittest discover -s tests -p 'test_lora_configs.py' -v
+venv/bin/python -m unittest discover -s tests -p 'test_part_alignment_loss.py' -v
+venv/bin/python -m unittest discover -s tests -p 'test_evidence_bank.py' -v
+venv/bin/python -m unittest discover -s tests -p 'test_mneb_objectives.py' -v
+venv/bin/python -m unittest discover -s tests -p 'test_mneb_integration.py' -v
+venv/bin/python -m unittest discover -s tests -p 'test_noise_injection.py' -v
+venv/bin/python -m compileall src/msiglip/model/objectives.py src/msiglip/model/tbps.py src/msiglip/model/evidence_bank.py src/msiglip/lightning_models.py
+git diff --check
+```
+
+On Colab, prefer `unittest discover -s tests -p ...` instead of module-style paths like `python -m unittest tests/test_evidence_bank.py`, because an installed `tests` package can shadow the local folder.
 
 ## Key Documents
 
-- `docs/ARCHITECTURE.md` — Full architecture with diagrams
-- `docs/EXPERIMENT_SUMMARY.md` — Results table and training config (canonical record)
-- `docs/knowledge.md` — Vietnamese durable knowledge base for concepts/definitions only
-- `docs/journal/` — Dated training/model-optimization research logs (`[train]-YYYY-MM-DD.md`)
-- `knowledge/` — Research notes, paper drafts, noise handling analysis
-- `experiments/` — Experiment logs and ablation notes
-- `ref/rde/` — RDE (CVPR 2024) reference implementation for noise-robust learning
-- `deployment/README.md` — Edge deployment overview
-- `deployment/docs/deployment-plan.md` — **Current deployment state, pipeline status, next steps** (start here for deployment work)
-- `deployment/docs/journal/` — Dated deployment logs (`[deploy]-YYYY-MM-DD.md`)
-- `deployment/docs/journal/[demo-system]-YYYY-MM-DD.md` — Dated modular demo-system logs for `deployment/demo/` scaffold, adapters, CLI workflows, local preflight, and RB3 demo acceptance status
-- `deployment/docs/aihub-experiments.md` — Legacy redirect only; canonical Qualcomm AI Hub job logs are in `deployment/docs/journal/`
-- `deployment/docs/system.md` — Qualcomm RB3 Gen2 hardware specifications
+- `README.md`: public-facing project overview, current status snapshot, MNEB summary.
+- `docs/ARCHITECTURE.md`: architecture reference.
+- `docs/EXPERIMENT_SUMMARY.md`: canonical older experiment summary.
+- `docs/noise-robust-multilingual-framework.md`: MNEB-HN research and implementation design.
+- `docs/knowledge.md`: Vietnamese durable knowledge base for concepts only. This file may be gitignored locally, but it is still the local durable concept note.
+- `docs/journal/`: dated training/model-optimization journals.
+- `docs/journal/[train]-2026-06-11.md`: NACIR failure analysis and attn+FFN r32 result.
+- `docs/journal/[train]-2026-06-13.md`: PiSSA rejection and Part Align `53.00` result.
+- `knowledge/`: paper notes, reviewer responses, research notes.
+- `changelog/training/changelog.md`: completed training/code/config/docs changes.
+- `reports/architecture-decisions.md`: significant architecture decisions.
+- `deployment/README.md`: deployment overview.
+- `deployment/docs/journal/`: dated deployment logs.
+
+Do not edit `src/person_rlf.egg-info/PKG-INFO` unless packaging metadata regeneration is explicitly requested; it may contain stale README snapshots.
 
 ## Documentation Policy
 
-Do **not** automatically write to documentation files. Before editing any docs, journal, changelog, README, or paper notes, state the target file(s), what will be recorded, and why, then ask the user to confirm. If the user explicitly asks to create or update documentation in the prompt, that request counts as confirmation for the requested files.
+Do **not** automatically write to documentation files. Before editing docs, journal, changelog, README, or paper notes, state the target file(s), what will be recorded, and why, then ask the user to confirm. If the user explicitly asks to create or update documentation in the prompt, that request counts as confirmation for the requested files.
 
 Classify documentation before writing:
+
 - **Knowledge** (`docs/knowledge.md`): durable concepts, definitions, mechanisms, and general trade-offs that should still be true months later.
 - **Training journal** (`docs/journal/[train]-YYYY-MM-DD.md`): training/model-optimization results, commands, logs, metrics, temporary conclusions, and next experiment decisions.
 - **Deployment journal** (`deployment/docs/journal/[deploy]-YYYY-MM-DD.md`): deploy results, AI Hub jobs, QNN/QDQ fidelity, board runtime, artifacts, and next deploy steps.
-- **Demo system journal** (`deployment/docs/journal/[demo-system]-YYYY-MM-DD.md`): modular demo-system work under `deployment/demo/`, including scaffold/module boundaries, adapters, CLI workflows, local preflight, and RB3 demo acceptance status. Do not use this for AI Hub jobs, QDQ/QNN fidelity, board benchmark logs, training experiments, or changelog entries.
+- **Demo system journal** (`deployment/docs/journal/[demo-system]-YYYY-MM-DD.md`): modular demo-system work under `deployment/demo/`.
 - **Changelog** (`changelog/{component}/changelog.md`): completed code/config/docs changes after user-confirmed changelog writing.
 - **Paper notes** (`knowledge/response.md`, `knowledge/paper/`, etc.): reviewer responses, paper wording, and presentation-specific phrasing.
 
 Do not put run logs, experiment results, dated progress, reviewer-answer wording, changelog entries, or deployment job results into `docs/knowledge.md`.
 
-Use the templates in `docs/knowledge.md`, `docs/journal/README.md`, and `deployment/docs/journal/README.md` when the user confirms a documentation update.
+When the user asks for a concept explanation such as "PiSSA là gì" or "Part-Align là gì", answer from the durable knowledge/journal context. If the user asks to "ghi vào", update the appropriate `docs/knowledge.md` concept entry and, if it is run-specific, also the dated journal.
 
 ## Changelog
 
 After completing a task that modifies code/config/docs, ask before appending an entry to the relevant `changelog/{component}/changelog.md`, unless the user already requested changelog updates.
 
 Components:
-- `changelog/training/changelog.md` — training pipeline, model, losses, data, config
-- `changelog/deployment/changelog.md` — edge deployment, ONNX, SNPE, hardware
+
+- `changelog/training/changelog.md`: training pipeline, model, losses, data, config, notebooks.
+- `changelog/deployment/changelog.md`: edge deployment, ONNX, QNN/SNPE, hardware.
 
 Entry format:
 
+```markdown
 ## [YYYY-MM-DD] Short description
 
 | # | Priority | Type | Action | Status |
 |---|----------|------|--------|--------|
-| 1 | HIGH/MED/LOW | feature/bugfix/refactor/config | What was done | COMPLETE (reason) |
+| 1 | HIGH/MED/LOW | feature/bugfix/refactor/config/docs | What was done | COMPLETE (reason) |
+```
 
 ## Architecture Decisions
 
-When making significant architectural decisions (new dependencies, pattern changes, infrastructure choices), document them in `reports/architecture-decisions.md` with: Decision, Reason, Alternatives considered.
+When making significant architectural decisions, document them in `reports/architecture-decisions.md` with:
+
+- Decision
+- Reason
+- Alternatives considered
 
 ## Coding Conventions
 
-- PyTorch Lightning for training loop
-- Hydra for config management
-- W&B for experiment tracking
-- `ruff` for linting and formatting
-- All losses in `src/msiglip/model/objectives.py` take L2-normalized features and return scalar tensor
-- New loss integration: add to `src/msiglip/model/objectives.py` → add routing in `src/msiglip/model/tbps.py` forward() → add config flag in `configs/loss/`
+- PyTorch Lightning for training loop.
+- Hydra for config management.
+- W&B for experiment tracking.
+- `ruff` for linting/formatting where applicable.
+- Use `rg`/`rg --files` for search.
+- Use `apply_patch` for manual file edits.
+- Keep changes modular and disabled by default unless the user explicitly asks to change defaults.
+- New loss integration pattern:
+  1. Add function in `src/msiglip/model/objectives.py`.
+  2. Route it in `src/msiglip/model/tbps.py`.
+  3. Add flags/defaults in `configs/loss/cir_msiglip.yaml`.
+  4. Add focused tests.
+- Preserve current baseline behavior when optional modules are disabled.

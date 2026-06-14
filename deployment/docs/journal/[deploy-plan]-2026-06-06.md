@@ -3,11 +3,11 @@
 > **Ngày lập kế hoạch:** 2026-06-06
 > **Thiết bị mục tiêu:** Qualcomm RB3 Gen2 / QCS6490 / HTP V68
 > **Model nguồn:** `epoch=56-val_score=52.28.ckpt`
-> **Artifact nguồn hiện tại:** `artifacts/deployment/runtime/job_jpe2lnmvp_qdq_onnx/model.onnx`
+> **Artifact nguồn hiện tại:** `artifacts/deployment/runtime/qat/blocks_6_11_v5/qaihub_lite_mp_qdq/model.onnx`
 > **Calibration dataset:** `d7jzjy1m2` / `msiglip-vision-vn3k-train-calib-2000`
 > **Plan checklist hiện hành:** file này
-> **Trạng thái:** FOLLOW-UP - ORT/INT16 QDQ surgery không deployable trên QNN HTP; QAT v1/v1b server fail clean-preservation gate; nhánh active là sửa QAT objective với clean-consistency rồi mới quay lại AI Hub/QNN-native quantizer
-> **Cập nhật checklist gần nhất:** 2026-06-10
+> **Trạng thái:** FOLLOW-UP - QAT blocks 6-11 v5 native QDQ fail, nhưng `all_weights + blocks 4-11` surgery pass QDQ local as diagnostic upper-bound; không compile/link vì `_float` path không deployable, nhánh active là Phase H10 QNN-native controlled quantization
+> **Cập nhật checklist gần nhất:** 2026-06-14
 
 ---
 
@@ -37,7 +37,7 @@ Ngày 2026-06-09 đã thử hướng không dùng AIMET bằng ONNX Runtime stat
 
 Sau đó đã thử INT16 activation encoding tuning từ `jpe2lnmvp`. Candidate `jpe2lnmvp_blocks_0_11_int16_opset21` đạt local QDQ gần gate (`cosine_l2_mean = 0.947065`, `cosine_l2_min = 0.925417`) nhưng compile/link vẫn fail: compile job `jgd03w76p` SUCCESS, link job `jp0kjyd25` FAIL do tensor nội bộ `add_103_updated` còn floating-point.
 
-Quyết định tiếp theo: không compile/link thêm candidate `_float`, ORT QDQ, hoặc INT16 QDQ surgery cùng pattern. QAT v1/v1b server ngày 2026-06-10 đã fail gate nội bộ vì clean student drift xa teacher (`val_clean` mean chỉ `0.7929` rồi `0.6533`), nên chưa export ONNX hoặc submit AI Hub. Nhánh active chuyển sang sửa QAT objective để thêm clean-consistency path trước khi chạy server v2.
+Quyết định tiếp theo: không compile/link thêm candidate `_float`, ORT QDQ, hoặc INT16 QDQ surgery cùng pattern. QAT clean-consistency đã giúp tạo được candidate `blocks_6_11_v5` pass clean gate nội bộ và near-pass fake gate (`clean 0.9539/0.9030`, `fake 0.7997/0.7022`). Tuy nhiên AI Hub Lite-MP QDQ từ candidate này fail rất nặng (`cosine_l2_mean = 0.244236`, `cosine_l2_min = 0.203228`) trong khi static ONNX control pass gần tuyệt đối. AI Hub default QDQ không `--lite_mp` cũng fail xa gate (`cosine_l2_mean = 0.252687`, `cosine_l2_min = 0.211948`). QDQ surgery diagnostic cho thấy cần xử lý đồng thời weight QDQ và activation QDQ trong blocks 4-11: `all_weights + blocks 4-11` pass local QDQ gate (`0.970312/0.939976`). Đây vẫn là diagnostic upper-bound không deployable vì có float path, nên không compile/link. Nhánh active chuyển sang tìm QNN-native/quantizer-level strategy tương đương mà vẫn deployable.
 
 ---
 
@@ -79,8 +79,29 @@ Chỉ chạy `vn3k_test_100` cho candidate đã pass QDQ local. Không chạy fu
 | QAT v1b server | FAIL gate nội bộ: `lr=1e-6`, `mse_weight=0.1`, `500` steps, `val_clean` mean/min `0.6533/0.4248`, `val_fake_quant` mean/min `0.4427/0.3029`; không export/submit |
 | QAT clean-consistency tooling | DONE: script đã thêm `clean_weight` / `clean_mse_weight`, smoke CPU 1 step pass với `val_clean` mean `0.999737` |
 | QAT v2-v5 full blocks 4-11 | FAIL gate: v4 cân bằng nhất (`clean 0.9505/0.8998`, `fake 0.7539/0.6337`), nhưng chưa đủ để export/submit |
-| QAT blocks 6-11 v1 | FAIL gate nhưng promising: `clean 0.9297/0.8606`, `fake 0.8460/0.7515`; fake tốt nhất đến hiện tại |
-| Next active branch | Chạy blocks 6-11 v2 với clean constraint cao hơn trước khi quay lại AI Hub/QNN-native quantizer |
+| QAT blocks 6-11 v1 | FAIL gate nhưng promising: `clean 0.9297/0.8606`, `fake 0.8460/0.7515`; fake tốt nhất tại thời điểm chạy |
+| QAT blocks 6-11 v2-v5 | v5 là candidate nội bộ tốt nhất: `clean 0.9539/0.9030`, `fake 0.7997/0.7022`; đủ để chạy diagnostic QDQ nhưng chưa phải deploy pass |
+| QAT blocks 6-11 v5 static ONNX | PASS control trên `vn3k_test_10`: `cosine_l2_mean = 1.000000`, `cosine_l2_min = 0.9999998` |
+| QAT blocks 6-11 v5 AI Hub Lite-MP QDQ | FAIL nặng trên `vn3k_test_10`: `cosine_l2_mean = 0.244236`, `cosine_l2_min = 0.203228`; không compile/link |
+| QAT blocks 6-11 v5 AI Hub default QDQ | FAIL nặng trên `vn3k_test_10`: `cosine_l2_mean = 0.252687`, `cosine_l2_min = 0.211948`; không compile/link |
+| QAT v5 Lite-MP QDQ no-op surgery | PASS tooling, giữ nguyên metric `0.244236`; `575` QDQ pairs, `0` selected |
+| QAT v5 Lite-MP QDQ all-QDQ-float | PASS diagnostic: `cosine_l2_mean = 0.999779`, `cosine_l2_min = 0.999683`; graph mapping/surgery hợp lệ |
+| QAT v5 Lite-MP QDQ all-weights-float | FAIL nhưng cải thiện: `cosine_l2_mean = 0.511043`, `cosine_l2_min = 0.378787`; weight QDQ chỉ là một phần vấn đề |
+| QAT v5 Lite-MP QDQ all-activations-float | FAIL vì ONNX output NaN: `any_onnx_nan = true`; không deployable |
+| QAT v5 Lite-MP QDQ encoder blocks 0-3 float | FAIL: `cosine_l2_mean = 0.169657`, `cosine_l2_min = 0.119832`; tệ hơn baseline QDQ |
+| QAT v5 Lite-MP QDQ encoder blocks 4-7 float | FAIL: `cosine_l2_mean = 0.154641`, `cosine_l2_min = 0.094580`; tệ hơn baseline QDQ |
+| QAT v5 Lite-MP QDQ encoder blocks 8-11 float | FAIL: `cosine_l2_mean = 0.014968`, `cosine_l2_min = -0.016124`; gần mất hướng embedding |
+| QAT v5 Lite-MP QDQ post-layernorm/head float | FAIL vì ONNX output NaN: `any_onnx_nan = true` |
+| QAT v5 Lite-MP QDQ all-weights + blocks 0-3 float | FAIL: `cosine_l2_mean = 0.534474`, `cosine_l2_min = 0.383061` |
+| QAT v5 Lite-MP QDQ all-weights + blocks 4-7 float | FAIL nhưng tín hiệu tốt nhất: `cosine_l2_mean = 0.858946`, `cosine_l2_min = 0.802091`; dưới diagnostic compile gate |
+| QAT v5 Lite-MP QDQ all-weights + blocks 8-11 float | FAIL: `cosine_l2_mean = 0.745280`, `cosine_l2_min = 0.626759` |
+| QAT v5 Lite-MP QDQ all-weights + post-layernorm/head float | FAIL: `cosine_l2_mean = 0.493702`, `cosine_l2_min = 0.351181` |
+| QAT v5 Lite-MP QDQ all-weights + blocks 4-9 float | PASS diagnostic: `cosine_l2_mean = 0.947507`, `cosine_l2_min = 0.913112`; mean hơi dưới production gate |
+| QAT v5 Lite-MP QDQ all-weights + blocks 4-10 float | PASS: `cosine_l2_mean = 0.964700`, `cosine_l2_min = 0.930359` |
+| QAT v5 Lite-MP QDQ all-weights + blocks 4-11 float | PASS diagnostic upper-bound: `cosine_l2_mean = 0.970312`, `cosine_l2_min = 0.939976`; không deployable vì `_float` surgery |
+| QAT v5 Lite-MP QDQ int8 activation encoding max_abs sweep | FAIL xa gate trên blocks 4-11; best mean là `maxabs256` với `cosine_l2_mean = 0.247837`, `cosine_l2_min = 0.198776`; không compile/link |
+| QAT blocks 6-11 v5 AI Hub native W8A16 QDQ | FAIL xa gate trên `vn3k_test_10`: `cosine_l2_mean = 0.155494`, `cosine_l2_min = 0.115508`; tệ hơn Lite-MP INT8, không compile/link |
+| Next active branch | Phase H10 QNN-native controlled quantization: không compile/link `_float` surgery, int8 encoding clamp, hoặc native W8A16; tìm cách kiểm soát encoding/range cho weight + activation blocks 4-11 bằng QNN-native toolchain |
 
 Các kết quả cũ vẫn nằm trong daily journal/report:
 
@@ -363,9 +384,19 @@ Kiểm tra dependency local hiện tại: `aimet_torch`, `aimet_onnx`, và `aime
 - [x] Chạy smoke CPU 1 step sau khi sửa script: PASS, `val_clean` mean `0.999737`, `val_fake_quant` mean `0.086960`.
 - [x] Chạy QAT v2-v5 full blocks 4-11 trên server/local metadata review: tất cả FAIL gate nội bộ; v4 là điểm cân bằng tốt nhất nhưng fake thấp.
 - [x] Chạy QAT blocks 6-11 v1 trên server: FAIL clean gate nhưng fake tốt nhất (`0.8460` mean).
-- [ ] Chạy QAT blocks 6-11 v2 với clean constraint cao hơn.
-- [ ] Export QAT candidate sang FP32 ONNX bằng `deployment/scripts/onnx/export.py` chỉ khi gate nội bộ pass hoặc near-pass có lý do rõ.
-- [ ] Submit AI Hub native quantize-only từ QAT ONNX, sau đó chạy `compare_onnx_with_pytorch.py` trên `vn3k_test_10`.
+- [x] Chạy QAT blocks 6-11 v2-v5 với clean constraint tăng dần; v5 là candidate nội bộ tốt nhất.
+- [x] Export QAT blocks 6-11 v5 sang FP32 ONNX; static ONNX control pass trên `vn3k_test_10`.
+- [x] Submit AI Hub native Lite-MP quantize-only từ QAT v5 ONNX và chạy `compare_onnx_with_pytorch.py` trên `vn3k_test_10`: FAIL nặng (`0.244236/0.203228`).
+- [x] Chạy AI Hub default quantize-only sanity check không `--lite_mp` trên QAT v5: FAIL nặng (`0.252687/0.211948`).
+- [x] Chạy no-op QDQ surgery baseline trên `artifacts/deployment/runtime/qat/blocks_6_11_v5/qaihub_lite_mp_qdq`: PASS tooling, metric giữ nguyên `0.244236`.
+- [x] Chạy QAT v5 QDQ sensitivity: `all_qdq_float` PASS diagnostic (`0.999779/0.999683`), `all_weights_float` FAIL (`0.511043/0.378787`), `all_activations_float` FAIL do NaN.
+- [x] Chạy QAT v5 block-level activation isolation: `encoder_blocks_0_3_float` FAIL (`0.169657/0.119832`), `encoder_blocks_4_7_float` FAIL (`0.154641/0.094580`), `encoder_blocks_8_11_float` FAIL (`0.014968/-0.016124`), `post_layernorm_head_float` FAIL do NaN.
+- [x] Chạy tổ hợp `all_weights_float + block_activation_float`: blocks 4-7 là tín hiệu tốt nhất (`0.858946/0.802091`) nhưng vẫn dưới diagnostic compile gate; không compile/link.
+- [x] Chạy tổ hợp liên tục `all_weights + blocks 4-9/4-10/4-11`: `4-11` tốt nhất (`0.970312/0.939976`) và pass QDQ local as diagnostic upper-bound.
+- [x] Chạy QAT v5 Lite-MP QDQ int8 activation encoding `max_abs` sweep trên blocks 4-11: tất cả FAIL, best `0.247837/0.198776`; không compile/link.
+- [x] Chạy QAT v5 AI Hub native W8A16 quantize-only + compare: FAIL xa gate (`0.155494/0.115508`); không compile/link.
+- [x] Không compile/link các `_float` surgery candidate hoặc int8 encoding clamp candidate.
+- [x] Mở Phase H10 QNN-native controlled quantization cho weight + activation blocks 4-11.
 - [ ] Chỉ mở `vn3k_test_100` nếu QAT/native QDQ pass hoặc near-pass gate `vn3k_test_10`.
 
 ### Phase H7 - Quay lại compile/link khi QDQ pass
@@ -375,7 +406,11 @@ Kiểm tra dependency local hiện tại: `aimet_torch`, `aimet_onnx`, và `aime
 - [x] Compile/link QNN bằng candidate pass gate: compile DLC PASS, link HTP FAIL do internal float tensor `add_1003`.
 - [x] Thử ORT W8A16 all-quantized local candidates: fidelity PASS local nhưng QNN link FAIL quanh `gelu_10_DequantizeLinear_Output` / exit code 14.
 - [x] Thử INT16 activation encoding tuning gần gate: compile PASS, link FAIL quanh `add_103_updated`.
-- [ ] Chỉ quay lại compile/link khi có all-quantized deployable candidate từ AI Hub/QNN-native quantizer, không phải `_float`, ORT QDQ, hoặc INT16 surgery pattern.
+- [x] Thử AI Hub Lite-MP QDQ từ QAT blocks 6-11 v5: QDQ local FAIL xa gate, nên không compile/link.
+- [x] Thử AI Hub default QDQ từ QAT blocks 6-11 v5: QDQ local FAIL xa gate, nên không compile/link.
+- [x] Thử int8 activation encoding clamp trên QAT v5 Lite-MP QDQ: local QDQ vẫn FAIL xa gate, nên không compile/link.
+- [x] Thử AI Hub native W8A16 từ QAT blocks 6-11 v5: local QDQ FAIL xa gate, nên không compile/link.
+- [ ] Chỉ quay lại compile/link khi có all-quantized deployable candidate từ AI Hub/QNN-native quantizer, hoặc khi một diagnostic QDQ local pass/near-pass tạo ra giả thuyết compile có giá trị. Không compile/link lại các pattern `_float`, ORT QDQ, hoặc INT16 surgery đã fail link lặp lại.
 
 ### Phase H8 - ORT static quantization branch
 
@@ -407,11 +442,64 @@ Kiểm tra dependency local hiện tại: `aimet_torch`, `aimet_onnx`, và `aime
 - [x] Chạy QAT v4 full blocks 4-11: FAIL nhưng cân bằng nhất full-window (`clean 0.9505/0.8998`, `fake 0.7539/0.6337`).
 - [x] Chạy QAT v5 full blocks 4-11: FAIL; local/server đều không hơn v4.
 - [x] Chạy QAT blocks 6-11 v1: FAIL clean gate nhưng fake tốt nhất (`clean 0.9297/0.8606`, `fake 0.8460/0.7515`).
-- [ ] Chạy QAT blocks 6-11 v2 với `clean_weight=1.5`, `clean_mse_weight=0.075`.
-- [ ] Export ONNX từ candidate QAT chỉ khi `val_clean` giữ gần teacher và fake-quant cải thiện.
-- [ ] Submit AI Hub native quantize-only với `--quantize-options=--lite_mp`.
-- [ ] So QDQ native với PyTorch trên `vn3k_test_10`, rồi `vn3k_test_100` nếu pass hoặc near-pass.
-- [ ] Nếu QDQ native đạt production gate hoặc near-pass diagnostic gate, thử compile/link một lần.
+- [x] Chạy QAT blocks 6-11 v2-v5 với clean constraint tăng dần; v5 đạt `clean 0.9539/0.9030`, `fake 0.7997/0.7022`.
+- [x] Export ONNX từ QAT blocks 6-11 v5 và xác nhận static ONNX vs PyTorch pass.
+- [x] Submit AI Hub native quantize-only với `--quantize-options=--lite_mp` cho QAT blocks 6-11 v5.
+- [x] So Lite-MP QDQ native với PyTorch trên `vn3k_test_10`: FAIL, `cosine_l2_mean = 0.244236`, `cosine_l2_min = 0.203228`.
+- [x] Submit AI Hub quantize-only default không `--lite_mp` cho QAT blocks 6-11 v5 như sanity check: FAIL, `cosine_l2_mean = 0.252687`, `cosine_l2_min = 0.211948`.
+- [x] Chạy QDQ surgery diagnostic trực tiếp trên QAT blocks 6-11 v5 Lite-MP QDQ: no-op, all-QDQ-float, weight-vs-activation.
+- [x] Chạy QDQ surgery diagnostic block-level activation isolation trên QAT blocks 6-11 v5 Lite-MP QDQ: tất cả FAIL hoặc NaN.
+- [x] Chạy QDQ surgery interaction diagnostic `all_weights_float + block_activation_float`: blocks 4-7 tốt nhất nhưng vẫn FAIL.
+- [x] Chạy QDQ surgery continuous-window diagnostic `all_weights + blocks 4-11/4-9/4-10`: blocks 4-11 pass local QDQ gate as diagnostic upper-bound.
+- [x] Chạy QAT v5 Lite-MP QDQ int8 activation encoding `max_abs` sweep trên blocks 4-11: best `0.247837/0.198776`, fail xa gate.
+- [x] Chạy QAT v5 AI Hub native W8A16 quantize-only + compare: `0.155494/0.115508`, fail xa gate.
+- [ ] Nếu diagnostic tạo được QDQ local pass/near-pass bằng một vùng can thiệp deployable hoặc có giả thuyết QNN-native rõ, thử compile/link một lần; nếu chỉ pass bằng `_float` surgery thì không compile/link.
+
+### Phase H10 - QNN-native controlled quantization
+
+Mục tiêu của Phase H10 là thoát khỏi AI Hub quantize như black box. Các kết quả đã khóa cho thấy model/export/preprocess không hỏng; lỗi nằm ở cách quantizer mã hóa weight + activation trong vision encoder, đặc biệt vùng blocks 4-11. Diagnostic `all_weights + blocks 4-11 float` đạt `0.970312/0.939976`, nhưng không deployable vì để lại float path. Vì vậy H10 chỉ có giá trị nếu tạo được candidate **all-quantized hoặc QNN-native deployable**, không phải `_float` surgery.
+
+Điều kiện mở nhánh:
+
+- [x] AI Hub Lite-MP INT8 từ QAT v5 fail xa gate: `0.244236/0.203228`.
+- [x] AI Hub default INT8 từ QAT v5 fail xa gate: `0.252687/0.211948`.
+- [x] AI Hub native W8A16 từ QAT v5 fail xa gate: `0.155494/0.115508`.
+- [x] Int8 activation encoding clamp trên QAT v5 fail xa gate: best `0.247837/0.198776`.
+- [x] `_float`, ORT QDQ, và INT16 surgery pattern đã từng compile/link fail trên HTP; không lặp lại các pattern này.
+
+Checklist H10:
+
+- [x] Kiểm tra Mac local bằng `deployment/scripts/qnn/audit_qnn_native_env.py`: không có QNN/QAIRT tools (`0/12` found), không dùng Mac local cho H10.
+- [ ] Kiểm tra môi trường server có Qualcomm AI Stack hoặc QNN SDK đầy đủ hay không: converter, quantizer, runtime tools, ví dụ `qairt-converter`, `qnn-onnx-converter`, `qnn-model-lib-generator`, `qnn-context-binary-generator`, `qnn-net-run`.
+- [ ] Ghi lại version QNN/QAIRT, target backend HTP, OS, Python, và command path vào journal trước khi chạy job mới.
+- [ ] Xác định QNN-native quantizer có hỗ trợ override encoding/range theo tensor/op, calibration method, percentile/cle, per-channel weight, hoặc exclude/mixed precision deployable hay không.
+- [ ] Tạo một local/server QNN-native quantize-only artifact từ static QAT v5 ONNX, không compile/link ngay.
+- [ ] Chạy QDQ/ONNX-vs-PyTorch trên `vn3k_test_10` cho artifact QNN-native nếu artifact có ONNX/QDQ kiểm được; nếu chỉ sinh DLC/context, chạy QNN-vs-PyTorch trên cùng input raw.
+- [ ] Chỉ mở `vn3k_test_100` khi `vn3k_test_10` pass hoặc near-pass gate.
+- [ ] Chỉ compile/link HTP khi candidate là all-quantized/deployable và đạt production gate hoặc diagnostic gate.
+- [ ] Nếu QNN-native toolchain không cho kiểm soát encoding đủ sâu, đóng H10 và chuyển sang fallback runtime plan: ONNX Runtime CPU/FP16 trên RB3 để đo latency/memory thực tế.
+
+Các việc không làm trong H10:
+
+- Không compile/link `all_weights_plus_blocks_4_11` hoặc bất kỳ `_float` surgery candidate nào.
+- Không upload thêm ORT W8A16/INT16 QDQ variants cùng pattern đã fail linker.
+- Không chạy thêm QAT proxy nếu chưa có cơ chế mô phỏng đúng QNN/AI Hub quantizer.
+- Không chạy full retrieval/R@1 trước khi vision QNN fidelity pass.
+
+Artifact đầu vào ưu tiên:
+
+```text
+artifacts/deployment/exports/exported_model_qat_blocks_6_11_v5/vision_onnx
+artifacts/deployment/exports/exported_model_qat_blocks_6_11_v5/vision_onnx_static
+artifacts/deployment/qnn_inputs/vn3k_train_calib_2000
+artifacts/deployment/qnn_inputs/vn3k_test_10
+```
+
+Artifact đầu ra dự kiến:
+
+```text
+artifacts/deployment/runtime/qnn_native/qat_blocks_6_11_v5/<candidate>/
+```
 
 Command QAT smoke:
 
