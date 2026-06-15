@@ -69,18 +69,25 @@ class RawVisionDataset(Dataset):
         return _read_raw_tensor(self.raw_paths[index], self.image_size).squeeze(0)
 
 
-def _fake_quant_symmetric(x: torch.Tensor, bits: int, eps: float) -> torch.Tensor:
+def _fake_quant_symmetric(
+    x: torch.Tensor, bits: int, eps: float, per_tensor: bool = True
+) -> torch.Tensor:
     if bits <= 0:
         return x
     qmax = (1 << (bits - 1)) - 1
     if qmax <= 0:
         return x
 
-    reduce_dims = tuple(range(1, x.ndim)) if x.ndim > 1 else None
-    if reduce_dims:
-        max_abs = x.detach().abs().amax(dim=reduce_dims, keepdim=True)
-    else:
+    if per_tensor or x.ndim <= 1:
+        # One scale for the WHOLE activation tensor. This matches AI Hub's
+        # per-tensor W8A8 (the deployed scheme). The legacy per-sample mode below
+        # gives each image its own scale -> easier for the student to satisfy, so
+        # the simulated cosine looks great (~0.975) but does not transfer to the
+        # real per-tensor quantize (only ~0.92). Per-tensor closes that gap.
         max_abs = x.detach().abs().max()
+    else:
+        reduce_dims = tuple(range(1, x.ndim))
+        max_abs = x.detach().abs().amax(dim=reduce_dims, keepdim=True)
     scale = torch.clamp(max_abs / qmax, min=eps)
     quantized = torch.clamp(torch.round(x / scale), -qmax, qmax) * scale
     return x + (quantized - x).detach()
@@ -96,12 +103,14 @@ class FakeQuantController:
         end_layer: int,
         bits: int,
         eps: float,
+        per_tensor: bool = True,
     ) -> None:
         self.model = model
         self.start_layer = start_layer
         self.end_layer = end_layer
         self.bits = bits
         self.eps = eps
+        self.per_tensor = per_tensor
         self.enabled = True
         self.handles: list[torch.utils.hooks.RemovableHandle] = []
         self.hooked_modules: list[str] = []
@@ -145,7 +154,9 @@ class FakeQuantController:
     def _quantize(self, value: torch.Tensor) -> torch.Tensor:
         if not self.enabled or not torch.is_floating_point(value):
             return value
-        return _fake_quant_symmetric(value, bits=self.bits, eps=self.eps)
+        return _fake_quant_symmetric(
+            value, bits=self.bits, eps=self.eps, per_tensor=self.per_tensor
+        )
 
     def _hook_module(self, name: str, module: nn.Module, output_is_tuple: bool) -> None:
         def hook(_module: nn.Module, _inputs: tuple, output):
@@ -346,6 +357,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--fake-quant-bits", type=int, default=8)
     parser.add_argument("--fake-quant-eps", type=float, default=1e-8)
+    parser.add_argument(
+        "--fake-quant-granularity",
+        choices=["per_tensor", "per_sample"],
+        default="per_tensor",
+        help=(
+            "per_tensor (default) matches AI Hub's deployed W8A8 (one scale per "
+            "activation tensor) and transfers far better. per_sample is the legacy "
+            "behavior (one scale per image): optimistic sim cosine, weak transfer."
+        ),
+    )
     parser.add_argument("--start-layer", type=int, default=4)
     parser.add_argument("--end-layer", type=int, default=11)
     parser.add_argument("--no-train-visual-projection", action="store_true")
@@ -387,6 +408,7 @@ def main() -> None:
         end_layer=args.end_layer,
         bits=args.fake_quant_bits,
         eps=args.fake_quant_eps,
+        per_tensor=args.fake_quant_granularity == "per_tensor",
     )
     fake_quant.install()
     print("Fake-quant hooks:")
@@ -526,6 +548,7 @@ def main() -> None:
         "clean_weight": args.clean_weight,
         "clean_mse_weight": args.clean_mse_weight,
         "fake_quant_bits": args.fake_quant_bits,
+        "fake_quant_granularity": args.fake_quant_granularity,
         "layer_range": [args.start_layer, args.end_layer],
         "train_visual_projection": not args.no_train_visual_projection,
         "trainable_parameters": trainable_count,

@@ -1,30 +1,40 @@
 # Edge Deployment & Model Compression
 
 This folder contains the mSigLIP edge deployment pipeline for the Qualcomm RB3
-Gen2 / QCS6490 target. The current focus is the **vision encoder QNN/HTP path**:
-runtime is proven, but quantization fidelity is not deployable yet.
+Gen2 / QCS6490 target. The **vision encoder INT8 path is DEPLOYED and running on
+HTP v68** via rotation-based equalization; the text encoder is the next workstream.
 
-## Current Status
+## Current Status (2026-06-15)
 
 | Area | Status | Notes |
 |---|---|---|
-| FP32/FP16 export | PASS | LoRA merge, stripped checkpoint export, and ONNX export work |
-| Static ONNX control | PASS | Vision ONNX matches PyTorch with cosine near `1.0` |
-| QNN HTP runtime | PASS | Vision context binary runs on RB3 HTP; no NaN/Inf |
-| INT8/QDQ fidelity | FAIL | AI Hub QDQ remains far below gate |
-| Best QDQ diagnostic | PASS local only | `all_weights + blocks 4-11 float` reaches `0.9703/0.9400`, but is not deployable |
-| Text encoder | BLOCKED | Do not compile text until vision fidelity passes |
-| Active branch | FOLLOW-UP | Phase H10: QNN-native / quantizer-level strategy for blocks 4-11 |
+| FP32/FP16 export (LoRA merge) | PASS | `lora_fp16/export.py` merges LoRA → `exported_model` |
+| Rotation equalization | PASS | mean-preserving Q + fold γ/β; output-invariant 1.0; residual concentration 252x→5.3x |
+| ONNX export (opset 20) | PASS | fused Gelu (no `Pow(x³)`) + fused LayerNorm; static control ≈ 1.0 |
+| **Vision W8A8 QDQ fidelity** | **PASS (near)** | `cosine 0.90` — rotation made all-INT8 viable (was 0.14 collapse) |
+| **Vision compile/link on v68** | **PASS** | all-INT8 links on HTP v68; `vision_encoder.bin` 89.7 MB |
+| **Vision on HTP board** | **PASS** | board fidelity `0.898` = QDQ; **22.5 FPS, 34 ms/img** |
+| **Vision R@1 (gate)** | **FAIL** | T2I R@1 `45.42` (vision-only INT8, text FP32) vs `52.28`, gate ≥ 48; proxy `0.90` cosine insufficient → need higher fidelity |
+| Text encoder | TODO (blocked) | hold until vision passes gate; full INT8+INT8 ≤ `45.42` |
 
-Latest locked conclusions are in:
+Key learnings (why this works on v68):
 
-- `deployment/docs/journal/[deploy-plan]-2026-06-06.md`
-- `deployment/docs/journal/[deploy]-2026-06-13.md`
-- `deployment/docs/journal/[deploy]-2026-06-14.md`
+- **v68 rejects 16-bit activation (A16)** for LayerNorm/attention matmul (needs
+  v73+). So W8A16 (fidelity `0.9997`) **links-fail** on v68 → must use all-INT8 W8A8.
+- Plain W8A8 collapses (`0.14`) due to **residual-stream activation concentration**.
+- **tanh-GELU `Pow(x³)`** cubic (exposed by opset-18 decompose) was a separate
+  killer → fixed by opset-20 fused `Gelu`.
+- **Rotation** (mean-preserving orthogonal Q, fold into weights) spreads the
+  concentration so per-tensor INT8 works; **keep fused LayerNorm** (don't convert
+  to RMSNorm, which re-exposes `Pow(x²)` to quant).
 
-Do not treat `_float` QDQ surgery candidates as deployable. They are diagnostic
-upper bounds only; previous `_float` candidates link-failed on HTP because the
-context graph still contained internal floating-point tensors.
+Latest locked conclusions / full pipeline:
+
+- `deployment/docs/journal/[deploy]-2026-06-15.md` (sections 5-13: rotation method,
+  M1-M5 results, and the **full reproducible pipeline from ckpt → .bin in section 13**)
+
+Do not treat `_float` QDQ surgery candidates as deployable (diagnostic only;
+link-fail on internal float). Do not use W8A16 on v68 (A16 needs v73).
 
 ## Directory Map
 
@@ -94,23 +104,28 @@ if it reaches `mean >= 0.93` and `min >= 0.88`. This exception does **not**
 apply to `_float`, ORT QDQ, or INT16 surgery patterns that have already
 link-failed.
 
-## Pipeline
+## Pipeline (current, rotation-based INT8 for v68)
 
 ```text
-checkpoint.ckpt
-  -> lora_fp16/export.py
-  -> exported_model/{model_fp32.pt, model_fp16.pt, config.yaml}
-  -> onnx/export.py
-  -> exported_model/{vision_onnx, text_onnx}
-  -> QDQ / quantize diagnostics
-  -> AI Hub compile/link or QNN-native toolchain
-  -> qnn-net-run on RB3 HTP
-  -> QNN-vs-PyTorch fidelity
-  -> retrieval benchmark
+epoch=56-val_score=52.28.ckpt        # LoRA-finetuned Lightning checkpoint
+  -> [1] lora_fp16/export.py          # MERGE LoRA (merge_and_unload) -> base weights
+         exported_model/{model_fp32.pt, model_fp16.pt, config.yaml}
+  -> [2] qnn/rotate_vision_encoder.py # mean-preserving rotation + fold gamma/beta
+         exported_model_rotated/{model_fp32.pt, config.yaml}   # output-invariant 1.0
+  -> [3] qnn/export_rotated_vision_onnx.py --opset 20  # fused Gelu + fused LayerNorm
+         exported_model_rotated/vision_onnx/{vision_encoder.onnx,.data}
+  -> [4] qnn/submit_qaihub_quantize_compile.py  # W8A8, calib d7jzjy1m2, device RB3 Gen2
+         vision_encoder.bin                      # all-INT8, links on HTP v68 (89.7 MB)
+  -> [5] qnn-net-run on RB3 HTP -> compare_qnn_with_pytorch -> retrieval R@1
 ```
 
-Current rule: keep working on the vision encoder until QDQ and QNN fidelity
-pass. Text encoder and full retrieval are blocked until then.
+Full step-by-step with commands and verification: see
+`deployment/docs/journal/[deploy]-2026-06-15.md` section 13.
+
+Why each step exists: LoRA merge is mandatory (ckpt is LoRA-finetuned); rotation
+spreads activation concentration so all-INT8 W8A8 (the only v68-deployable scheme)
+keeps fidelity; opset-20 fuses Gelu/LayerNorm to avoid `Pow(x³)`/`Pow(x²)` being
+quantized. Swapping to the 53.00 model requires re-running from step [1].
 
 ## Quick Commands
 

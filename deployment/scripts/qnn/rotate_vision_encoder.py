@@ -345,6 +345,77 @@ def phase_b(vision_model: nn.Module, Q: torch.Tensor) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Phase C (R2): rotate the per-head value / attention-output space (head_dim)
+# --------------------------------------------------------------------------- #
+def _hadamard(n: int) -> torch.Tensor:
+    """Normalized Sylvester Hadamard, n a power of two: H H^T = I (float64)."""
+    if n & (n - 1) != 0:
+        raise ValueError(f"Hadamard requires a power-of-two size, got {n}")
+    H = torch.ones((1, 1), dtype=torch.float64)
+    while H.shape[0] < n:
+        H = torch.cat(
+            [torch.cat([H, H], dim=1), torch.cat([H, -H], dim=1)], dim=0
+        )
+    return H / (n ** 0.5)
+
+
+def _blockdiag_headdim_rotation(num_heads: int, head_dim: int) -> tuple[torch.Tensor, bool]:
+    """Block-diagonal orthogonal on the concatenated-heads axis (one H per head).
+
+    Hadamard when head_dim is a power of two (the optimal incoherent spreader),
+    else a deterministic random orthogonal fallback. No mean-preservation needed:
+    this rotation lives on head_dim and never passes through a LayerNorm.
+    """
+    if head_dim & (head_dim - 1) == 0:
+        H, is_hadamard = _hadamard(head_dim), True
+    else:
+        g = torch.Generator().manual_seed(0)
+        A = torch.randn(head_dim, head_dim, generator=g, dtype=torch.float64)
+        H, rr = torch.linalg.qr(A)
+        H = H * torch.sign(torch.diagonal(rr)).unsqueeze(0)
+        is_hadamard = False
+    BD = torch.block_diag(*([H] * num_heads))
+    return BD, is_hadamard
+
+
+def phase_c(vision_model: nn.Module) -> dict:
+    """R2: rotate per-head value/attention-output space by a block-diagonal H.
+
+    Folded offline: V output rotated by BD (v_proj rows <- BD^T W, b <- BD^T b),
+    out_proj input rotated by BD (out_proj cols <- W BD). Output-invariant because
+    out_h @ H cancels (W_o_h @ H)^T through the projection; softmax is untouched
+    (it does not depend on V). No runtime op -> v68-safe (unlike R3/R4 MLP online
+    Hadamard, which cannot fold through the GELU and would need a runtime op).
+
+    Acts on the head_dim axis (v_proj output / out_proj input); the residual-stream
+    rotation Q (phase_b) acts on the embed_dim axis (v_proj input / out_proj
+    output). Different axes -> the two folds compose cleanly. Encoder layers only;
+    the head pooling MHA is left for a later R2 pass.
+    """
+    layers = vision_model.encoder.layers
+    attn0 = layers[0].self_attn
+    num_heads, head_dim = int(attn0.num_heads), int(attn0.head_dim)
+    BD, is_hadamard = _blockdiag_headdim_rotation(num_heads, head_dim)
+    BDt = BD.t().contiguous()
+
+    for layer in layers:
+        # V <- V @ BD : rotate the value output on head_dim (left-fold BD^T).
+        fold_left_into_linear_writer(layer.self_attn.v_proj, BDt)
+        # out_proj input <- @ BD : undo the rotation on the attention output.
+        fold_right_into_reader(layer.self_attn.out_proj, BD)
+
+    err = (BD @ BDt - torch.eye(BD.shape[0], dtype=torch.float64)).abs().max().item()
+    return {
+        "applied": True,
+        "n_layers": len(layers),
+        "num_heads": num_heads,
+        "head_dim": head_dim,
+        "hadamard": is_hadamard,
+        "orthogonality_max_err": err,
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Gate: encode_image cosine vs reference
 # --------------------------------------------------------------------------- #
 def _embed(model: nn.Module, raw_paths: list[Path], image_size: int, device: str) -> torch.Tensor:
@@ -376,6 +447,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=2400, help="Seed for the orthogonal Q.")
     p.add_argument("--gate-threshold", type=float, default=0.9999)
     p.add_argument("--skip-phase-b", action="store_true", help="Apply only Phase A (debug the LN->RMSNorm fold).")
+    p.add_argument("--skip-r2", action="store_true", help="Skip Phase C (R2 head_dim Hadamard); reproduce the pre-R2 rotated model.")
     p.add_argument("--no-save", action="store_true", help="Run the gate but do not write the rotated model.")
     p.add_argument(
         "--json",
@@ -427,7 +499,20 @@ def main() -> None:
         cos_b = _cosine_stats(ref_emb, after_b)
         print(f"  Phase B invariance cosine: mean={cos_b['mean']:.8f} min={cos_b['min']:.8f}")
 
-    passed = cos_b["min"] >= args.gate_threshold
+    c_info: dict = {"applied": False}
+    cos_c = cos_b
+    if not args.skip_r2:
+        print("Phase C (R2): rotate per-head value/output space by block-diag Hadamard ...")
+        c_info = phase_c(vision_model)
+        print(
+            f"  R2: heads={c_info['num_heads']} head_dim={c_info['head_dim']} "
+            f"hadamard={c_info['hadamard']} orth_err={c_info['orthogonality_max_err']:.2e}"
+        )
+        after_c = _embed(model, raw_paths, args.image_size, args.device)
+        cos_c = _cosine_stats(ref_emb, after_c)
+        print(f"  Phase C invariance cosine: mean={cos_c['mean']:.8f} min={cos_c['min']:.8f}")
+
+    passed = cos_c["min"] >= args.gate_threshold
     summary = {
         "model_dir": str(model_dir),
         "input_dir": str(input_dir),
@@ -437,6 +522,7 @@ def main() -> None:
         "gate_threshold": args.gate_threshold,
         "phase_a": {**a_info, "cosine": cos_a},
         "phase_b": {**b_info, "cosine": cos_b},
+        "phase_c": {**c_info, "cosine": cos_c},
         "gate_passed": passed,
     }
 
