@@ -60,7 +60,14 @@ def _find_single_onnx(path: Path) -> Path:
 
 
 def _encoder_block_start_indices(graph: onnx.GraphProto) -> dict[int, int]:
-    """Map encoder block index -> node index of its layer_norm1."""
+    """Map encoder block index -> node index that starts the block.
+
+    Default anchor is the block's layer_norm1 (the LayerNormalization op). For a
+    rotated model the LayerNorms were replaced with paramless RMSNorm (no
+    `layer_norm1.weight` initializer survives), so fall back to the q_proj MatMul,
+    which is the first weight-bearing op of the block and reads the normalized
+    input. The first such node per block is used as the start.
+    """
     starts: dict[int, int] = {}
     pattern = re.compile(r"encoder\.layers\.(\d+)\.layer_norm1\.weight")
     for index, node in enumerate(graph.node):
@@ -70,6 +77,20 @@ def _encoder_block_start_indices(graph: onnx.GraphProto) -> dict[int, int]:
             match = pattern.search(input_name)
             if match:
                 starts[int(match.group(1))] = index
+    if starts:
+        return starts
+
+    # Fallback for rotated models: torch.onnx renames Linear weights to anonymous
+    # `onnx::MatMul_*` initializers, but the q_proj *bias* keeps its name and is
+    # added right after the q_proj MatMul. Anchor on the node consuming it.
+    q_pattern = re.compile(r"encoder\.layers\.(\d+)\.self_attn\.q_proj\.bias")
+    for index, node in enumerate(graph.node):
+        for input_name in node.input:
+            match = q_pattern.search(input_name)
+            if match:
+                block = int(match.group(1))
+                if block not in starts:  # first node using this block's q_proj bias
+                    starts[block] = index
     return starts
 
 

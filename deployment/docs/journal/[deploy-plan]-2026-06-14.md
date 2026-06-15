@@ -5,8 +5,8 @@
 > **Model / Artifact nguồn:** `epoch=56-val_score=52.28.ckpt` → `exported_model` (FP32 baseline) và `exported_model_qat_blocks_6_11_v5`
 > **Mục tiêu:** Đổi chiến lược từ "thử nhiều config quantize" sang "chẩn đoán đúng failure mode (activation outlier ở blocks 4-11) rồi áp đúng fix deployable"
 > **Plan checklist hiện hành:** file này (thay thế `[deploy-plan]-2026-06-06.md`)
-> **Trạng thái:** FOLLOW-UP - P0.1 + P0.2 DONE, verdict = equalization (P1-A); còn P0.3 (server) + P0.4 (HTP capability) trước khi code fix
-> **Cập nhật checklist gần nhất:** 2026-06-14
+> **Trạng thái:** W8A16 fidelity PASS (`0.9997`) NHƯNG link fail trên HTP **V68**: attention matmul (act×act) ở A16 cần **v73+** (job `j576q80rg`, op `node_MatMul_774`). AI Hub không có fp16-fallback per-op; INT8 bị chặn trên v68 cho model này. → Pivot deploy: **FP16-on-HTP** qua `--qnn_options default_graph_htp_precision=FLOAT16` (compile gelu20, không quantize) — chạy NPU, không cần sudo, R@1=baseline, đổi lại chậm/nặng hơn INT8. INT8 mixed-precision (native quantizer x86, cần sudo) để dành tối ưu sau.
+> **Cập nhật checklist gần nhất:** 2026-06-15
 
 ---
 
@@ -75,23 +75,40 @@ Mục tiêu P0 là **thu hẹp solution space bằng dữ kiện**, không đoá
   - Output: `artifacts/deployment/runtime/diag/p0_2_w8a16_audit/{w8a16,int8_litemp}_encodings.{json,csv}`.
   - **Kết luận: lỗi là GRANULARITY, không phải bit-width.** Cả Lite-MP INT8 và native W8A16 đều dùng **activation per-tensor (20/20 per-tensor, 0 per-channel)**; `real_abs_max` tới `138718`. Per-tensor scale bị 1 outlier chi phối → giá trị thường (~6) chỉ còn 0 level (INT8) hoặc ~3 level (A16). W8A16 còn TỆ hơn INT8 vì pure-W8A16 quantize cả các tensor mà Lite-MP để FP16.
   - → Bác bỏ "A16 bất lực"; xác nhận "phải hạ per-tensor activation range" = SmoothQuant/equalization.
-- [ ] **P0.3 - Audit toolchain trên server (không phải Mac).**
-  - Chạy `deployment/scripts/qnn/audit_qnn_native_env.py` trên server.
-  - Kiểm tra song song khả năng cài **AIMET** (CLE + bias correction + AdaRound) trên server: Python/glibc/wheel phù hợp.
-  - Ghi version QNN/QAIRT/AIMET, OS, Python, command path vào journal ngày chạy.
-- [ ] **P0.4 - Xác minh năng lực HTP cho graph deployable.** (đã sắc hơn nhờ P0.2: activation hiện là per-tensor)
-  - **Câu hỏi chính cho P1-A:** HTP/AI Hub có nhận **per-channel WEIGHT quant** không? (gần như chắc có; SmoothQuant chỉ cần per-channel weight + per-tensor activation → nếu đúng thì P1-A deployable luôn, không cần internal float.)
-  - Bonus: HTP có hỗ trợ **per-channel/per-axis activation** deployable không? (nếu có, là fix thẳng cho fixed-channel outlier mà không cần đụng weight.)
-  - HTP có hỗ trợ **all-quantized W8A16** (no internal float) link thành context binary không? (chỉ cần nếu P1-A residual diffuse vẫn fail.)
-  - QNN-native quantizer có cho **override encoding/range theo tensor/op** không?
-  - Output: bảng "supported / not supported" để chốt branch P1.
+- [x] **P0.3 - Audit toolchain trên server.** DONE trên `qc-rb3g2`.
+  - **Found:** `qairt-converter`, `qairt-quantizer`, `qnn-onnx-converter`, `qnn-model-lib-generator`, `qnn-context-binary-generator`, `qnn-net-run`, `qnn-throughput-net-run`, `qnn-profile-viewer`, `qnn-platform-validator`.
+  - **Missing (chỉ là alias QAIRT mới, đã có bản `qnn-` tương đương):** `qairt-model-lib-generator`, `qairt-context-binary-generator`, `qairt-net-run`.
+  - → Pipeline native đầy đủ: converter → quantizer → context-binary-generator → net-run. **Không còn phụ thuộc AI Hub black box.** AIMET trở thành tùy chọn, không bắt buộc.
+  - Output: `artifacts/deployment/runtime/qnn_native/env_audit_server.json`.
+- [x] **P0.4 - Xác minh nơi/khả năng chạy native quantizer.** DONE.
+  - **Kết luận: `qairt-quantizer` x86-only.** `libPyIrQuantizer.so` chỉ có `linux-x86_64` + windows; `linux-aarch64-oe-gcc11.2/` KHÔNG có quantizer. Converter (`libPyIrGraph.so`) thì có bản aarch64.
+  - Board `qc-rb3g2` (aarch64) chỉ: convert + `qnn-context-binary-generator` + `qnn-net-run` (`/usr/bin/`). Quantize phải trên **x86 host**.
+  - Python: SDK cần py3.10 (env `qairt310` đã tạo trên board cho phần convert/run).
+  - → Hai đường quantize trong tầm với: (1) AI Hub (x86 cloud, per-tensor activation, đã có pipeline); (2) x86 Linux server tự cài QAIRT SDK (mới mở per-channel activation/CLE/adaround native). Cả hai đều per-tensor activation theo mặc định, nên SmoothQuant vẫn là lever chính.
+  - Làm rõ magnitude: P0.1 đo trên **baseline `exported_model` (52.28)** → max abs `~5224` (mild, concentrated-fixed). Con số `138717` ở P0.2 là của **QAT v5** (model detour, đã deprioritize). Deploy target hiện tại là baseline → outlier dễ xử lý hơn.
 
-### Phase P1 - Áp fix theo kết quả P0 (chọn nhánh, không chạy hết)
+### Phase P1-GELU - ROOT CAUSE FIX (mới, ưu tiên cao nhất sau breakthrough)
 
-- [ ] **P1-A SmoothQuant / equalization (ưu tiên nếu P0.1 cho thấy outlier tập trung ít channel).**
-  - Migrate outlier magnitude từ activation sang weight bằng per-channel scale `s`, sao cho graph cuối **all-INT8 deployable**, không có float path.
-  - Áp cho blocks 4-11 (mở rộng nếu cần theo P0.1).
-  - Không cần retrain; là post-training equalization.
+- [x] **Chẩn đoán:** activation outlier ~119k là `Pow(x,3)` term của tanh-GELU bị decompose vì export opset 18 (không có Gelu op). 13 Pow + 13 Tanh trong vision encoder. Giải thích luôn vì sao W8A16 fail, SmoothQuant neutral, và link fail lịch sử quanh `gelu_*`.
+- [x] **Fix:** re-export vision encoder opset 20 → 13 fused `Gelu` op, 0 Pow, 0 Tanh. Output `artifacts/deployment/exports/exported_model_gelu20/vision_onnx`.
+- [x] **Static control:** gelu20 ONNX vs PyTorch baseline = `cosine_l2_mean 1.0000000`, `min 0.9999999`, no NaN → numerically identical.
+- [ ] **AI Hub quantize gelu20 + compare (user chạy):** kỳ vọng cosine nhảy mạnh vì cubic 119k đã biến mất; quantizer chỉ còn quantize I/O của Gelu, không quantize nội bộ cubic.
+- [ ] Nếu pass gate → compile/link → `qnn-net-run` (QNN HTP có native GELU, nên link an toàn).
+- [ ] Nếu near-pass nhưng residual (~5000) còn giới hạn → thêm SmoothQuant LN (đã có script) hoặc per-channel activation native.
+
+### Phase P1 - Áp fix theo kết quả P0 (SmoothQuant nhánh secondary)
+
+- [x] **P1-A SmoothQuant / equalization — equalize step DONE (Mac).** CHỌN nhánh này (Path A) sau P0.
+  - Script mới: `deployment/scripts/qnn/smoothquant_equalize.py` (auto-discover LN→proj, fold output-invariant, verify).
+  - Chạy trên baseline `exported_model` (52.28), all 12 layers, 24 sites, 0 skipped.
+  - **Kết quả: LN-output act abs-max `121.2 → 6.4` (18.9× giảm); invariance cosine mean/min = `1.000000`.** FP32 bất biến tuyệt đối.
+  - Output: `artifacts/deployment/exports/exported_model_smoothquant/vision_onnx/{vision_encoder.onnx,.data,smoothquant_summary.json}`.
+  - **Caveat:** chỉ smooth LN-output/proj-input; residual-stream `Add` (~5224, channels 523/415/7/528) chưa chạm vì feed cả LN lẫn residual add kế. AI Hub vẫn quantize residual per-tensor → cần đo để biết đủ chưa.
+- [ ] **P1-A tiếp: quantize equalized model qua AI Hub + compare (user chạy, cloud).**
+  - `submit_qaihub_quantize_compile.py --quantize-only` trên `exported_model_smoothquant/vision_onnx`, calib `d7jzjy1m2` (raw images dùng lại được).
+  - `compare_onnx_with_pytorch.py` với `--model-dir exported_model` (gốc) vì equalized ≡ gốc.
+  - Gate: QDQ `cosine_l2_mean >= 0.95`, `min >= 0.90`. Baseline tham chiếu trước SmoothQuant: `jpe2lnmvp` = `0.3267`.
+- [ ] **P1-A escalation nếu residual giới hạn:** per-channel activation trên x86 native `qairt-quantizer` (server x86 đã có) cho residual-stream tensors; hoặc global residual reparameterization.
 - [ ] **P1-B AIMET CLE + bias correction (+ AdaRound) (nếu P0.3 cho AIMET chạy được trên server).**
   - CLE để cân bằng range cross-layer, bias correction để bù lệch, AdaRound nếu cần weight rounding tốt hơn.
   - Đây là công cụ nhắm trực tiếp vào failure mode; ưu tiên cao nếu môi trường cho phép.

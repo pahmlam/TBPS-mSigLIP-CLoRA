@@ -56,6 +56,31 @@ def _consumers_by_input(graph: onnx.GraphProto) -> dict[str, list[onnx.NodeProto
     return consumers
 
 
+def _act_matmul_input_dq_outputs(
+    graph: onnx.GraphProto,
+    qdq_pairs: dict[str, tuple[onnx.NodeProto, onnx.NodeProto, str]],
+    initializer_names: set[str],
+) -> set[str]:
+    """DQ-output tensors that are activation inputs to an activation×activation MatMul.
+
+    These are exactly the attention matmuls (Q@K^T, probs@V) whose 16-bit
+    activation form is rejected on HTP v68 (needs v73+). Projection matmuls
+    (activation×weight) are excluded so their A16 encodings stay intact.
+    """
+    is_activation = {
+        dq_out: (float_tensor not in initializer_names)
+        for dq_out, (_q, _dq, float_tensor) in qdq_pairs.items()
+    }
+    selected: set[str] = set()
+    for node in graph.node:
+        if node.op_type != "MatMul" or len(node.input) < 2:
+            continue
+        inputs = list(node.input)
+        if all(name in is_activation and is_activation[name] for name in inputs):
+            selected.update(inputs)
+    return selected
+
+
 def _csv(value: str) -> set[str]:
     return {item.strip() for item in value.split(",") if item.strip()}
 
@@ -166,6 +191,15 @@ def parse_args() -> argparse.Namespace:
         help="Optional comma-separated consumer op types for the DQ output.",
     )
     parser.add_argument(
+        "--act-matmul-inputs",
+        action="store_true",
+        help=(
+            "Only retarget activation QDQ feeding activation×activation MatMuls "
+            "(attention Q@K^T / probs@V). Use to drop attention to int8 for HTP "
+            "v68 while keeping projections/MLP at their current dtype."
+        ),
+    )
+    parser.add_argument(
         "--source-kind",
         choices=("all", "activation", "weight"),
         default="all",
@@ -198,10 +232,17 @@ def main() -> None:
     matcher = re.compile(args.match)
     target_dtype = _target_dtype(args.target_dtype)
 
+    qdq_pairs = _find_qdq_pairs(graph)
+    act_matmul_set = (
+        _act_matmul_input_dq_outputs(graph, qdq_pairs, initializer_names)
+        if args.act_matmul_inputs
+        else None
+    )
+
     changed_rows: list[dict[str, object]] = []
-    for dq_output, (q_node, dq_node, float_tensor) in sorted(
-        _find_qdq_pairs(graph).items()
-    ):
+    for dq_output, (q_node, dq_node, float_tensor) in sorted(qdq_pairs.items()):
+        if act_matmul_set is not None and dq_output not in act_matmul_set:
+            continue
         haystack = "\n".join([q_node.name, dq_node.name, float_tensor, dq_output])
         if not matcher.search(haystack):
             continue

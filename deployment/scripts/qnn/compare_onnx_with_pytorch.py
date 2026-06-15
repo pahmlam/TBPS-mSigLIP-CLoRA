@@ -117,6 +117,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input-list", default="input_list.txt")
     parser.add_argument("--output-name", help="Optional ONNX output tensor name.")
     parser.add_argument("--precision", choices=["fp32", "fp16"], default="fp32")
+    parser.add_argument(
+        "--rotated",
+        action="store_true",
+        help="Load --model-dir's PyTorch reference via load_rotated_model "
+        "(LayerNorm->RMSNorm swap before loading folded weights). Required when "
+        "the model-dir is a rotated export; plain _load_pytorch_model gives ~0.11.",
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--expected-dim", type=int, default=768)
@@ -165,7 +172,12 @@ def main() -> None:
 
     raw_paths = _parse_input_list(input_dir, args.input_list)
     manifest_rows = _load_manifest(manifest_path)
-    model, _ = _load_pytorch_model(model_dir, args.precision, args.device)
+    if args.rotated:
+        from rotate_vision_encoder import load_rotated_model
+
+        model, _ = load_rotated_model(model_dir, args.device)
+    else:
+        model, _ = _load_pytorch_model(model_dir, args.precision, args.device)
 
     rows: list[dict] = []
     with torch.no_grad():
