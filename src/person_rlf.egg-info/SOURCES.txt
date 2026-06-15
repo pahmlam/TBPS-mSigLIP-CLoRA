@@ -54,3 +54,5 @@ src/person_rlf.egg-info/SOURCES.txt
 src/person_rlf.egg-info/dependency_links.txt
 src/person_rlf.egg-info/requires.txt
 src/person_rlf.egg-info/top_level.txt
+tests/test_nacir_clean_safe.py
+tests/test_noise_injection.py

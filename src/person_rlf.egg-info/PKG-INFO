@@ -8,10 +8,12 @@ Requires-Dist: adjusttext>=1.3.0
 Requires-Dist: bitsandbytes>=0.45.5
 Requires-Dist: datasets>=3.2.0
 Requires-Dist: easydict>=1.13
+Requires-Dist: fastapi>=0.136.0
 Requires-Dist: fire>=0.6.0
 Requires-Dist: ftfy>=6.2.3
 Requires-Dist: gdown>=5.2.0
 Requires-Dist: hydra-core>=1.3.2
+Requires-Dist: httpx>=0.28.0
 Requires-Dist: iprogress>=0.4
 Requires-Dist: ipykernel>=6.29.5
 Requires-Dist: ipython>=8.27.0
@@ -37,6 +39,7 @@ Requires-Dist: torch-tb-profiler>=0.4.3
 Requires-Dist: torchmetrics>=1.4.2
 Requires-Dist: torchvision>=0.19.1
 Requires-Dist: transformers>=4.44.2
+Requires-Dist: uvicorn[standard]>=0.46.0
 Requires-Dist: wandb>=0.18.5
 
 
@@ -397,7 +400,8 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 ├── docs/                              # Project documentation
 │   ├── ARCHITECTURE.md                # Full architecture with diagrams
 │   ├── EXPERIMENT_SUMMARY.md          # Canonical experiment record
-│   └── knowledge.md                   # Vietnamese knowledge base
+│   ├── knowledge.md                   # Vietnamese durable concept/definition base
+│   └── journal/                       # Dated training/model-optimization logs
 │
 ├── deployment/                        # Edge deployment & compression
 │   ├── scripts/
@@ -410,13 +414,25 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 │   ├── hardware_profiling/            # RB3 hardware tests with proxy models
 │   ├── docs/
 │   │   ├── deployment-plan.md         # Current deployment status and next steps
-│   │   ├── aihub-experiments.md       # Qualcomm AI Hub compile log
+│   │   ├── aihub-experiments.md       # Legacy redirect to deployment journal
+│   │   ├── journal/                   # Dated deployment logs and decisions
 │   │   ├── system.md                  # RB3 hardware specs
 │   │   └── benchmark-rp.md            # Proxy benchmark results
 │   └── config/qnn/                    # QNN/HTP runtime config JSON files
 │
 └── ref/                               # Reference implementations (RDE, etc.)
 ```
+
+---
+
+## Documentation Convention
+
+- `docs/knowledge.md` stores durable Vietnamese knowledge only: concepts, definitions, mechanisms, and stable trade-offs.
+- `docs/journal/[train]-YYYY-MM-DD.md` stores dated training/model-optimization results: commands, logs, metrics, temporary conclusions, and next experiment decisions.
+- `deployment/docs/journal/[deploy]-YYYY-MM-DD.md` stores dated deployment results: AI Hub jobs, QNN/QDQ fidelity, RB3 runtime, artifacts, and next deploy steps.
+- Reviewer responses and paper wording belong under `knowledge/response.md` or `knowledge/paper/`, not `docs/knowledge.md`.
+- Before adding documentation, classify the content first and confirm the target file unless the user explicitly requested that documentation update.
+- Use the templates in `docs/knowledge.md`, `docs/journal/README.md`, and `deployment/docs/journal/README.md` for new entries.
 
 ---
 
@@ -517,7 +533,7 @@ Current progress:
 | Production calibration | Pending | Replace dummy calibration with real VN3K image/text calibration data |
 | Quantized accuracy check | Pending | Target: R@1 within acceptable drop from FP32 baseline |
 
-Key deployment finding: QCS6490 HTP rejects floating-point I/O. The working path is INT8 I/O and INT8 quantization for HTP context binaries. See [`deployment/docs/deployment-plan.md`](deployment/docs/deployment-plan.md) and [`deployment/docs/aihub-experiments.md`](deployment/docs/aihub-experiments.md) for the detailed status and compile log.
+Key deployment finding: QCS6490 HTP rejects floating-point I/O. The working path is INT8 I/O and INT8 quantization for HTP context binaries. See [`deployment/docs/deployment-plan.md`](deployment/docs/deployment-plan.md) for current status and [`deployment/docs/journal/`](deployment/docs/journal/) for dated AI Hub/QNN job logs.
 
 Quick deployment commands:
 
