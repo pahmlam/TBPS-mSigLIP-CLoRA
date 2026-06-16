@@ -334,7 +334,7 @@ Per step, the student is run twice — clean (hooks disabled) and fake-quant —
 
 $$ \mathcal{L} = \underbrace{\big(1 - \cos(z_s^{q}, z_t)\big) + \lambda\,\lVert z_s^{q} - z_t\rVert^2}_{\text{fake-quant path}} + \underbrace{w_c\big(1 - \cos(z_s^{c}, z_t)\big) + w_m\lVert z_s^{c} - z_t\rVert^2}_{\text{clean consistency}}, $$
 
-where $z_t = teacher.encode_{image}(x)$, $z_s^{q}$/$z_s^{c}$ are the fake-quant / clean student embeddings, $\lambda = w_m = 0.05$, $w_c = 1.0$. The clean term prevents the student from drifting away from the teacher when quant noise is off.
+where $z_t = teacher.encode_{image}(x)$, $z_s^{q}$/ $z_s^{c}$ are the fake-quant / clean student embeddings, $\lambda = w_m = 0.05$, $w_c = 1.0$. The clean term prevents the student from drifting away from the teacher when quant noise is off.
 
 ### 7.2 Straight-through fake-quant
 
