@@ -70,7 +70,11 @@ class RawVisionDataset(Dataset):
 
 
 def _fake_quant_symmetric(
-    x: torch.Tensor, bits: int, eps: float, per_tensor: bool = True
+    x: torch.Tensor,
+    bits: int,
+    eps: float,
+    per_tensor: bool = True,
+    max_abs: torch.Tensor | None = None,
 ) -> torch.Tensor:
     if bits <= 0:
         return x
@@ -78,16 +82,17 @@ def _fake_quant_symmetric(
     if qmax <= 0:
         return x
 
-    if per_tensor or x.ndim <= 1:
-        # One scale for the WHOLE activation tensor. This matches AI Hub's
-        # per-tensor W8A8 (the deployed scheme). The legacy per-sample mode below
-        # gives each image its own scale -> easier for the student to satisfy, so
-        # the simulated cosine looks great (~0.975) but does not transfer to the
-        # real per-tensor quantize (only ~0.92). Per-tensor closes that gap.
-        max_abs = x.detach().abs().max()
-    else:
-        reduce_dims = tuple(range(1, x.ndim))
-        max_abs = x.detach().abs().amax(dim=reduce_dims, keepdim=True)
+    if max_abs is None:
+        if per_tensor or x.ndim <= 1:
+            # One scale for the WHOLE activation tensor. This matches AI Hub's
+            # per-tensor W8A8 (the deployed scheme). The legacy per-sample mode
+            # below gives each image its own scale -> easier for the student, so
+            # the simulated cosine looks great (~0.975) but does not transfer to
+            # the real per-tensor quantize (only ~0.92). Per-tensor closes that.
+            max_abs = x.detach().abs().max()
+        else:
+            reduce_dims = tuple(range(1, x.ndim))
+            max_abs = x.detach().abs().amax(dim=reduce_dims, keepdim=True)
     scale = torch.clamp(max_abs / qmax, min=eps)
     quantized = torch.clamp(torch.round(x / scale), -qmax, qmax) * scale
     return x + (quantized - x).detach()
@@ -104,6 +109,8 @@ class FakeQuantController:
         bits: int,
         eps: float,
         per_tensor: bool = True,
+        observer: str = "ema",
+        ema_momentum: float = 0.99,
     ) -> None:
         self.model = model
         self.start_layer = start_layer
@@ -111,6 +118,10 @@ class FakeQuantController:
         self.bits = bits
         self.eps = eps
         self.per_tensor = per_tensor
+        self.observer = observer
+        self.ema_momentum = ema_momentum
+        # EMA running per-tensor max_abs per hooked tensor (calibrate-once style).
+        self.running_max: dict[str, torch.Tensor] = {}
         self.enabled = True
         self.handles: list[torch.utils.hooks.RemovableHandle] = []
         self.hooked_modules: list[str] = []
@@ -151,9 +162,23 @@ class FakeQuantController:
         finally:
             self.enabled = old_value
 
-    def _quantize(self, value: torch.Tensor) -> torch.Tensor:
+    def _quantize(self, value: torch.Tensor, key: str) -> torch.Tensor:
         if not self.enabled or not torch.is_floating_point(value):
             return value
+        if self.observer == "ema":
+            # Per-tensor scale from an EMA of the running max_abs (one fixed-ish
+            # scale per tensor, like AI Hub calibrating once on the calib set).
+            # This is the deploy-faithful observer: it closes the sim<->real gap
+            # that a per-batch dynamic scale leaves open.
+            cur = value.detach().abs().max()
+            prev = self.running_max.get(key)
+            running = cur if prev is None else (
+                self.ema_momentum * prev + (1.0 - self.ema_momentum) * cur
+            )
+            self.running_max[key] = running.detach()
+            return _fake_quant_symmetric(
+                value, bits=self.bits, eps=self.eps, max_abs=running
+            )
         return _fake_quant_symmetric(
             value, bits=self.bits, eps=self.eps, per_tensor=self.per_tensor
         )
@@ -163,8 +188,8 @@ class FakeQuantController:
             if output_is_tuple:
                 if not isinstance(output, tuple) or not output:
                     return output
-                return (self._quantize(output[0]),) + output[1:]
-            return self._quantize(output)
+                return (self._quantize(output[0], name),) + output[1:]
+            return self._quantize(output, name)
 
         self.handles.append(module.register_forward_hook(hook))
         self.hooked_modules.append(name)
@@ -367,6 +392,17 @@ def parse_args() -> argparse.Namespace:
             "behavior (one scale per image): optimistic sim cosine, weak transfer."
         ),
     )
+    parser.add_argument(
+        "--fake-quant-observer",
+        choices=["ema", "dynamic"],
+        default="ema",
+        help=(
+            "ema (default): per-tensor scale from an EMA running max (fixed-ish, "
+            "like AI Hub calibrate-once) -> best sim<->real transfer. dynamic: "
+            "per-batch max each forward (granularity from --fake-quant-granularity)."
+        ),
+    )
+    parser.add_argument("--ema-momentum", type=float, default=0.99)
     parser.add_argument("--start-layer", type=int, default=4)
     parser.add_argument("--end-layer", type=int, default=11)
     parser.add_argument("--no-train-visual-projection", action="store_true")
@@ -409,6 +445,8 @@ def main() -> None:
         bits=args.fake_quant_bits,
         eps=args.fake_quant_eps,
         per_tensor=args.fake_quant_granularity == "per_tensor",
+        observer=args.fake_quant_observer,
+        ema_momentum=args.ema_momentum,
     )
     fake_quant.install()
     print("Fake-quant hooks:")
@@ -549,6 +587,8 @@ def main() -> None:
         "clean_mse_weight": args.clean_mse_weight,
         "fake_quant_bits": args.fake_quant_bits,
         "fake_quant_granularity": args.fake_quant_granularity,
+        "fake_quant_observer": args.fake_quant_observer,
+        "ema_momentum": args.ema_momentum,
         "layer_range": [args.start_layer, args.end_layer],
         "train_visual_projection": not args.no_train_visual_projection,
         "trainable_parameters": trainable_count,
