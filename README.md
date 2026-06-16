@@ -3,13 +3,13 @@
 
 # A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search
 
-This repository contains the official implementation for the paper: **"A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search"**, along with ongoing work on noise-robust learning and edge deployment on the **Qualcomm RB3 Gen2**.
+This repository contains the official implementation for the paper: **"A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search"**, along with ongoing work on parameter-efficient accuracy extensions and edge deployment on the **Qualcomm RB3 Gen2**.
 
 ##  Abstract
 
 Multilingual Text-Based Person Search (TBPS) remains challenging in low-resource settings due to ambiguous cross-modal alignment. Although recent methods such as TBPS-mSigLIP employ noise-robust contrastive learning, they suffer from **limited gradient discrimination** between easy and hard negatives.
 
-To address this, we propose an efficient optimization framework that integrates **Cross-modal Circle Loss** with **Low-Rank Adaptation (LoRA)**. Circle Loss enhances fine-grained discrimination via adaptive pair-wise re-weighting, while LoRA stabilizes training by constraining optimization to a low-rank subspace. We further introduce a **Curriculum Hard-Mining Schedule** to balance alignment stability and discrimination. Experiments across three typologically diverse languages — Vietnamese, English, and Chinese — demonstrate consistent improvements, establishing a new state-of-the-art **Rank@1 accuracy of 52.28%** on VnPersonSearch and **59.35%** on PRW-TPS-CN, with only **1.57% trainable parameters**. Additionally, we are exploring noise-robust learning strategies and deploying the optimized model on edge hardware (Qualcomm RB3 Gen2) for real-time inference.
+To address this, we propose an efficient optimization framework that integrates **Cross-modal Circle Loss** with **Low-Rank Adaptation (LoRA)**. Circle Loss enhances fine-grained discrimination via adaptive pair-wise re-weighting, while LoRA stabilizes training by constraining optimization to a low-rank subspace. We further introduce a **Curriculum Hard-Mining Schedule** to balance alignment stability and discrimination. Experiments across three typologically diverse languages — Vietnamese, English, and Chinese — demonstrate consistent improvements, establishing a new state-of-the-art **Rank@1 accuracy of 52.28%** on VnPersonSearch and **59.35%** on PRW-TPS-CN, with only **1.57% trainable parameters**. Additionally, we explore parameter-efficient accuracy extensions (local part-token alignment and attention+FFN LoRA) and deploy the optimized model on edge hardware (Qualcomm RB3 Gen2) for real-time INT8 inference.
 
 ---
 
@@ -17,10 +17,9 @@ To address this, we propose an efficient optimization framework that integrates 
 
 | Track | Current state | Next step |
 |---|---|---|
-| **Main training result** | LoRA + Curriculum Circle Loss reaches **52.28% R@1** on VN3K and **59.35% R@1** on PRW-TPS-CN | Preserve as the reported baseline |
-| **MNEB-HN** | Implemented as an optional modular noise-robust extension; `run_mneb_hn.sh` is available | Validate clean no-op on VN3K, then test natural noise on CUHK-PEDES |
-| **Noisy correspondence** | RDE-style caption-shuffle noise is integrated via `dataset.noisy_rate` and `run_noise_experiments.sh` | Use for robustness experiments, mainly FP/noisy-positive validation |
-| **Deployment** | LoRA merge, FP16/FP32 export, ONNX export, and **vision INT8 HTP compile** are working | Compile text encoder, benchmark on RB3, then repeat with real calibration data |
+| **Main training result (paper)** | LoRA + Curriculum Circle Loss reaches **52.28% R@1** on VN3K and **59.35% R@1** on PRW-TPS-CN | Reported headline; deployment target |
+| **Accuracy extension (ablation)** | Part-Token Alignment + attention/FFN LoRA r32 reaches **53.00% R@1** on VN3K (single seed) | Complete CUHK-PEDES and PRW-TPS-CN runs, then report as ablation |
+| **Deployment** | Vision encoder runs **INT8 (W8A8) on HTP v68** via GELU fusion + mean-preserving rotation + QAT; vision-only **T2I R@1 48.20** (gate ≥ 48 passed) | Quantize text encoder, then end-to-end board retrieval |
 
 ---
 
@@ -94,113 +93,33 @@ The curriculum schedule for $\alpha_5(t)$ prevents early disruption of global al
 
 ---
 
-## Experimental Extension: MNEB-HN
+## Accuracy Extension: Part-Token Alignment + Attention/FFN LoRA
 
-> Status: **experimental / results pending**. This section documents the next noise-robust framework and does not modify or reinterpret the reported Circle Loss results above.
+> Status: **experimental / post-paper ablation**. This extension explores additional Rank@1 gains on top of the reported Circle Loss results. It is reported as an ablation and is **not** the deployed model — the edge pipeline targets the published 52.28% configuration because rotation/quantization artifacts are model-specific.
 
 ### Motivation
 
-Cross-modal Circle Loss is effective because it keeps strong pressure on hard negatives. A noise-robust extension must therefore be conservative: if a pair may simply be a true hard negative, the framework should leave Circle Loss alone. The current design treats uncertain noise evidence as a no-op and applies FN/FP correction only through auxiliary losses.
+Two orthogonal levers are explored beyond the published attention-only LoRA + Curriculum Circle setup, both keeping Circle Loss and the curriculum schedule unchanged:
 
-The target noise regimes are:
+1. **Part-Token Alignment** — a local supervision branch that aligns image part regions with text tokens, sharpening fine-grained discrimination (especially image-to-text).
+2. **Attention + FFN LoRA (rank 32)** — extending LoRA from the attention projections to the FFN (`fc1`, `fc2`) projections, increasing adapter capacity while staying parameter-efficient.
 
-| Noise type | Label says | True relation | MNEB-HN response |
-|---|---|---|---|
-| False Negative (FN) | Negative | Same person / semantically matching | Add an FNM-style auxiliary correction for high-confidence FN candidates |
-| False Positive (FP) | Positive | Different person / wrong caption | Add an RDE-style auxiliary loss from global/local clean-noisy consensus |
-| Hard Negative (HN) | Negative | Different but visually/textually similar | Keep the original Circle Loss responsible for separation |
+### Results (VN3K, single seed)
 
-### Framework Design
+| Method | t2i R@1 | t2i R@5 | t2i R@10 | i2t R@1 | Notes |
+|---|---:|---:|---:|---:|---|
+| LoRA + Curriculum Circle (paper) | 52.28 | 79.55 | 88.03 | — | Reported headline (seed 2400; mean 51.52 ± 0.68) |
+| + Attention/FFN LoRA r32 | 52.83 | 79.03 | 87.58 | 52.30 | Larger adapter capacity |
+| **+ Part-Token Alignment** | **53.00** | 78.60 | 87.30 | **53.25** | Best R@1; clearest gain on i2t |
 
-MNEB-HN stands for **Multilingual Noise Evidence Bank for Hard-Negative TBPS**. It keeps the main objective unchanged:
+The Part-Align result is single-seed and trades a small drop in t2i R@5/R@10 for a clear i2t gain; it is reported as "best R@1," not best across all metrics. CUHK-PEDES (English) and PRW-TPS-CN (Chinese) runs are in progress to complete the multilingual ablation.
 
-$$\mathcal{L}_{\text{main}} = \mathcal{L}_{N\text{-}ITC/MVS} + \alpha_5(t)\mathcal{L}_{\text{circle}} + 0.1\mathcal{L}_{C\text{-}ITC} + 0.4\mathcal{L}_{SS}$$
-
-When enabled, MNEB-HN adds a cross-epoch evidence memory bank and optional auxiliary terms:
-
-$$\mathcal{L}_{\text{MNEB-HN}} = \mathcal{L}_{\text{main}} + \lambda_{\text{FN}}\mathcal{L}_{\text{fnm-aux}} + \lambda_{\text{FP}}\mathcal{L}_{\text{rde-aux}} $$
-
-The key constraint is that MNEB-HN **does not mutate Circle Loss weights**. It never directly suppresses Circle's $\alpha_n$ or $\alpha_p$. Instead:
-
-- `EvidenceMemoryBank` stores global/local embeddings, per-sample loss EMA, clean probabilities, seen counts, FIFO sample IDs, FN similarity statistics, and global/local consensus labels.
-- `FNMStyleAuxLoss` acts only when high-confidence FN candidates are found; otherwise it returns a grad-safe zero.
-- `RDEStyleAuxLoss` acts only for confident clean/noisy consensus; uncertain samples no-op.
-- Local evidence reuses the existing part-token path and adds no new trainable projection heads in v1.
-
-### Default Safety
-
-MNEB-HN is disabled by default in `configs/loss/cir_msiglip.yaml`:
-
-```yaml
-MNEB: false
-
-mneb_config:
-  evidence_bank:
-    enabled: true
-  fnm_aux:
-    enabled: false
-  rde_aux:
-    enabled: false
-```
-
-Behavior guarantees:
-
-| Setting | Training effect |
-|---|---|
-| `MNEB=false` | Identical baseline path: no evidence bank, no hidden-state request, no auxiliary losses |
-| `MNEB=true`, aux disabled | Evidence/diagnostics only; total loss remains the baseline objective |
-| `fnm_aux.enabled=true` | FN correction enters only through `fnm_aux_loss` |
-| `rde_aux.enabled=true` | FP correction enters only through `rde_aux_loss` |
-
-### How to Run MNEB-HN
-
-Run the dedicated script:
+### How to Run
 
 ```bash
-./run_mneb_hn.sh
+bash run_part_align_lora_attn_ffn_r32.sh \
+  dataset.batch_size=64 dataset.test_batch_size=128 trainer.accumulate_grad_batches=2
 ```
-
-If the script is not executable on your machine:
-
-```bash
-bash run_mneb_hn.sh
-```
-
-For evidence-only diagnostics without auxiliary training effects:
-
-```bash
-./run_mneb_hn.sh loss.mneb_config.fnm_aux.enabled=false loss.mneb_config.rde_aux.enabled=false
-```
-
-Key diagnostics to monitor:
-
-| Metric | Expected behavior |
-|---|---|
-| `mneb_seen_frac` | Increases as the bank observes training samples |
-| `mneb_local_seen_frac` | Tracks local evidence coverage when part-token hidden states are available |
-| `mneb_fn_stats_ready` | 1 once in-batch positive/negative similarity statistics are initialized |
-| `mneb_consensus_clean_frac` | Confident clean fraction from global/local agreement |
-| `mneb_consensus_noisy_frac` | Confident noisy fraction from global/local agreement |
-| `mneb_consensus_uncertain_frac` | Should remain high when evidence is weak; uncertainty is a safe no-op |
-| `fnm_aux_loss` | Non-zero only when high-confidence FN candidates pass the gates |
-| `rde_aux_loss` | Non-zero only when consensus labels provide confident anchors |
-
-### Validation Plan
-
-Clean VN3K is treated as the no-regression benchmark. The expected behavior is that noise modules mostly no-op and true hard negatives remain under Circle Loss.
-
-| Method | Seed | R@1 | R@5 | R@10 | mAP | mINP | Notes |
-|---|---:|---:|---:|---:|---:|---:|---|
-| LoRA + Curriculum Circle | 2400 | 52.28 | 79.55 | 88.03 | 57.32 | 50.57 | Existing result |
-| LoRA + Curriculum Circle + MNEB-HN | TBD | TBD | TBD | TBD | TBD | TBD | Pending |
-
-CUHK-PEDES is the main natural-noise validation target:
-
-| Dataset | Baseline target | MNEB-HN target | Notes |
-|---|---:|---:|---|
-| VN3K | Preserve 52.28 R@1 seed-2400 region | No clean regression | Clean multilingual benchmark |
-| CUHK-PEDES | Improve beyond current full-CUHK 71.85 R@1 | Close English SOTA gap | Natural FN/FP noise benchmark |
-| Synthetic FP/FN stress tests | Detector precision and no-op rate | Hard-negative preservation | Caption shuffle, PID split, and mixed noise |
 
 ---
 
@@ -254,7 +173,7 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 │   ├── train.py                       # Training entry point implementation
 │   ├── evaluate.py                    # Evaluation entry point implementation
 │   ├── lightning_models.py            # LitTBPS (PyTorch Lightning module)
-│   ├── lightning_data.py              # TBPSDataModule, noisy correspondence injection
+│   ├── lightning_data.py              # TBPSDataModule (data loading, augmentation)
 │   ├── model/                         # TBPS + mSigLIP + losses
 │   ├── data/                          # Dataset classes & augmentation
 │   ├── solver/                        # Optimizer and LR scheduler
@@ -263,16 +182,15 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 ├── test.py                            # Backward-compatible wrapper
 ├── notebooks/workspace.ipynb          # Notebook lab for embedding/loss validation
 ├── run_cir_loss.sh                    # LoRA + Curriculum Circle Loss training
-├── run_mneb_hn.sh                     # MNEB-HN noise-robust training script
-├── run_noise_experiments.sh           # RDE-style noisy-correspondence sweep
+├── run_part_align_lora_attn_ffn_r32.sh # Part-Token Alignment + Attn/FFN LoRA (ablation)
 ├── run_full_finetune.sh               # Full fine-tuning baseline
 ├── configs/                           # Hydra configuration
 │   ├── cir_msiglip.yaml               # Main config
 │   ├── paths/default.yaml             # Centralized data/artifact paths
-│   ├── loss/cir_msiglip.yaml          # Loss flags, Circle, MNEB-HN config
+│   ├── loss/cir_msiglip.yaml          # Loss flags, Circle, Part-Align config
 │   └── ...                            # backbone, trainer, optimizer, dataset, tokenizer, logger, aug
 ├── artifacts/                         # Ignored generated outputs
-│   ├── training/                      # Hydra runs, multirun, noisy index files
+│   ├── training/                      # Hydra runs, multirun outputs
 │   ├── models/                        # Local checkpoints/pretrained model files
 │   └── deployment/                    # Exports, QNN inputs/runs/logs/runtime state
 ├── scripts/                           # Helper scripts for checkpoints/data preparation
@@ -353,29 +271,14 @@ This runs the proposed method: LoRA + mSigLIP + Auxiliary Circle Loss with a war
 ./run_cir_loss.sh
 ```
 
-### Train MNEB-HN (Experimental)
+### Train Accuracy Extension (Part-Token Alignment + Attn/FFN LoRA)
 
-This runs the modular noise-robust extension on top of the current LoRA + Curriculum Circle baseline. The script enables the evidence bank, FNM-style auxiliary loss, and RDE-style auxiliary loss while leaving Circle Loss unchanged.
-
-```bash
-./run_mneb_hn.sh
-```
-
-For evidence-only diagnostics without auxiliary loss effects:
+This runs the post-paper accuracy ablation: local part-token alignment combined with LoRA extended to the FFN projections at rank 32. It reaches 53.00% R@1 on VN3K (single seed) and is reported as an ablation, not as the deployed model.
 
 ```bash
-./run_mneb_hn.sh loss.mneb_config.fnm_aux.enabled=false loss.mneb_config.rde_aux.enabled=false
+bash run_part_align_lora_attn_ffn_r32.sh \
+  dataset.batch_size=64 dataset.test_batch_size=128 trainer.accumulate_grad_batches=2
 ```
-
-### Run Noisy-Correspondence Sweeps
-
-This runs RDE-style caption-shuffle noisy correspondence over `noisy_rate=0.1..0.8` using the current Circle Loss route.
-
-```bash
-./run_noise_experiments.sh
-```
-
-Noise files are saved under `artifacts/training/noiseindex/` so repeated runs reuse the same index mapping.
 
 ### Full Fine-Tuning Baseline
 
@@ -396,32 +299,66 @@ uv run trainer.py -cn m_siglip img_size_str="'(256,256)'" dataset=vn3k loss.soft
 
 Edge deployment targets the **Qualcomm RB3 Gen2 / QCS6490** with local image/text embedding inference.
 
+> **Canonical deployment document:** [`deployment/docs/w8a8_qat_rotated.md`](deployment/docs/w8a8_qat_rotated.md) — the full method for the best result (mathematical analysis, flow diagram, per-stage commands, and acceptance gates). The summary below is an overview; that document is the source of truth.
+
 Current progress:
 
 | Stage | Status | Notes |
 |---|---|---|
 | Checkpoint analysis | Done | `deployment/scripts/analyze_checkpoint.py` |
 | LoRA merge + FP16/FP32 export | Done | `deployment/scripts/lora_fp16/export.py` |
-| ONNX export | Done | `deployment/scripts/onnx/export.py`, external-weight directories for vision/text |
-| Local ONNX FP16 conversion | Done | `deployment/scripts/onnx/to_fp16.py` |
-| AI Hub HTP compile | Vision done | INT8 dummy-calibration compile succeeded for vision encoder, job `jgkr7qwn5` |
-| Text encoder compile | Pending | Needs same INT8 pipeline |
-| On-device RB3 benchmark | Pending | Download compiled `.bin`, run `qnn-net-run` with QAIRT/QNN |
-| Production calibration | Pending | Replace dummy calibration with real VN3K image/text calibration data |
-| Quantized accuracy check | Pending | Target: R@1 within acceptable drop from FP32 baseline |
+| ONNX export (opset-20, fused GELU) | Done | Removes decomposed cubic GELU outliers (`Pow=0`) |
+| Mean-preserving rotation | Done | QuaRot/SliceGPT-style; residual concentration 252x → 5.3x, output-invariant |
+| Vision W8A8 quantize + HTP link | Done | All-INT8 links on HTP **v68** → `vision_encoder.bin`, 89.7 MB |
+| Quantization-aware finetune (QAT v3) | Done | Per-tensor + EMA observer; recovers vision-only **T2I R@1 to 48.20** (gate ≥ 48) |
+| On-device RB3 run (vision) | Done | `qnn-net-run` on HTP v68: cosine 0.898, **34 ms/img, 22.5 FPS**, init 54.7 ms |
+| Text encoder quantization | Pending | Text = 75% of params (250k-vocab embedding); needed for the 4GB RAM budget |
+| End-to-end board retrieval | Pending | Both encoders INT8 on board |
 
-Key deployment finding: QCS6490 HTP rejects floating-point I/O. The working path is INT8 I/O and INT8 quantization for HTP context binaries. See [`deployment/docs/deployment-plan.md`](deployment/docs/deployment-plan.md) for current status and [`deployment/docs/journal/`](deployment/docs/journal/) for dated AI Hub/QNN job logs.
+Key deployment finding: HTP **v68** blocks 16-bit activations broadly (attention act×act and LayerNorm require v73+), so the only deployable path is all-INT8 (W8A8). ViT activation outliers ("massive activations") make naive per-tensor W8A8 collapse retrieval; the working recipe is **opset-20 GELU fusion + mean-preserving rotation (to spread residual outliers) + W8A8 + a short quantization-aware finetune**, which lifts vision-only T2I R@1 from 45.42 to 48.20. See [`deployment/docs/w8a8_qat_rotated.md`](deployment/docs/w8a8_qat_rotated.md) for the full method and [`deployment/docs/journal/`](deployment/docs/journal/) for dated AI Hub/QNN job logs.
 
-Quick deployment commands:
+The reproducible vision pipeline is: **(1)** merge LoRA → **(2)** mean-preserving rotation → **(3)** quantization-aware finetune → **(4)** export ONNX (opset-20) → **(5)** W8A8 quantize + HTP link → **(6)** board run. See [`deployment/docs/w8a8_qat_rotated.md`](deployment/docs/w8a8_qat_rotated.md) for the math, gates, and per-stage details.
 
 ```bash
+# (1) Merge LoRA adapters into the base weights
 python deployment/scripts/lora_fp16/export.py \
     --ckpt artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt \
-    --output-dir artifacts/deployment/exports/msiglip_lora
+    --output-dir artifacts/deployment/exports/exported_model
 
-python deployment/scripts/onnx/export.py \
-    --model-dir artifacts/deployment/exports/msiglip_lora \
-    --precision fp32
+# (2) Mean-preserving rotation (spreads residual outliers; FP32 output-invariant)
+python deployment/scripts/qnn/rotate_vision_encoder.py \
+    --model-dir artifacts/deployment/exports/exported_model \
+    --output-dir artifacts/deployment/exports/exported_model_rotated \
+    --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --seed 2400 --skip-r2
+
+# (3) Quantization-aware finetune (per-tensor + EMA observer) -> the gate-passing step
+python deployment/scripts/qnn/train_vision_quant_robust.py \
+    --model-dir artifacts/deployment/exports/exported_model_rotated \
+    --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_4302 \
+    --val-input-dir artifacts/deployment/qnn_inputs/vn3k_test_100 \
+    --output-dir artifacts/deployment/exports/exported_model_rotated_qat_v3 \
+    --start-layer 0 --end-layer 11 \
+    --fake-quant-granularity per_tensor --fake-quant-observer ema --ema-momentum 0.99 \
+    --batch-size 24 --epochs 8 --lr 1e-5
+
+# (4) Export the rotated/QAT vision encoder to ONNX (opset 20, fused Gelu/LayerNorm)
+python deployment/scripts/qnn/export_rotated_vision_onnx.py \
+    --model-dir artifacts/deployment/exports/exported_model_rotated_qat_v3 --opset 20
+
+# (5) AI Hub W8A8 quantize + compile + link to a QNN context binary (HTP v68)
+python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+    --model artifacts/deployment/exports/exported_model_rotated_qat_v3/vision_onnx \
+    --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 --wait \
+    --download artifacts/deployment/runtime/rotated_w8a8_qat_v3/vision_encoder.bin
+
+# (6) Run on RB3 (HTP v68) and evaluate the retrieval gate (see deployment doc §10)
+qnn-net-run \
+    --backend "$QNN_LIB/libQnnHtp.so" \
+    --retrieve_context artifacts/deployment/runtime/rotated_w8a8_qat_v3/vision_encoder.bin \
+    --config_file deployment/config/qnn/htp_config_245.json \
+    --input_list artifacts/deployment/qnn_inputs/vn3k_test_10/input_list.txt \
+    --output_dir artifacts/deployment/qnn_runs/rotated_w8a8_qat_v3 \
+    --profiling_level basic --perf_profile high_performance
 ```
 
 For Qualcomm AI Hub compile commands and RB3 execution details, use [`deployment/README.md`](deployment/README.md).
