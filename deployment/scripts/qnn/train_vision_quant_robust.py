@@ -112,11 +112,13 @@ class FakeQuantController:
         observer: str = "ema",
         ema_momentum: float = 0.99,
         quant_head: bool = False,
+        quant_linears: bool = False,
     ) -> None:
         self.model = model
         self.start_layer = start_layer
         self.end_layer = end_layer
         self.quant_head = quant_head
+        self.quant_linears = quant_linears
         self.bits = bits
         self.eps = eps
         self.per_tensor = per_tensor
@@ -148,6 +150,19 @@ class FakeQuantController:
                 layer,
                 output_is_tuple=True,
             )
+            if self.quant_linears:
+                # AI Hub quantizes EVERY activation; the two hooks above only cover
+                # GELU out + residual. Hook all linear outputs so QAT robustifies
+                # the q/k/v/out_proj and fc1/fc2 activations too (faithful coverage).
+                for sub in (
+                    "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj",
+                    "self_attn.out_proj", "mlp.fc1", "mlp.fc2",
+                ):
+                    self._hook_module(
+                        f"backbone.vision_model.encoder.layers.{index}.{sub}",
+                        layer.get_submodule(sub),
+                        output_is_tuple=False,
+                    )
 
         if self.quant_head:
             # The pooling head produces the final embedding; its INT8 error is not
@@ -168,6 +183,13 @@ class FakeQuantController:
             self._hook_module(
                 "backbone.vision_model.head", vm.head, output_is_tuple=False
             )
+            if self.quant_linears:
+                for sub in ("mlp.fc1", "mlp.fc2"):
+                    self._hook_module(
+                        f"backbone.vision_model.head.{sub}",
+                        vm.head.get_submodule(sub),
+                        output_is_tuple=False,
+                    )
 
     def close(self) -> None:
         for handle in self.handles:
@@ -441,6 +463,16 @@ def parse_args() -> argparse.Namespace:
             "whose INT8 error is not averaged out. Recommended to push R@1 higher."
         ),
     )
+    parser.add_argument(
+        "--quant-linears",
+        action="store_true",
+        help=(
+            "Fake-quant every nn.Linear output (q/k/v/out_proj, fc1, fc2, head "
+            "linears) in the selected layers, not just GELU + residual. Faithful "
+            "coverage of AI Hub's per-activation quantization — the lever to break "
+            "the per-tensor W8A8 plateau."
+        ),
+    )
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=2400)
     return parser.parse_args()
@@ -484,6 +516,7 @@ def main() -> None:
         observer=args.fake_quant_observer,
         ema_momentum=args.ema_momentum,
         quant_head=args.quant_head,
+        quant_linears=args.quant_linears,
     )
     fake_quant.install()
     print("Fake-quant hooks:")
@@ -627,6 +660,7 @@ def main() -> None:
         "fake_quant_observer": args.fake_quant_observer,
         "ema_momentum": args.ema_momentum,
         "quant_head": args.quant_head,
+        "quant_linears": args.quant_linears,
         "layer_range": [args.start_layer, args.end_layer],
         "train_visual_projection": not args.no_train_visual_projection,
         "trainable_parameters": trainable_count,
