@@ -111,10 +111,12 @@ class FakeQuantController:
         per_tensor: bool = True,
         observer: str = "ema",
         ema_momentum: float = 0.99,
+        quant_head: bool = False,
     ) -> None:
         self.model = model
         self.start_layer = start_layer
         self.end_layer = end_layer
+        self.quant_head = quant_head
         self.bits = bits
         self.eps = eps
         self.per_tensor = per_tensor
@@ -145,6 +147,26 @@ class FakeQuantController:
                 f"backbone.vision_model.encoder.layers.{index}",
                 layer,
                 output_is_tuple=True,
+            )
+
+        if self.quant_head:
+            # The pooling head produces the final embedding; its INT8 error is not
+            # averaged out by any later layer. post_layernorm feeds it. nn.MHA
+            # returns (attn_out, attn_weights) -> tuple hook quantizes attn_out.
+            vm = self.model.backbone.vision_model
+            self._hook_module(
+                "backbone.vision_model.post_layernorm", vm.post_layernorm, output_is_tuple=False
+            )
+            self._hook_module(
+                "backbone.vision_model.head.attention", vm.head.attention, output_is_tuple=True
+            )
+            self._hook_module(
+                "backbone.vision_model.head.mlp.activation_fn",
+                vm.head.mlp.activation_fn,
+                output_is_tuple=False,
+            )
+            self._hook_module(
+                "backbone.vision_model.head", vm.head, output_is_tuple=False
             )
 
     def close(self) -> None:
@@ -217,6 +239,7 @@ def _freeze_for_vision_qat(
     start_layer: int,
     end_layer: int,
     train_visual_projection: bool,
+    train_head: bool = False,
 ) -> list[str]:
     for parameter in model.parameters():
         parameter.requires_grad = False
@@ -227,6 +250,9 @@ def _freeze_for_vision_qat(
     ]
     if train_visual_projection and hasattr(model.backbone, "visual_projection"):
         trainable_prefixes.append("backbone.visual_projection.")
+    if train_head:
+        trainable_prefixes.append("backbone.vision_model.head.")
+        trainable_prefixes.append("backbone.vision_model.post_layernorm.")
 
     trainable_names: list[str] = []
     for name, parameter in model.named_parameters():
@@ -406,6 +432,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start-layer", type=int, default=4)
     parser.add_argument("--end-layer", type=int, default=11)
     parser.add_argument("--no-train-visual-projection", action="store_true")
+    parser.add_argument(
+        "--quant-head",
+        action="store_true",
+        help=(
+            "Also fake-quant + train the pooling head (post_layernorm, "
+            "head.attention, head.mlp) — the last stage producing the embedding, "
+            "whose INT8 error is not averaged out. Recommended to push R@1 higher."
+        ),
+    )
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=2400)
     return parser.parse_args()
@@ -434,6 +469,7 @@ def main() -> None:
         start_layer=args.start_layer,
         end_layer=args.end_layer,
         train_visual_projection=not args.no_train_visual_projection,
+        train_head=args.quant_head,
     )
     trainable_count, total_count = _trainable_parameter_count(student)
     print(f"Trainable parameters: {trainable_count:,} / {total_count:,}")
@@ -447,6 +483,7 @@ def main() -> None:
         per_tensor=args.fake_quant_granularity == "per_tensor",
         observer=args.fake_quant_observer,
         ema_momentum=args.ema_momentum,
+        quant_head=args.quant_head,
     )
     fake_quant.install()
     print("Fake-quant hooks:")
@@ -589,6 +626,7 @@ def main() -> None:
         "fake_quant_granularity": args.fake_quant_granularity,
         "fake_quant_observer": args.fake_quant_observer,
         "ema_momentum": args.ema_momentum,
+        "quant_head": args.quant_head,
         "layer_range": [args.start_layer, args.end_layer],
         "train_visual_projection": not args.no_train_visual_projection,
         "trainable_parameters": trainable_count,

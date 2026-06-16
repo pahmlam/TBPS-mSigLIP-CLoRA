@@ -14,8 +14,9 @@ HTP v68** via rotation-based equalization; the text encoder is the next workstre
 | **Vision W8A8 QDQ fidelity** | **PASS (near)** | `cosine 0.90` — rotation made all-INT8 viable (was 0.14 collapse) |
 | **Vision compile/link on v68** | **PASS** | all-INT8 links on HTP v68; `vision_encoder.bin` 89.7 MB |
 | **Vision on HTP board** | **PASS** | board fidelity `0.898` = QDQ; **22.5 FPS, 34 ms/img** |
-| **Vision R@1 (gate)** | **FAIL** | T2I R@1 `45.42` (vision-only INT8, text FP32) vs `52.28`, gate ≥ 48; proxy `0.90` cosine insufficient → need higher fidelity |
-| Text encoder | TODO (blocked) | hold until vision passes gate; full INT8+INT8 ≤ `45.42` |
+| **Vision R@1 (gate)** | **PASS** | T2I R@1 `48.20` ≥ 48 via QAT v3 (rotation + EMA-observer QAT distillation), vs FP32 `52.40`; QDQ cosine `0.9353`. Was `45.42` rotation-only |
+| Vision QAT `.bin` on board | TODO | M4: compile/link QAT v3 → `.bin` → board fidelity + latency + R@1 |
+| Text encoder | TODO (blocked) | unblocked now vision passed; replicate recipe (rotation + QAT + W8A8) |
 
 Key learnings (why this works on v68):
 
@@ -35,6 +36,24 @@ Latest locked conclusions / full pipeline:
 
 Do not treat `_float` QDQ surgery candidates as deployable (diagnostic only;
 link-fail on internal float). Do not use W8A16 on v68 (A16 needs v73).
+
+## Model Footprint
+
+Full `model_fp32.pt` is the whole TBPS (vision + text); the deployed
+`vision_encoder.bin` is the vision encoder only. Params dedup'd (TBPS aliases
+`vision_model`/`text_model` to `backbone.*`).
+
+| Component | Params | FP32 | FP16 | INT8 |
+|---|---|---|---|---|
+| vision_model | 92.9 M | 372 MB | 186 MB | **93 MB** (deployed `.bin` 89.7) |
+| text_model | 277.7 M | 1111 MB | 555 MB | 278 MB |
+| projection + other | 1.2 M | 5 MB | 2 MB | 1 MB |
+| **TOTAL** | **371.8 M** | **1487 MB** | 744 MB | 372 MB |
+
+Text is 75% of params — token embedding alone is `250000 × 768` = 192 M params
+(768 MB FP32), driven by the 250k multilingual vocab. On 4 GB RAM, text FP32
+(1.1 GB) is the real cost; quantizing text to INT8 (~278 MB) is the next lever
+(blocked on vision passing the R@1 gate). Details: journal section 17.
 
 ## Directory Map
 
