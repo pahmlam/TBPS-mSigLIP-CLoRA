@@ -21,18 +21,18 @@ This is the canonical engineering document for the best deployment pipeline. It 
 | QAT v2 | + per-tensor fake-quant | 0.9281 / 0.9093 | 47.80 | FAIL |
 | **QAT v3** | **+ EMA observer (deploy-faithful)** | **0.9353 / 0.919** | **48.20** | **PASS** |
 
-On-device verification of the linked W8A8 binary (HTP v68, `qnn-net-run`):
+On-device verification of the linked **QAT v4** W8A8 binary (HTP v68, `qnn-net-run`):
 
 | Metric | Value |
 |---|---:|
-| QNN(board) vs PyTorch cosine, mean | `0.8982` (matches QDQ ONNX `0.8975`, drift ≈ `0.0007`) |
-| NetRun latency | `34.25 ms / image` |
-| HTP accelerator execute | `32.5 ms / image` |
-| Throughput | `22.5 FPS` |
-| Context-binary load (one-time) | `54.7 ms` |
-| Context-binary size | `89.7 MB` (INT8) |
+| QNN(board) vs PyTorch cosine, mean / min | `0.9363` / `0.9068` (matches QDQ ONNX `0.9364` / `0.9091`, drift ≈ `0.0001`) |
+| NetRun latency (avg / min / max) | `32.70` / `31.6` / `34.2` ms / image |
+| HTP accelerator execute | `31.2 ms / image` (4 HVX threads) |
+| Throughput | `22.88 FPS` |
+| Context-binary load (one-time) | `53.3 ms` |
+| Context-binary size | `~90 MB` (INT8) |
 
-> Note on artifacts: the on-board binary that has been physically benchmarked is the rotation-only `rotated_w8a8_v2` (R@1 ≈ 45.42, board fidelity 0.898). The **QAT v3** model passes the retrieval gate (48.20) and uses an identical all-INT8 graph shape, so its `.bin` links on v68 the same way; compiling and benchmarking the QAT v3 binary on the board is the last remaining step. Board fidelity tracks QDQ fidelity to within ~0.001, so the QAT v3 board result is expected to match its QDQ R@1.
+> The QAT v4 binary (`bin/w8a8_rotated_qat_v4/vision_encoder.bin`) is physically benchmarked on the board: links on v68, board fidelity `0.9363` matches its QDQ `0.9364` to ≈ `0.0001`, so its board T2I R@1 ≈ the QDQ **48.50**. The earlier rotation-only `rotated_w8a8_v2` binary (R@1 45.42, fidelity 0.898) has the same graph shape and latency/size — QAT raises R@1 by ~3 points at identical runtime cost (same all-INT8 graph; QAT only changes weight *values*).
 
 The decisive acceptance metric is **retrieval Rank@1**, not cosine. Cosine is only a fidelity proxy; §9 explains why a `0.90` cosine still failed the gate while `0.9353` passes.
 
@@ -346,7 +346,7 @@ In code: `x + (quantized - x).detach()` — the forward pass is quantized, the b
 
 ### 7.3 Why per-tensor, and why EMA observer (the two key fixes)
 
-The R@1 trajectory `45.42 → 46.92 → 47.80 → 48.20` came from making the *simulated* quantizer match the *real* AI Hub W8A8:
+The R@1 trajectory `45.42 → 46.92 → 47.80 → 48.20` (continued to `48.50 → 49.25` by widening coverage, §7.4) came from making the *simulated* quantizer match the *real* AI Hub W8A8:
 
 - **v1 → v2: per-sample → per-tensor.** A per-sample scale (one scale per image) is too easy: simulated cosine looks great (`0.975`) but does not transfer to AI Hub's per-tensor scheme (real `0.92`). Per-tensor fake-quant uses one scale per activation tensor, matching deployment.
 - **v2 → v3: dynamic → EMA observer.** A per-batch dynamic max recomputes the scale every forward; AI Hub instead **calibrates once** on the calibration set and freezes the scale. The EMA observer is the standard moving-average min-max observer [14, 15]; it mimics calibrate-once with a running max,
@@ -355,16 +355,30 @@ $$ m_t = \mu\, m_{t-1} + (1-\mu)\,\max|x_t|, \quad \mu = 0.99, $$
 
 producing a fixed-ish per-tensor scale. This closed the remaining sim↔real gap: simulated val cosine stayed ≈ `0.98`, but real QDQ cosine rose `0.9281 → 0.9353` and R@1 crossed the gate.
 
-### 7.4 Result
+### 7.4 Fake-quant coverage (v3 → v4 → v5)
+
+The third lever — after per-tensor (v2) and EMA (v3) — is *which activations* carry the fake-quant operator during QAT. AI Hub quantizes **every** activation tensor, so any tensor the student never trained against contributes uncorrected INT8 error at deploy. The QAT coverage was therefore widened in two steps, each closing part of the gap the previous coverage left:
+
+| Round | Fake-quant sites (per selected block) | Flag | QDQ cosine mean / min | T2I R@1 |
+|---|---|---|---:|---:|
+| v3 | GELU output + residual (block) output | (base) | 0.9353 / 0.919 | 48.20 |
+| v4 | + pooling head (post\_LN, head.attn, head.mlp) | `--quant-head` | 0.9364 / 0.9091 | 48.50 |
+| v5 | + every linear output (q/k/v/out\_proj, fc1, fc2, head linears) | `--quant-linears` | 0.9437 / **0.9311** | **49.25** |
+
+The mathematics is unchanged across v3–v5 — the same per-tensor straight-through fake-quant (§7.2) and EMA observer (§7.3); **only the *set* of tensors to which the operator is applied grows.** The decisive evidence is the **minimum** cosine: widening coverage from the GELU/residual subset to all linear outputs lifted the worst-sample cosine `0.9091 → 0.9311`, confirming that the `~0.936` plateau was a *coverage gap*, not a fundamental W8A8 limit. The pooling head (v4) matters because its INT8 error is not averaged out by any later layer; the per-linear coverage (v5) matters because the q/k/v/out\_proj and fc1/fc2 activations are each quantized independently on-device.
+
+One coverage gap remains: the two **activation×activation matmuls inside attention** (`Q·Kᵀ` scores and `softmax·V`) are functional ops, not `nn.Module` outputs, so the forward-hook mechanism does not reach them, yet AI Hub still quantizes them. An attention-internal fake-quant is the remaining lever toward the stretch gate `R@1 ≥ 50`.
+
+### 7.5 Result (best to date: v5)
 
 | Task | Model | R@1 | R@5 | R@10 | mAP | mINP |
 |---|---|---:|---:|---:|---:|---:|
 | T2I | FP32 baseline | 52.40 | 79.38 | 87.80 | 57.38 | 50.67 |
-| T2I | **QAT v3 INT8** | **48.20** | 75.42 | 85.10 | 53.39 | 46.60 |
+| T2I | **QAT v5 INT8** | **49.25** | 77.28 | 85.80 | 54.55 | 47.86 |
 | I2T | FP32 baseline | 55.30 | 81.45 | 89.70 | 51.38 | 34.50 |
-| I2T | **QAT v3 INT8** | **52.30** | 78.90 | 86.85 | 47.89 | 31.03 |
+| I2T | **QAT v5 INT8** | **53.40** | 80.85 | 88.10 | 49.05 | 32.01 |
 
-QDQ cosine `0.9353` / min `0.919`. Drop vs FP32: `4.20` (gate allows ≤ `4.28`). After QAT, re-export ONNX (§8) and re-quantize (§9) on `exported_model_rotated_qat_v3`.
+QDQ cosine `0.9437` / min `0.9311`. Drop vs FP32: `3.15`. This is the best deployable vision model to date (v3 `48.20` and v4 `48.50` are the earlier coverage steps); the stretch gate `50` is pending attention-matmul coverage (§7.4). After QAT, re-export ONNX (§8) and re-quantize (§9) on the chosen `exported_model_rotated_qat_v*`.
 
 ---
 
@@ -548,7 +562,7 @@ python deployment/scripts/qnn/export_rotated_vision_onnx.py \
 
 ## 15. What Remains
 
-1. **Compile/link/benchmark the QAT v3 binary on the board** (same all-INT8 shape as v2; expected to link and to match its QDQ R@1 ≈ 48.20).
+1. ✅ **DONE — QAT v4 binary compiled/linked/benchmarked on board:** links on HTP v68, board fidelity `0.9363` ≈ QDQ `0.9364`, `32.70 ms` / `22.88 FPS` / ~90 MB → board T2I R@1 ≈ **48.50**. (Pushing toward stretch gate 50 via fuller fake-quant coverage `--quant-linears` / learned rotation continues.)
 2. **Quantize the text encoder** with the same recipe (opset-20 fused GELU + mean-preserving rotation + W8A8 + QAT). Text is ~75% of parameters — the 250k-vocab embedding alone is ~768 MB FP32 — so text INT8 is the real 4 GB RAM payoff (both encoders INT8 ≈ 372 MB vs ~1.2 GB today).
 3. **End-to-end board retrieval** with both encoders INT8; the both-INT8 R@1 is ≤ the vision-only 48.20, so the text branch must hold the gate.
 4. **Stretch gate 50:** if needed, add `--quant-head` QAT (the pooling head's INT8 error is not averaged out by later layers), more data/epochs, or learned rotations (SpinQuant [12]) — never revert to float surgery or A16.

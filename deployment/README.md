@@ -14,9 +14,9 @@ HTP v68** via rotation-based equalization; the text encoder is the next workstre
 | **Vision W8A8 QDQ fidelity** | **PASS (near)** | `cosine 0.90` — rotation made all-INT8 viable (was 0.14 collapse) |
 | **Vision compile/link on v68** | **PASS** | all-INT8 links on HTP v68; `vision_encoder.bin` 89.7 MB |
 | **Vision on HTP board** | **PASS** | board fidelity `0.898` = QDQ; **22.5 FPS, 34 ms/img** |
-| **Vision R@1 (gate)** | **PASS** | T2I R@1 `48.20` ≥ 48 via QAT v3 (rotation + EMA-observer QAT distillation), vs FP32 `52.40`; QDQ cosine `0.9353`. Was `45.42` rotation-only |
-| Vision QAT `.bin` on board | TODO | M4: compile/link QAT v3 → `.bin` → board fidelity + latency + R@1 |
-| Text encoder | TODO (blocked) | unblocked now vision passed; replicate recipe (rotation + QAT + W8A8) |
+| **Vision R@1 (gate)** | **PASS** | T2I R@1 `48.50` (QAT v4) ≥ 48 vs FP32 `52.40`; QDQ cosine `0.9364`. Trajectory `45.42`→`46.92`→`47.80`→`48.20`→`48.50` (stretch 50 in progress) |
+| **Vision QAT `.bin` on board** | **PASS** | QAT v4 `.bin` board-verified on v68: fidelity `0.9363` ≈ QDQ, `32.7 ms` / `22.88 FPS` / ~90 MB |
+| Text encoder | TODO | unblocked; replicate recipe (rotation + QAT + W8A8) for full both-INT8 on-device |
 
 Key learnings (why this works on v68):
 
@@ -145,6 +145,89 @@ Why each step exists: LoRA merge is mandatory (ckpt is LoRA-finetuned); rotation
 spreads activation concentration so all-INT8 W8A8 (the only v68-deployable scheme)
 keeps fidelity; opset-20 fuses Gelu/LayerNorm to avoid `Pow(x³)`/`Pow(x²)` being
 quantized. Swapping to the 53.00 model requires re-running from step [1].
+
+## QAT Iteration Workflow (per-round commands)
+
+Rotation alone gives only `T2I R@1 45.42` (gate fail). Quantization-aware fine-tune
+(QAT) of the rotated model closes the gap. Each QAT round is one pass of the loop
+below. Set `V` to the round name (e.g. `qat_v5`); the AI Hub steps (4) are the only
+ones that cost a cloud job — steps 1–3, 5 are local/free.
+
+**One-time prep** (shared by all rounds):
+
+```bash
+# [A] merge LoRA -> exported_model/  (see Quick Commands #2)
+# [B] mean-preserving rotation -> exported_model_rotated/  (teacher + QAT base)
+python deployment/scripts/qnn/rotate_vision_encoder.py \
+  --model-dir artifacts/deployment/exports/exported_model \
+  --output-dir artifacts/deployment/exports/exported_model_rotated \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --seed 2400 --skip-r2
+# [C] prepare full-train calib inputs for QAT (4302 images)
+python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
+  --dataset-root VN3K --split train --selection random --seed 2400 \
+  --num-samples 4302 --output-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 \
+  --path-mode relative
+```
+
+**Per round** (`V=qat_v5` shown; run [1] on a GPU box, [4] is the cloud job):
+
+```bash
+# [1] QAT distillation (teacher=rotated FP32, student=fake-quant). LONG (GPU).
+python deployment/scripts/qnn/train_vision_quant_robust.py \
+  --model-dir artifacts/deployment/exports/exported_model_rotated \
+  --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 \
+  --val-input-dir   artifacts/deployment/qnn_inputs/vn3k_test_100 \
+  --output-dir      artifacts/deployment/exports/exported_model_rotated_qat_v5 \
+  --device cuda --batch-size 48 --epochs 15 --lr 1e-5 \
+  --start-layer 0 --end-layer 11 \
+  --fake-quant-granularity per_tensor --fake-quant-observer ema --ema-momentum 0.99 \
+  --quant-head --quant-linears
+
+# [2] export rotated/QAT ONNX, opset 20 (fused Gelu/LayerNorm). FAST/local.
+python deployment/scripts/qnn/export_rotated_vision_onnx.py \
+  --model-dir artifacts/deployment/exports/exported_model_rotated_qat_v5
+
+# [3] static control gate (ONNX vs PyTorch, must be ~1.0). FAST/local.
+python deployment/scripts/qnn/compare_onnx_with_pytorch.py \
+  --onnx-model artifacts/deployment/exports/exported_model_rotated_qat_v5/vision_onnx \
+  --model-dir  artifacts/deployment/exports/exported_model_rotated_qat_v5 --rotated \
+  --input-dir  artifacts/deployment/qnn_inputs/vn3k_test_10 --precision fp32
+
+# [4] AI Hub W8A8 quantize-only -> QDQ ONNX. CLOUD JOB (log the job id).
+python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+  --model artifacts/deployment/exports/exported_model_rotated_qat_v5/vision_onnx \
+  --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 \
+  --quantize-only --wait \
+  --download-quantized artifacts/deployment/runtime/rotated_w8a8_qat_v5/job_qdq_onnx/model.onnx
+
+# [5] decisive numbers: QDQ cosine + retrieval R@1 (gate >= 48). FAST/local.
+python deployment/scripts/qnn/compare_onnx_with_pytorch.py \
+  --onnx-model artifacts/deployment/runtime/rotated_w8a8_qat_v5/job_qdq_onnx \
+  --model-dir  artifacts/deployment/exports/exported_model \
+  --input-dir  artifacts/deployment/qnn_inputs/vn3k_test_10 --precision fp32
+python deployment/scripts/qnn/eval_retrieval_quantized_vision.py \
+  --qdq-onnx artifacts/deployment/runtime/rotated_w8a8_qat_v5/job_qdq_onnx \
+  --json     artifacts/deployment/runtime/rotated_w8a8_qat_v5/retrieval_r1.json
+```
+
+If R@1 passes the gate, deploy with the full flow (drop `--quantize-only`, use
+`--download .../vision_encoder.bin`) then `qnn-net-run` on the board (Quick Commands #8–9).
+
+**What each round changed, and the result** (the `--fake-quant-*` / `--quant-*`
+flags in step [1] are the only differences):
+
+| Round | QAT flags added | QDQ cosine | T2I R@1 |
+|---|---|---:|---:|
+| rotation only | — (no QAT) | 0.8975 | 45.42 |
+| qat_v1 | per-sample fake-quant | 0.9223 | 46.92 |
+| qat_v2 | `--fake-quant-granularity per_tensor` | 0.9281 | 47.80 |
+| qat_v3 | `--fake-quant-observer ema` | 0.9353 | 48.20 |
+| qat_v4 | `--quant-head` | 0.9364 | 48.50 |
+| qat_v5 | `--quant-linears` | 0.9437 | 49.25 |
+
+> Dated commands, AI Hub job IDs, and full results per round: journal
+> `deployment/docs/journal/[deploy]-2026-06-15.md` (sections 13–20). Method + math:
+> `deployment/docs/w8a8_qat_rotated.md`.
 
 ## Quick Commands
 

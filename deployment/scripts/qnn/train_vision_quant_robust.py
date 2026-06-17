@@ -17,6 +17,7 @@ import json
 import random
 import shutil
 import sys
+import types
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Iterable
@@ -98,6 +99,40 @@ def _fake_quant_symmetric(
     return x + (quantized - x).detach()
 
 
+def _make_fq_attention_forward(controller: "FakeQuantController", key: str):
+    """Eager SigLIP attention forward with fake-quant on the two internal
+    activation-by-activation matmuls (which `nn.Module` forward hooks cannot reach).
+
+    Quantizes the score matrix (Q*K^T), the softmax probabilities, and the context
+    (probs*V) --- the activations AI Hub quantizes on-device but `--quant-linears`
+    misses. q/k/v/out_proj outputs are still covered by their own linear hooks.
+    Mirrors the eager `SiglipAttention.forward`; numerically identical when fake-quant
+    is disabled (clean path stays exact).
+    """
+
+    def forward(self, hidden_states, attention_mask=None, output_attentions=False):
+        bsz, q_len, _ = hidden_states.size()
+        q = self.q_proj(hidden_states).view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(hidden_states).view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(hidden_states).view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+
+        scores = torch.matmul(q, k.transpose(2, 3)) * self.scale
+        scores = controller._quantize(scores, key + ".scores")
+        if attention_mask is not None:
+            scores = scores + attention_mask
+        probs = F.softmax(scores, dim=-1, dtype=torch.float32).to(q.dtype)
+        probs = controller._quantize(probs, key + ".probs")
+        probs = F.dropout(probs, p=self.dropout, training=self.training)
+
+        ctx = torch.matmul(probs, v)
+        ctx = controller._quantize(ctx, key + ".context")
+        ctx = ctx.transpose(1, 2).contiguous().reshape(bsz, q_len, self.embed_dim)
+        out = self.out_proj(ctx)
+        return out, (probs if output_attentions else None)
+
+    return forward
+
+
 class FakeQuantController:
     """Installs activation fake-quant hooks for selected SigLIP vision blocks."""
 
@@ -113,12 +148,15 @@ class FakeQuantController:
         ema_momentum: float = 0.99,
         quant_head: bool = False,
         quant_linears: bool = False,
+        quant_attention: bool = False,
     ) -> None:
         self.model = model
         self.start_layer = start_layer
         self.end_layer = end_layer
         self.quant_head = quant_head
         self.quant_linears = quant_linears
+        self.quant_attention = quant_attention
+        self.patched_attn: list[nn.Module] = []
         self.bits = bits
         self.eps = eps
         self.per_tensor = per_tensor
@@ -163,6 +201,14 @@ class FakeQuantController:
                         layer.get_submodule(sub),
                         output_is_tuple=False,
                     )
+            if self.quant_attention:
+                # Forward hooks cannot reach the two intra-attention matmuls; replace
+                # the eager attention forward with a fake-quant-aware copy instead.
+                attn = layer.self_attn
+                key = f"backbone.vision_model.encoder.layers.{index}.self_attn"
+                attn.forward = types.MethodType(_make_fq_attention_forward(self, key), attn)
+                self.patched_attn.append(attn)
+                self.hooked_modules.append(key + " [scores/probs/context]")
 
         if self.quant_head:
             # The pooling head produces the final embedding; its INT8 error is not
@@ -195,6 +241,11 @@ class FakeQuantController:
         for handle in self.handles:
             handle.remove()
         self.handles.clear()
+        # Restore the original (class-level) attention forward on patched modules.
+        for attn in self.patched_attn:
+            if "forward" in attn.__dict__:
+                del attn.__dict__["forward"]
+        self.patched_attn.clear()
         self.hooked_modules.clear()
 
     @contextmanager
@@ -473,6 +524,16 @@ def parse_args() -> argparse.Namespace:
             "the per-tensor W8A8 plateau."
         ),
     )
+    parser.add_argument(
+        "--quant-attention",
+        action="store_true",
+        help=(
+            "Also fake-quant the two intra-attention matmuls (Q*K^T scores, softmax "
+            "probs, probs*V context) by patching the eager attention forward of the "
+            "selected encoder layers. Covers the activations --quant-linears cannot "
+            "reach (functional matmuls). The last coverage lever toward R@1 >= 50."
+        ),
+    )
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=2400)
     return parser.parse_args()
@@ -517,6 +578,7 @@ def main() -> None:
         ema_momentum=args.ema_momentum,
         quant_head=args.quant_head,
         quant_linears=args.quant_linears,
+        quant_attention=args.quant_attention,
     )
     fake_quant.install()
     print("Fake-quant hooks:")
@@ -661,6 +723,7 @@ def main() -> None:
         "ema_momentum": args.ema_momentum,
         "quant_head": args.quant_head,
         "quant_linears": args.quant_linears,
+        "quant_attention": args.quant_attention,
         "layer_range": [args.start_layer, args.end_layer],
         "train_visual_projection": not args.no_train_visual_projection,
         "trainable_parameters": trainable_count,
