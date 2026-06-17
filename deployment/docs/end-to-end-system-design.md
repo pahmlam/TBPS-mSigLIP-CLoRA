@@ -1238,7 +1238,7 @@ Bổ sung:
 - Board và trạng thái runtime: `deployment/docs/system.md`
 - Kế hoạch deploy model: `deployment/docs/deployment-plan.md`
 - Benchmark proxy models: `deployment/docs/benchmark-rp.md`
-- AI Hub compile learnings and dated job logs: `deployment/docs/journal/`
+- AI Hub compile learnings and QNN/RB3 deployment history: `deployment/docs/journal/[deploy-master].md`
 
 ### Tài liệu chính thức đã tham chiếu cho lựa chọn hosting/vector
 

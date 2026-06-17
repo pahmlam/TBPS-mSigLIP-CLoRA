@@ -1,0 +1,1120 @@
+# [Deploy Master] Nhật ký nén vision mSigLIP lên RB3/QNN
+
+> **Cập nhật hợp nhất cuối:** 2026-06-17
+> **Phạm vi:** RB3 Gen2 / QNN / AI Hub / ONNX / nén mô hình cho deployment mSigLIP.
+> **Nguồn trạng thái chuẩn:** file này.
+> **Nhật ký deploy duy nhất:** toàn bộ lịch sử deployment/model-compression và kết quả mới nằm ở đây.
+> **Ngoài phạm vi:** ghi chú modular demo-system `[demo-system]-*.md`.
+
+File master này hợp nhất toàn bộ lịch sử deployment/model-compression để không cần các journal deploy rời. Nó giữ lại công việc theo ngày, job ID quan trọng, artifact, metric, nguyên nhân fail, quyết định và kế hoạch tiếp theo trong một file chuẩn duy nhất.
+
+---
+
+## 0. Trạng Thái Hiện Tại
+
+### Ứng Viên Vision Tốt Nhất Hiện Tại
+
+| Mục | Trạng thái |
+|---|---|
+| Checkpoint nguồn | `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` |
+| Baseline FP32 dùng cho đánh giá deploy | VN3K T2I R@1 `52.40` tái lập local, khớp lịch sử `52.28` |
+| Ứng viên QDQ/retrieval tốt nhất hiện tại | **QAT v6**: `--quant-head --quant-linears --quant-attention` |
+| Job AI Hub QAT v6 | `j57krdwvp` quantize-only W8A8 |
+| Artifact QDQ QAT v6 | `artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_j57krdwvp_qdq_onnx` |
+| Cosine QDQ QAT v6 | **`0.9491 / 0.9266`** mean/min |
+| Retrieval QAT v6 | **T2I R@1 `49.30`**, I2T R@1 `53.85` |
+| Binary deploy đã verify trên board | **QAT v4** W8A8 context binary |
+| Fidelity QAT v4 trên board | `0.9363 / 0.9068` mean/min, khớp QDQ `0.9364 / 0.9091` |
+| Runtime QAT v4 trên board | `32.70 ms/image`, `22.88 FPS`, context binary khoảng `90 MB` |
+| Hướng stretch tiếp theo | Huấn luyện dài hơn, thêm dữ liệu để pass mốc 50.0 hoặc cân nhắc Learned Rotation (như SpinQuant) |
+| Text encoder | Còn pending; chỉ quantize sau khi nhánh vision được chấp nhận hoặc stretch xong |
+
+Cách hiểu:
+
+- **v6 là ứng viên accuracy tốt nhất hiện tại**: nâng T2I R@1 lên `49.30`, cosine QDQ mean đạt `0.9491`.
+- **v4 là binary deploy đã verify trên board hiện tại**: link và chạy được trên HTP v68, fidelity trên board khớp QDQ.
+
+### Pipeline Vision Chuẩn
+
+```text
+LoRA checkpoint
+  -> [1] Gộp LoRA vào base weights
+  -> [2] Rotation residual bảo toàn mean, giữ fused LayerNorm
+  -> [3] QAT/distillation trên vision model đã rotate
+  -> [4] Export ONNX rotated/QAT ở opset 20
+  -> [5] AI Hub W8A8 quantize, compile, link với I/O đã quantize
+  -> [6] RB3 qnn-net-run + fidelity PyTorch/QDQ/board + gate retrieval
+```
+
+Command bắt buộc cho recipe hiện tại:
+
+```bash
+# [1] Gộp LoRA.
+python3 deployment/scripts/lora_fp16/export.py \
+  --ckpt artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt \
+  --output-dir artifacts/deployment/exports/exported_model
+
+# [2] Rotation bảo toàn mean.
+python3 deployment/scripts/qnn/rotate_vision_encoder.py \
+  --model-dir artifacts/deployment/exports/exported_model \
+  --output-dir artifacts/deployment/exports/exported_model_rotated \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
+  --seed 2400 --skip-r2
+
+# [3] QAT v6, ứng viên QDQ/retrieval tốt nhất hiện tại.
+PYTHONUNBUFFERED=1 python deployment/scripts/qnn/train_vision_quant_robust.py \
+    --model-dir artifacts/deployment/exports/exported_model_rotated \
+    --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 \
+    --val-input-dir artifacts/deployment/qnn_inputs/vn3k_test_100 \
+    --output-dir artifacts/deployment/exports/exported_model_rotated_qat_v6 \
+    --device cuda --batch-size 16 --epochs 15 --lr 1e-5 \
+    --fake-quant-observer ema --quant-head --quant-linears --quant-attention \
+    --start-layer 0 --end-layer 11 --num-workers 4
+
+# [4] Export ONNX.
+python deployment/scripts/qnn/export_rotated_vision_onnx.py \
+  --model-dir artifacts/deployment/exports/exported_model_rotated_qat_v6 \
+  --opset 20
+
+# [4.5] GATE: Static ONNX vs PyTorch (chạy trước khi lên AI Hub)
+python3 deployment/scripts/qnn/compare_onnx_with_pytorch.py \
+  --onnx-model artifacts/deployment/exports/exported_model_rotated_qat_v6/vision_onnx \
+  --model-dir artifacts/deployment/exports/exported_model_rotated_qat_v6 \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
+  --precision fp32 \
+  --json artifacts/deployment/exports/exported_model_rotated_qat_v6/static_vs_pytorch_summary.json \
+  --csv artifacts/deployment/exports/exported_model_rotated_qat_v6/static_vs_pytorch.csv
+
+# [5] Chạy diagnostic QDQ trước.
+python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+  --model artifacts/deployment/exports/exported_model_rotated_qat_v6/vision_onnx \
+  --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 \
+  --quantize-only --wait \
+  --download-quantized artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_qdq_onnx
+
+# [5.5] GATE: Kiểm tra Cosine QDQ và đo Retrieval (trước khi link)
+python3 deployment/scripts/qnn/compare_onnx_with_pytorch.py \
+  --onnx-model artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_j57krdwvp_qdq_onnx \
+  --model-dir artifacts/deployment/exports/exported_model \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
+  --precision fp32 \
+  --json artifacts/deployment/runtime/rotated_w8a8_qat_v6/qdq_vs_pytorch_summary.json \
+  --csv artifacts/deployment/runtime/rotated_w8a8_qat_v6/qdq_vs_pytorch.csv
+
+python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py --qdq-onnx artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_j57krdwvp_qdq_onnx --json artifacts/deployment/runtime/rotated_w8a8_qat_v6/retrieval_r1.json
+
+# [6] Nếu pass toàn bộ gate, compile/link đầy đủ để sinh context binary.
+python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+  --model artifacts/deployment/exports/exported_model_rotated_qat_v6/vision_onnx \
+  --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 \
+  --wait \
+  --download artifacts/deployment/runtime/rotated_w8a8_qat_v5/vision_encoder.bin
+
+# [7] Chạy thực tế trên board RB3 (sau khi adb push thư mục input và file .bin lên board).
+# Lệnh chạy ngay trên NPU HTP v68 của Qualcomm RB3:
+qnn-net-run \
+  --backend "$QNN_LIB/libQnnHtp.so" \
+  --retrieve_context artifacts/deployment/runtime/rotated_w8a8_qat_v6/vision_encoder.bin \
+  --config_file deployment/config/qnn/htp_config_245.json \
+  --input_list artifacts/deployment/qnn_inputs/vn3k_test_10/input_list.txt \
+  --output_dir artifacts/deployment/qnn_runs/rotated_w8a8_qat_v6 \
+  --profiling_level basic --perf_profile high_performance
+
+# [8] GATE cuối: Kiểm tra Board Fidelity (so sánh kết quả từ board với PyTorch gốc).
+python3 deployment/scripts/qnn/compare_qnn_with_pytorch.py \
+  --qnn-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_qat_v6 \
+  --model-dir artifacts/deployment/exports/exported_model \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
+  --precision fp32 \
+  --json artifacts/deployment/qnn_runs/rotated_w8a8_qat_v6/qnn_vs_pytorch_summary.json \
+  --csv artifacts/deployment/qnn_runs/rotated_w8a8_qat_v6/qnn_vs_pytorch.csv
+```
+
+### Gate Chấp Nhận
+
+| Gate | Ngưỡng | Mục đích |
+|---|---:|---|
+| Merge LoRA | không còn key `lora` / `adapter` / `base_layer` | Model export phải là base weights deploy được |
+| Rotation FP32 invariance | cosine min >= `0.9999` | Rotation phải giữ nguyên hàm model |
+| Static ONNX vs PyTorch | cosine mean >= `0.999` | Control export/preprocess |
+| ONNX op sanity | `Pow=0`, fused `Gelu`, fused `LayerNormalization` | Tránh lộ internal GELU/RMSNorm |
+| QDQ ONNX vs PyTorch | target mean >= `0.95`, min >= `0.90` | Proxy fidelity trước compile/link |
+| QNN board vs PyTorch | mean >= `0.90` | Runtime trên board đủ trung thực |
+| Retrieval | T2I R@1 >= `48.0` | Ngưỡng deploy tối thiểu so với FP32 `52.28`/`52.40` |
+| Stretch retrieval | T2I R@1 >= `50.0` | Mục tiêu tối ưu hiện tại |
+
+Gate cosine QDQ chỉ là proxy. Retrieval R@1 mới là quyết định cuối. Ứng viên rotation-only có cosine QDQ gần `0.90` nhưng fail retrieval ở `45.42`, chứng minh cosine riêng lẻ là chưa đủ.
+
+### Không Lặp Lại
+
+| Hướng | Kết quả | Quyết định |
+|---|---|---|
+| I/O graph FP32/FP16 trên HTP | HTP reject I/O floating-point | Dùng I/O đã quantize |
+| CLI cũ `submit-compile-job --quantize_full_type` | Có thể tự inject `--preserve_io_datatype` | Dùng flow Python API/helper |
+| Dummy calibration INT8 | Runtime pass, garbage fidelity | Chỉ chứng minh runtime |
+| PTQ W8A8 thường | Cosine QDQ khoảng `0.13-0.17` | Không dùng được |
+| Chỉ tăng số mẫu calibration | 500 lên 2000 không sửa được collapse | Không phải lỗi thiếu coverage calibration |
+| `_float` QDQ surgery | Pass local nhưng HTP link fail vì internal float | Chỉ dùng diagnostic |
+| ORT W8A16/QDQ variants | Fidelity local pass, HTP link fail quanh GELU/internal float | Không upload lại cùng pattern |
+| Native W8A16 on v68 | QDQ có thể đạt `0.99969`, nhưng link fail vì A16 cần v73+ cho attention act-act / LayerNorm | Không deploy được trên RB3 v68 |
+| Clip activation outliers | Fail; channel outlier mang tín hiệu thật | Không dùng clipping làm hướng chính |
+| RMSNorm rotation | Lộ `Pow(x^2)` / `ReduceMean`; QDQ collapse | Dùng rotation bảo toàn mean và fused LayerNorm |
+| R2 head-dim Hadamard | T2I `45.25`, worse than no R2 | Đã reject |
+| Quantize text trước gate vision | Chỉ làm cộng thêm lỗi | Hoãn đến khi nhánh vision được chấp nhận |
+
+---
+
+## 1. Các Mốc Lịch Sử Đã Bao Phủ
+
+File này hợp nhất công việc deployment/model-compression từ các mốc: 2026-04-15, 2026-05-06, 2026-05-27, 2026-06-02, 2026-06-04, 2026-06-05, 2026-06-06, 2026-06-07, 2026-06-09, 2026-06-10, 2026-06-11, 2026-06-13, 2026-06-14, và 2026-06-15.
+
+Journal demo-system vẫn tách riêng vì nó theo dõi scaffold demo modular, không phải nén mô hình.
+
+---
+
+## 2. Nhật Ký Master Theo Thời Gian
+
+### 2026-04-15 - Khảo Sát Đường Compile AI Hub
+
+**Mục tiêu:** xác định format artifact, static shape, dtype và yêu cầu I/O biên để compile vision encoder sang QNN context binary cho HTP.
+
+**Đầu vào và artifact:**
+
+- Thư mục ONNX nguồn: `artifacts/deployment/exports/msiglip_lora/vision_onnx/` và `vision_onnx_fp16/`.
+- Runtime/thiết bị: Qualcomm AI Hub, QNN HTP, RB3 Gen2 Vision Kit.
+
+**Job và kết quả:**
+
+| Job / lần thử | Kết quả |
+|---|---|
+| Upload file `.onnx` rời | Fail vì thiếu external weights |
+| `jgn9139q5` upload thư mục ONNX | Upload OK, compile fail vì dynamic shape |
+| `input_specs` dạng colon-separated | CLI `SyntaxError`; AI Hub cần literal dict Python |
+| `j563onvy5` input FP32 static | HTP reject input floating-point |
+| `jp2k1l3xg` flag quantize FP16 + `--quantize_io` | Vẫn preserve FP I/O; HTP reject |
+| `jgdr6o86p` khai báo input float16 cho graph FP32 | Fail do dtype mismatch |
+| Convert ONNX FP16 local | PASS; tạo `vision_onnx_fp16/` khoảng `178.7 MB` |
+| `jp27om9r5` compile ONNX FP16 | HTP vẫn reject input floating-point |
+
+**Bài học quan trọng:**
+
+- ONNX có external data phải upload cả thư mục.
+- QNN context binary yêu cầu input shape static; dùng `image: 1x3x256x256`.
+- `input_specs` phải là literal dict Python, ví dụ:
+
+```bash
+qai-hub submit-compile-job \
+  --model artifacts/deployment/exports/msiglip_lora/vision_onnx/ \
+  --device "Dragonwing RB3 Gen 2 Vision Kit" \
+  --compile_options " --target_runtime qnn_context_binary" \
+  --input_specs '{"image": ((1, 3, 256, 256), "float32")}' \
+  --wait
+```
+
+**Quyết định:** dừng thử I/O FP32/FP16 trực tiếp trên HTP. Chuyển sang I/O integer và context binary đã quantize.
+
+### 2026-05-06 - Đường Compile INT8 Và Dummy Calibration
+
+**Mục tiêu:** kiểm tra AI Hub có tạo được QNN context binary INT8 khi graph I/O không bị preserve floating-point hay không.
+
+**Job và kết quả:**
+
+| Job | Kết quả |
+|---|---|
+| `jpyvrrv7p` đường CLI INT8 nhưng preserve I/O | Fail vì `image` vẫn là floating-point |
+| `jgkr7qwn5` INT8 dummy calibration không preserve I/O | PASS; tạo được QNN context binary, asset `mqyov9dxm` |
+
+**Command giữ lại như sanity compile-path lịch sử:**
+
+```bash
+qai-hub submit-compile-job \
+  --model artifacts/deployment/exports/msiglip_lora/vision_onnx/ \
+  --device "Dragonwing RB3 Gen 2 Vision Kit" \
+  --compile_options " --target_runtime qnn_context_binary --quantize_full_type int8" \
+  --input_specs '{"image": ((1, 3, 256, 256), "float32")}' \
+  --calibration_data none \
+  --name "mSigLIP-vision-int8-dummy" \
+  --wait
+```
+
+**Chẩn đoán:** blocker không phải "INT8 bất khả thi" mà là FP I/O bị preserve. Dummy calibration chỉ chứng minh runtime, không chứng minh accuracy.
+
+**Quyết định:** chuẩn bị dữ liệu calibration VN3K thật và dùng flow mới hơn `submit_quantize_job` + `submit_compile_and_link_jobs` flow.
+
+### 2026-05-27 - Runtime RB3 Pass Đầu Tiên, Fidelity Fail
+
+**Mục tiêu:** tổng hợp trạng thái deploy vision sau các lần thử dummy-cal và real-cal.
+
+**Trạng thái pipeline:**
+
+| Mục | Trạng thái |
+|---|---|
+| LoRA merge + FP32/FP16 export | Done: `model_fp32.pt`, `model_fp16.pt`, `config.yaml` |
+| Export ONNX vision | Done: `artifacts/deployment/exports/exported_model/vision_onnx/` |
+| Export ONNX text | Done: `artifacts/deployment/exports/exported_model/text_onnx/` |
+| Compile INT8 dummy-cal | Done: job `jgkr7qwn5` |
+| Runtime RB3 HTP | Done: `qnn-net-run` hoàn tất `vn3k_test_10` |
+| Dataset calibration thật | Đã upload: dataset `d7x5gzne9`, 500 train samples |
+| Job CLI real-cal cũ | `j5wx6x63p`, fail vì `--preserve_io_datatype image output_0` vẫn còn |
+| Compile/link real-cal bằng API mới | `jpr9v62vp`, tạo `vision_encoder_calib500.bin` |
+| Compile text encoder | Chưa bắt đầu, bị block bởi fidelity vision |
+
+**Kết quả runtime trên board:**
+
+- `qnn-net-run` load và execute graph vision thành công.
+- Output: 10/10 file, mỗi file `3072 bytes = 768 float32`, không NaN/Inf.
+- Profile dummy-cal: NetRun avg `22.25 ms/image`, accelerator avg `20.72 ms/image`, 4 HVX threads, NetRun IPS `38.2405`.
+
+**Kết quả fidelity:**
+
+| Ứng viên | Cosine mean QNN vs PyTorch | Min / max | Quyết định |
+|---|---:|---:|---|
+| Dummy-cal `vision_encoder.bin` | `0.1727` | `0.1440 / 0.2424` | Chỉ chứng minh runtime |
+| Real-cal `vision_encoder_calib500.bin` | `0.1300` | `0.0799 / 0.1774` | Fidelity fail |
+
+**Chẩn đoán:** runtime đã ổn nhưng fidelity embedding còn sai nặng. Không chạy retrieval, `vn3k_test_100` hoặc text encoder cho tới khi sửa xong fidelity QDQ/QNN của vision.
+
+**Kế hoạch tiếp theo:** tải QDQ ONNX từ quantization job và so QDQ với PyTorch. Nếu QDQ đã thấp thì sửa PTQ/quantization; nếu QDQ cao nhưng QNN thấp thì debug runtime/I/O.
+
+### 2026-06-02 - Kế Hoạch Gate Fidelity PTQ/QDQ
+
+**Mục tiêu:** định nghĩa kế hoạch có cấu trúc đầu tiên để sửa fidelity INT8 QDQ của vision.
+
+**Bằng chứng đã khóa:**
+
+| So sánh | Kết quả | Ý nghĩa |
+|---|---:|---|
+| Static ONNX vs PyTorch | `1.0000` | Export và raw input đúng |
+| QDQ ONNX vs PyTorch calib500 | `0.1682` | Quantization đã làm hỏng embedding |
+| QNN calib500 vs PyTorch | `0.1300` | QNN thấp hơn, nhưng lỗi bắt đầu trước runtime |
+
+**Gate đã định nghĩa:**
+
+- Static ONNX vs PyTorch: `cosine_l2_mean >= 0.999`.
+- Smoke QDQ ONNX vs PyTorch: `cosine_l2_mean >= 0.95`, min `>= 0.90`.
+- QNN vs PyTorch sau link: `cosine_l2_mean >= 0.90`.
+- Full retrieval: T2I R@1 `>= 48.0`.
+
+**Phase dự kiến:**
+
+- Audit calibration/raw input.
+- Thử calibration set lớn hơn.
+- Thử W8A16, min-max, Lite-MP.
+- Chỉ compile/link sau khi QDQ pass.
+- Text encoder chỉ làm sau khi vision pass.
+
+**Trạng thái sau các run sau đó:** kế hoạch này được thay bằng các kế hoạch 2026-06-06 và 2026-06-14, nhưng các gate vẫn còn hữu ích.
+
+### 2026-06-04 - Thử Nghiệm PTQ/QDQ
+
+**Mục tiêu:** kiểm tra liệu chất lượng raw input, kích thước calibration hoặc option quantization global của AI Hub có sửa được fidelity QDQ hay không.
+
+**Audit raw input:**
+
+| Set | Valid | Bytes/file | NaN/Inf | Range | Mean | Std |
+|---|---:|---:|---|---|---:|---:|
+| `vn3k_train_calib_500` | 500/500 | `786432` | false | `[-1, 1]` | `-0.2197` | `0.4986` |
+| `vn3k_train_calib_2000` | 2000/2000 | `786432` | false | `[-1, 1]` | `-0.2302` | `0.4931` |
+| `vn3k_test_10` | 10/10 | `786432` | false | `[-1, 1]` | `-0.3400` | `0.4483` |
+
+**Artifact calibration:** `d7jzjy1m2`, `msiglip-vision-vn3k-train-calib-2000`.
+
+**Ứng viên QDQ:**
+
+| Job | Cấu hình | PSNR | Cosine mean QDQ | Min / max | Quyết định |
+|---|---|---:|---:|---:|---|
+| `jgomex415` | W8A8 calib2000 | `17.9452` | `0.1692` | `0.1239 / 0.1962` | Fail |
+| `jp2j31dm5` | W8A16 calib2000 | `17.3564` | `0.1863` | `0.1366 / 0.2478` | Fail |
+| `j5m4vjxd5` | W8A8 + `min_max` | `17.8713` | `0.1658` | `0.1218 / 0.2159` | Fail |
+| `jgl7en9l5` | Lite-MP default | `18.6722` | `0.1906` | `0.1784 / 0.2212` | Fail |
+
+**Chẩn đoán:** raw input hợp lệ; tăng calibration từ 500 lên 2000 không sửa được fidelity; W8A16, min-max và Lite-MP default vẫn thấp xa gate.
+
+**Quyết định:** không compile/link các ứng viên này. Tiếp tục với biến thể Lite-MP, sau đó kiểm soát theo node.
+
+### 2026-06-05 - Ngày Chuẩn Bị Mixed Precision
+
+**Mục tiêu:** tiếp tục tìm kiếm Lite-MP/mixed precision.
+
+**Trạng thái:** không ghi nhận run mới. Ứng viên global tốt nhất vẫn là `jgl7en9l5` Lite-MP default với mean `0.1906`.
+
+**Quyết định:** run tiếp theo là Lite-MP 30% INT16, sau đó Lite-MP 10% FP16 nếu cần. Không compile/link khi chưa đạt gate QDQ.
+
+### 2026-06-06 - Lite-MP Và QDQ Surgery Theo Node
+
+**Mục tiêu:** đánh giá các biến thể Lite-MP và dựng tooling QDQ surgery local theo node để định vị vùng nhạy cảm.
+
+**Ứng viên Lite-MP global:**
+
+| Job | Cấu hình | PSNR | Cosine mean QDQ | Min / max | Quyết định |
+|---|---|---:|---:|---:|---|
+| `j56vveq6p` | Lite-MP 30% INT16 | `17.2011` | `0.1895` | `0.1509 / 0.2487` | Fail |
+| `jpe2lnmvp` | Lite-MP 10% FP16 | `20.0953` | `0.3267` | `0.2419 / 0.4402` | Tốt nhất toàn cục nhưng vẫn fail |
+
+**Tooling đã thêm:** `deployment/scripts/qnn/qdq_surgery.py`.
+
+**Surgery node-level đơn giản từ `jpe2lnmvp`:**
+
+| Ứng viên | QDQ bypass | Cosine mean | Min / max | Quyết định |
+|---|---|---:|---:|---|
+| `noop_jpe2lnmvp` | none | `0.326745` | `0.241872 / 0.440206` | Tooling giữ nguyên metric |
+| `output_float` | final output QDQ | `0.326745` | `0.241872 / 0.440206` | Không cải thiện |
+| `final_head_float` | final head | `0.314097` | `0.224059 / 0.433362` | Tệ hơn |
+| `all_layernorm_float` | all LayerNorm + output | `0.328831` | `0.258684 / 0.428104` | Chỉ cải thiện nhẹ |
+| `attention_score_float` | attention score path | `0.305198` | `0.243659 / 0.423269` | Tệ hơn |
+| `combined_layernorm_final_head` | LN + final head | `0.316313` | `0.251170 / 0.416648` | Tệ hơn |
+
+**Phân rã sensitivity:**
+
+| Ứng viên | QDQ bypass | Cosine mean | Min / max | Ý nghĩa |
+|---|---|---:|---:|---|
+| `all_qdq_float` | toàn bộ QDQ pairs | `0.999687` | `0.999575 / 0.999802` | Mapping surgery hợp lệ |
+| `all_weights_float` | initializer/weight QDQ | `0.314436` | `0.217998 / 0.460189` | Weight quantization không phải vấn đề chính |
+| `all_activations_float` | activation QDQ | `0.982455` | `0.958175 / 0.993038` | Activation quantization là vấn đề chính |
+| `matmul_gemm_weights_float` | weight MatMul/Gemm | `0.320173` | `0.238281 / 0.454809` | Chưa đủ |
+| `encoder_blocks_0_3_float` | activation blocks 0-3 | `0.348658` | `0.271988 / 0.482678` | Cải thiện nhẹ |
+| `encoder_blocks_4_7_float` | activation blocks 4-7 | `0.604363` | `0.534240 / 0.659349` | Tín hiệu mạnh |
+| `encoder_blocks_8_11_float` | activation blocks 8-11 | `0.604236` | `0.429726 / 0.773699` | Tín hiệu mạnh |
+| `post_layernorm_head_float` | activation post-LN/head | `0.306107` | `0.217496 / 0.423946` | Không |
+| `encoder_blocks_4_11_float` | activation blocks 4-11 | `0.957671` | `0.931005 / 0.976539` | Pass QDQ local |
+
+**Chẩn đoán:** lỗi nằm ở activation quantization/range, tập trung chủ yếu ở encoder blocks 4-11.
+
+**Quyết định:** validate `encoder_blocks_4_11_float` trên tập lớn hơn, rồi thử compile/link. Không claim deploy success từ QDQ surgery local.
+
+### 2026-06-07 - Xác Thực Ứng Viên Mixed-Float Và Link Fail
+
+**Mục tiêu:** validate `encoder_blocks_4_11_float` trên `vn3k_test_100`, rồi thử compile/link QNN.
+
+**Data:** audit raw `vn3k_test_100` pass: 100/100 hợp lệ, `786432` bytes/file, không NaN/Inf, range `[-1, 1]`.
+
+**Validation và job:**
+
+| Mục | Kết quả |
+|---|---|
+| `encoder_blocks_4_11_float` on `vn3k_test_10` | `0.957671 / 0.931005 / 0.976539` |
+| `encoder_blocks_4_11_float` on `vn3k_test_100` | `0.955255 / 0.900515 / 0.978287` |
+| Compile job | `jgd0zw76p` SUCCESS, optimized DLC `job_jgd0zw76p_optimized_dlc_mqv7g0yjq.dlc` |
+| Link job | `jgj1wxo1g` FAILED |
+
+**Lỗi link:**
+
+```text
+Tensor 'add_1003' has a floating-point type which is not supported by the targeted device.
+Please quantize the model including its I/O and try again.
+```
+
+**Refinement sweep trên `vn3k_test_100`:**
+
+| Ứng viên | Blocks giữ float | Mean | Min / max | Quyết định |
+|---|---|---:|---:|---|
+| `encoder_blocks_4_9_float` | 4-9 | `0.888407` | `0.797016 / 0.923269` | Fail |
+| `encoder_blocks_4_10_float` | 4-10 | `0.943966` | `0.879753 / 0.971730` | Fail |
+| `encoder_blocks_4_11_float` | 4-11 | `0.955255` | `0.900515 / 0.978287` | Pass, margin mỏng |
+| `encoder_blocks_5_11_float` | 5-11 | `0.904574` | `0.821596 / 0.960436` | Fail |
+| `encoder_blocks_6_11_float` | 6-11 | `0.697282` | `0.464951 / 0.858507` | Fail |
+
+**Chẩn đoán:** `_float` surgery là upper-bound diagnostic, không deploy được trên HTP. Blocks 4-11 là vùng nhạy cảm, nhưng nghiệm cuối phải all-quantized.
+
+**Quyết định:** dừng compile các ứng viên `_float`. Chuyển sang AIMET, ORT QDQ, INT16 encoding, QAT hoặc QNN-native quantization.
+
+### 2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail
+
+**Mục tiêu:** thử hướng không dùng AIMET bằng ONNX Runtime static quantization.
+
+**Tooling thêm/dùng lại:**
+
+- `deployment/scripts/qnn/quantize_ort_static.py`
+- `deployment/scripts/qnn/retarget_qdq_dtype.py`
+- `deployment/scripts/qnn/tune_qdq_activation_encodings.py`
+- `deployment/scripts/qnn/train_vision_quant_robust.py`
+- `deployment/scripts/qnn/submit_qaihub_compile_link.py`
+
+**Kết quả QDQ local:**
+
+| Ứng viên | Cấu hình | Dataset | Mean | Min / max | Quyết định |
+|---|---|---|---:|---:|---|
+| `minmax_calib100_w8a8` | ORT QDQ W8A8 | test10 | `0.177257` | `0.141239 / 0.219684` | Fail |
+| `minmax_calib100_linear_w8a8` | ORT QDQ linear-only | test10 | `0.873959` | `0.804497 / 0.930232` | Diagnostic hữu ích |
+| `qoperator_minmax_calib100_w8a8` | ORT QOperator W8A8 | test10 | `0.168127` | `0.073877 / 0.219146` | Fail |
+| `minmax_calib100_w8a16_opset21` | ORT QDQ W8A16 `quint16` | test100 | `0.999472` | `0.998398 / 0.999719` | Pass local |
+| `minmax_calib100_w8a16s_opset21` | ORT QDQ W8A16 `qint16` | test100 | `0.999472` | `0.998398 / 0.999719` | Pass local |
+| GELU output QDQ retarget qint8/quint8 | Mixed | test100 | `0.978237` | `0.954687 / 0.991896` | Pass local |
+| MatMul/Gemm activation QDQ retarget qint8 | Mixed | test100 | `0.969894` | `0.939456 / 0.986330` | Pass local |
+| GELU output bypass for requant | Mixed | test100 | `0.999476` | `0.998436 / 0.999724` | Pass local |
+
+**Các lần thử compile/link:**
+
+| Ứng viên | Compile job | Link job | Kết quả |
+|---|---|---|---|
+| `minmax_calib100_w8a16_opset21` | `jgd03mkrp` | `jgj178xvg` | Link fail: `gelu_10_DequantizeLinear_Output` floating-point |
+| `minmax_calib100_w8a16s_opset21` | `j5wx708jp` | `j576417rg` | Cùng lỗi link fail |
+| W8A16 + `--quantize_full_type int16` | `jgkd41xnp` | `jgzwm63xg` | Context conversion exit code 14 |
+| W8A16 + HTP FP16 internal | `jgd03ke6p` | `jpv4d8rzp` | `gelu_10_DequantizeLinear_Output` còn floating |
+| GELU qint8/quint8 variants | `jgomr74d5` / `jgj179k7g` | `jp389l6z5` / `j5wx7kmzp` | Cùng nhóm lỗi link fail |
+| MatMul act qint8 variant | `jp88xn48p` | `jgl7xd1l5` | Cùng nhóm lỗi link fail |
+| GELU float-for-requant + int16 | `jgzwm1kog` | `jpr90k37p` | Exit code 14 |
+| `jpe2lnmvp_blocks_0_11_int16_opset21` | `jgd03w76p` | `jp0kjyd25` | Link fail: `add_103_updated` còn floating-point |
+
+**Kết quả tuning INT16 encoding local:**
+
+| Ứng viên | Mean | Min | Quyết định |
+|---|---:|---:|---|
+| `jpe2lnmvp_blocks_4_11_int16_opset21` | `0.928473` | `0.913959` | Gần pass |
+| `jpe2lnmvp_blocks_0_11_int16_opset21` | `0.947065` | `0.925417` | Gần gate, link fail |
+| `jpe2lnmvp_all_activations_int16_opset21` | `0.945032` | `0.925546` | Gần gate |
+
+**Chẩn đoán:** ORT W8A16 có thể sửa fidelity local nhưng tạo pattern graph bị QNN HTP linker reject. Không tiếp tục upload các biến thể cùng pattern.
+
+**Quyết định:** chuyển sang QAT vision-only / quantization-aware fine-tune.
+
+### 2026-06-10 - Đánh Giá QAT v1 Vision-Only Trên Server
+
+**Mục tiêu:** đánh giá QAT/quantization-aware fine-tune ban đầu trước khi export ONNX và submit AI Hub.
+
+**Run:**
+
+| Run | Cấu hình | Steps | Val clean mean/min | Val fake mean/min | Quyết định |
+|---|---|---:|---:|---:|---|
+| `exported_model_qat_v1_server` | batch 4, epoch 1, lr `1e-5`, mse `0.05` | 500 | `0.7929 / 0.6806` | `0.7912 / 0.6832` | Fail do clean drift |
+| `exported_model_qat_v1_server_2` | lr `1e-6`, mse `0.1` | 500 | `0.6533 / 0.4248` | `0.4427 / 0.3029` | Tệ hơn |
+
+**Chẩn đoán:** objective QAT ban đầu tối ưu fake-quant path nhưng để clean student drift khỏi teacher, làm vỡ alignment với text encoder chưa đổi.
+
+**Cập nhật implementation lúc 22:38:**
+
+- Đã cập nhật `deployment/scripts/qnn/train_vision_quant_robust.py`.
+- Thêm objective clean-consistency:
+
+```text
+loss = fake_cosine_loss + fake_mse_weight * fake_mse
+     + clean_weight * clean_cosine_loss
+     + clean_mse_weight * clean_mse
+```
+
+**Kết quả smoke:**
+
+- `python3 -m py_compile deployment/scripts/qnn/train_vision_quant_robust.py`: PASS.
+- CPU 1-step smoke: clean_weight `1.0`, clean_mse_weight `0.05`, `val_clean cosine_l2_mean = 0.999737`, `val_fake_quant cosine_l2_mean = 0.086960`.
+
+**Quyết định:** chạy QAT v2 với clean-consistency. Không export v1/v1b.
+
+### 2026-06-11 - Sweep Trade-Off Clean/Fake Cho QAT
+
+**Mục tiêu:** tìm candidate QAT vừa giữ clean embedding vừa cải thiện fake-quant robustness.
+
+**Gate nội bộ trước export:**
+
+```text
+val_clean.mean >= 0.95
+val_clean.min  >= 0.90
+val_fake_quant.mean >= 0.78
+```
+
+**Run:**
+
+| Run | Vùng/cấu hình | Val clean mean/min | Val fake mean/min | Quyết định |
+|---|---|---:|---:|---|
+| v2 full 4-11 | clean `1.0`, clean_mse `0.05` | `0.9396 / 0.8913` | `0.7826 / 0.6492` | Fake gần pass, clean fail |
+| v3 full 4-11 | clean `2.0`, clean_mse `0.1` | `0.9596 / 0.9201` | `0.7238 / 0.5700` | Clean pass, fake giảm |
+| v4 full 4-11 | clean `1.5`, clean_mse `0.075` | `0.9505 / 0.8998` | `0.7539 / 0.6337` | Cân bằng full-window tốt nhất, vẫn fail |
+| v5 local full 4-11 | clean `1.35`, clean_mse `0.075` | `0.9557 / 0.8937` | `0.6551 / 0.5368` | Fake kém |
+| v5 server full 4-11 | cùng họ cấu hình | `0.9489 / 0.8936` | `0.7388 / 0.6017` | Không tốt hơn v4 |
+| blocks 6-11 v1 | narrower region | `0.9297 / 0.8606` | `0.8460 / 0.7515` | Fake tốt nhất, clean drift |
+
+**Chẩn đoán:** full 4-11 có trade-off clean/fake. Blocks 6-11 cải thiện fake robustness, nên tiếp tục nhánh đó.
+
+**Quyết định:** chạy blocks 6-11 v2 với ràng buộc clean mạnh hơn. Không export candidate nào từ sweep này.
+
+### 2026-06-13 - Kiểm Tra AI Hub QDQ Cho QAT Blocks 6-11 v5
+
+**Mục tiêu:** kiểm tra candidate PyTorch fake-quant QAT tốt nhất có transfer sang AI Hub QDQ thật hay không.
+
+**Kết quả nội bộ QAT:**
+
+| Run | Clean mean/min | Fake mean/min | Quyết định |
+|---|---:|---:|---|
+| blocks 6-11 v2 | `0.9395 / 0.8767` | `0.8369 / 0.7331` | Clean fail |
+| blocks 6-11 v3 | `0.9455 / 0.8866` | `0.8225 / 0.7276` | Clean fail |
+| blocks 6-11 v4 | `0.9503 / 0.8901` | `0.8108 / 0.7060` | Clean min fail |
+| blocks 6-11 v5 | `0.9539 / 0.9030` | `0.7997 / 0.7022` | Ứng viên nội bộ tốt nhất |
+
+**Kết quả export và QDQ:**
+
+| Mục | Kết quả |
+|---|---|
+| Static ONNX vs PyTorch QAT v5 | `1.000000`, min `0.9999998` |
+| AI Hub Lite-MP QDQ vs PyTorch QAT v5 | `0.244236`, min `0.203228`, max `0.276519` |
+| AI Hub default QDQ job | `jgl79ndj5`, mean `0.252687`, min `0.211948` |
+
+**QDQ surgery trên QAT v5 Lite-MP QDQ:**
+
+| Ứng viên | Mean | Min / max | Quyết định |
+|---|---:|---:|---|
+| no-op | `0.244236` | `0.203228 / 0.276519` | Baseline tooling |
+| `all_qdq_float` | `0.999779` | `0.999683 / 0.999836` | Mapping hợp lệ |
+| `all_weights_float` | `0.511043` | `0.378787 / 0.671750` | Weight QDQ có góp lỗi |
+| `all_activations_float` | NaN | `any_onnx_nan = true` | Không hữu ích |
+| blocks 0-3 float | `0.169657` | `0.119832 / 0.237798` | Fail |
+| blocks 4-7 float | `0.154641` | `0.094580 / 0.205820` | Fail |
+| blocks 8-11 float | `0.014968` | `-0.016124 / 0.043670` | Fail |
+| post-LN/head float | NaN | `any_onnx_nan = true` | Fail |
+| all weights + blocks 4-7 float | `0.858946` | `0.802091 / 0.896209` | Tín hiệu mạnh nhất, vẫn fail |
+| all weights + blocks 8-11 float | `0.745280` | `0.626759 / 0.834999` | Có tín hiệu |
+
+**Cập nhật tooling:** `compare_qnn_with_pytorch.py` đã được patch để `_vector_stats()` không crash trên NaN/Inf; nó ghi lại `any_onnx_nan` / `any_qnn_nan`.
+
+**Chẩn đoán:** proxy PyTorch fake-quant chưa khớp đủ tốt với AI Hub QDQ. Với QAT v5, vấn đề là tương tác giữa weight QDQ và activation QDQ, đặc biệt ở blocks 4-7/4-11.
+
+**Quyết định:** không compile/link các ứng viên QDQ QAT v5 từ nhánh này. Tiếp tục diagnostic bằng continuous windows và encoding tuning.
+
+### 2026-06-14 - Diagnostic QAT v5, Đột Phá GELU, W8A16 Link Fail
+
+#### Buổi Sáng: Chẩn Đoán QDQ QAT v5 Và Tuning Encoding
+
+**Kết quả continuous-window surgery:**
+
+| Candidate | QDQ pairs chọn | Mean | Min / max | Quyết định |
+|---|---:|---:|---:|---|
+| all weights + blocks 4-9 | 318 | `0.947507` | `0.913112 / 0.965084` | Gần pass diagnostic |
+| all weights + blocks 4-10 | 352 | `0.964700` | `0.930359 / 0.980784` | Diagnostic pass |
+| all weights + blocks 4-11 | 386 | `0.970312` | `0.939976 / 0.985145` | Diagnostic tốt nhất |
+
+**Phân tích encoding cho `qaihub_lite_mp_qdq`:**
+
+- Tổng QDQ pairs: `575`.
+- Activation QDQ pairs: `462`.
+- Activation QDQ pairs trong blocks 4-11: `272`.
+- `real_abs_max_mean` trung bình trong blocks 4-11: `2075.381531`.
+- Lớn nhất `real_abs_max_mean`: `138717.701084`.
+
+**Sweep INT8 max-abs activation trên blocks 4-11:**
+
+| Max abs | Pairs đã đổi | Mean | Min / max | Quyết định |
+|---:|---:|---:|---:|---|
+| 8 | 94 | `0.184424` | `0.130205 / 0.230198` | Fail |
+| 16 | 82 | `0.225542` | `0.147079 / 0.373379` | Fail |
+| 24 | 72 | `0.204669` | `0.159287 / 0.294313` | Fail |
+| 32 | 62 | `0.206731` | `0.159230 / 0.260376` | Fail |
+| 48 | 51 | `0.197173` | `0.138325 / 0.260081` | Fail |
+| 64 | 48 | `0.211570` | `0.147779 / 0.311365` | Fail |
+| 128 | 42 | `0.216234` | `0.144512 / 0.328789` | Fail |
+| 256 | 31 | `0.247837` | `0.198776 / 0.281554` | Tốt nhất nhưng vẫn fail |
+
+**AI Hub native W8A16 QAT v5:**
+
+- Artifact: `artifacts/deployment/runtime/qat/blocks_6_11_v5/qaihub_w8a16_qdq/model.onnx`.
+- Kết quả: mean `0.155494`, min `0.115508`, max `0.244340`, tệ hơn Lite-MP INT8.
+
+**Quyết định:** các ứng viên này không deploy được. Mở kế hoạch mới quanh diagnostic activation-outlier và năng lực QNN-native.
+
+#### 15:34 - Chẩn Đoán Pre-Flight P0
+
+**P0.1 profile activation outlier:**
+
+- Script: `deployment/scripts/qnn/profile_activation_outliers.py`.
+- Output: `artifacts/deployment/runtime/diag/activation_outliers/blocks_4_11/`.
+- Kết luận: `CONCENTRATED_FIXED`.
+- Ví dụ nặng nhất: `val_473` block 5, abs max `5224`, concentration `876x`, stability `1.00`, p99.99 `34.5`.
+- Channel lặp lại: `523`, `415`, `7`, `528` across blocks 9-11.
+- Một số tensor residual late-block là diffuse với concentration `~4-6x` và p99.99 khoảng `2200`, nhưng các channel cố định tập trung vẫn là failure mode chính.
+
+**P0.2 audit W8A16:**
+
+- Lite-MP INT8 và native W8A16 đều dùng activation encoding per-tensor.
+- Native W8A16 có `20/20` activation tensor per-tensor, max real_abs_max khoảng `137236`.
+- Kết luận: lỗi nằm ở granularity/range, không phải chỉ do bit-width.
+
+**P0.3 audit toolchain:**
+
+- Tìm thấy trên `qc-rb3g2`: `qairt-converter`, `qairt-quantizer`, `qnn-onnx-converter`, `qnn-model-lib-generator`, `qnn-context-binary-generator`, `qnn-net-run`, `qnn-throughput-net-run`, `qnn-profile-viewer`, `qnn-platform-validator`.
+- Chỉ thiếu các alias QAIRT đã có bản tương đương `qnn-*`.
+
+**Kết luận nhanh P0.4:**
+
+- `qairt-quantizer` (`libPyIrQuantizer.so`) chỉ chạy x86.
+- Board aarch64 có thể convert/run nhưng không chạy được quantizer.
+- Quantization cần AI Hub hoặc host x86.
+
+#### 17:03 - Đột Phá Root Cause GELU
+
+**Kết quả SmoothQuant:**
+
+- Script mới: `deployment/scripts/qnn/smoothquant_equalize.py`.
+- Fold LN vào projection input; abs max LN-output `121.2 -> 6.4`.
+- Cosine bất biến FP32 `1.000000`.
+- AI Hub SmoothQuant job `jpv4j737p` tạo mean around `0.15`, trung tính so với baseline full INT8, không cải thiện.
+
+**Postmortem:**
+
+- Các activation tensor top với real_abs_max `119406`, `66048`, `62813`, `56184` đến từ các node ONNX `Pow`.
+- Root cause: export opset-18 decompose tanh-GELU thành `Pow(x,3)` và `Tanh`.
+- `node_Pow_446 = linear_34 ^ 3.0` nằm trong chuỗi xấp xỉ GELU.
+- Term `x^3` làm per-tensor activation quantization collapse.
+
+**Fix:**
+
+- Re-export ở opset 20 để `Gelu` được fused.
+- Artifact: `artifacts/deployment/exports/exported_model_gelu20/vision_onnx/`.
+- Op counts: `Pow=0`, `Tanh=0`, `Gelu=13`.
+- Static control vs PyTorch: mean `1.0000000`, min `0.9999999`.
+
+#### 17:14 - GELU20 INT8 Vẫn Fail Do Concentration
+
+**Job và kết quả:**
+
+- AI Hub gelu20 W8A8 quantize-only job `jgj1jqm8g`.
+- QDQ vs PyTorch: mean `0.142`, min `0.090`.
+- QDQ giữ fused `Gelu`: `Pow=0`, `Tanh=0`, `Gelu=13`.
+- Top activation range giảm từ `119406` to `255.8`.
+
+**Surgery:**
+
+- `all_activations_float`: `0.982 / 0.958`, pass.
+- `all_weights_float`: `0.138 / 0.071`, fail.
+
+**Chẩn đoán:** fused GELU đã sửa magnitude cubic, nhưng per-tensor activation quantization vẫn collapse vì một vài channel cố định chi phối. Cần per-channel activation hoặc representation equalization.
+
+#### 17:40 - W8A16 Pass Fidelity
+
+**Job và kết quả:**
+
+- AI Hub gelu20 W8A16 quantize-only job `j5wxjzk4p`.
+- Cấu hình W8A16: `--weights-dtype int8 --activations-dtype int16`.
+- QDQ vs PyTorch on `vn3k_test_10`: mean `0.99969`, min `0.99950`, max `0.99983`, `l2_l2_mean = 0.0249`, không NaN.
+
+**Text prep hoàn tất in parallel:**
+
+- Export text opset-20: `Pow=0`, `Tanh=0`, `Gelu=12`.
+- `prepare_vn3k_text_inputs.py`: tokenize caption VN3K bằng `get_tokenizer` và `bases.tokenize`, tạo hai input int64 `[1,64]`.
+- `compare_text_onnx_with_pytorch.py`: static control mean `0.99999993`.
+
+**Quyết định:** fidelity W8A16 gần như không mất mát. Thử compile/link đầy đủ.
+
+#### 18:10 - W8A16 Link Fail Trên HTP v68
+
+**Job:**
+
+| Job | Loại | Kết quả |
+|---|---|---|
+| `jp13rmzk5` | W8A16 quantize full flow | SUCCESS |
+| `j5wxjrwjp` | compile DLC | SUCCESS |
+| `j576q80rg` | link context binary | FAILED exit code 14 |
+
+**Lỗi:**
+
+```text
+[ERROR] has incorrect Value 68, expected >= 73.
+[ERROR] QnnBackend_validateOpConfig failed 3110
+[ERROR] Failed to validate op node_MatMul_774 với error 0xc26
+```
+
+**Chẩn đoán:**
+
+- `node_MatMul_774` là attention matmul activation x activation.
+- A16 cho op này cần HTP v73+, trong khi RB3 Gen2 là v68.
+- Đây là lỗi support op phần cứng, không phải lỗi fidelity.
+
+**Quyết định:** W8A16 không deploy được trên v68. Cần all-W8A8 hoặc mixed scheme tránh A16 ở các op không hỗ trợ.
+
+### 2026-06-15 - INT8 Dựa Trên Rotation, Deploy Board, QAT Recovery, v5 Tốt Nhất
+
+#### 1. Mixed A16 Fail Rộng Hơn
+
+**Mục tiêu:** kiểm tra liệu chỉ attention matmul cần INT8 còn residual/MLP có thể giữ A16 hay không.
+
+**Job và kết quả:**
+
+| Job | Loại | Kết quả |
+|---|---|---|
+| `jp48z6lqg` | compile mixed-int, attention int8 + phần còn lại int16 | SUCCESS |
+| `jpxmw8kjg` | link mixed-int | FAILED exit 14 ở `node_layer_norm` |
+
+**Can thiệp local:** mở rộng `retarget_qdq_dtype.py` với `--act-matmul-inputs`, hạ 56 activation-matmul QDQ pairs xuống int8 trong khi giữ residual/MLP int16. Fidelity local là `0.9943`.
+
+**Chẩn đoán:** v68 cũng reject A16 LayerNorm. Giới hạn A16 đủ rộng để W8A16/mixed-A16 không khả thi trên RB3 v68.
+
+#### 2. Clipping W8A8 Fail
+
+**Thử nghiệm:** `tune_qdq_activation_encodings.py --all-activations --max-abs` với các giá trị `{4,8,16,32,64}` trên job gelu20 W8A8 `jgj1jqm8g`.
+
+**Kết quả:** cosine mean `0.118`, `0.155`, `0.128`, `0.405`, `0.190`; tất cả fail.
+
+**Chẩn đoán:** các channel outlier mang tín hiệu thật, không thể chỉ clip đơn giản.
+
+#### 3. Quyết Định Implement Rotation
+
+**Chẩn đoán đã khóa:**
+
+- v68 hỗ trợ W8A8 khá rộng.
+- A16 bị block đúng ở nơi model cần: attention act-act và LayerNorm.
+- W8A8 thường fail vì activation concentration chi phối scale per-tensor.
+- Clipping làm mất thông tin.
+
+**Quyết định:** implement residual rotation kiểu QuaRot/SliceGPT trong PyTorch, fold vào weights, không thêm runtime op.
+
+**Recipe ban đầu:**
+
+- Phase A: fold tham số affine của LayerNorm vào reader.
+- Phase B: rotate residual stream với orthogonal Q.
+- Writer nhận `Q W` / `Q b`.
+- Reader nhận `W Q^T`.
+- Head K/V nhận `Q^T` trong khi learned query/probe giữ nguyên.
+
+#### 4. M1 Thử Rotation Lần Đầu Và Bug Reload
+
+**Script:** `deployment/scripts/qnn/rotate_vision_encoder.py`.
+
+**Kết quả ban đầu:**
+
+- Bất biến FP32 in-memory: cosine `1.0`, min `0.99999988`.
+- Residual concentration: `220x -> 4.2x`, abs max `267.6 -> 140.2`.
+
+**Bug:** state_dict đã lưu bị reload vào model LayerNorm thường thay vì module RMSNormNoAffine, làm reload cosine còn `0.11`.
+
+**Fix:** thêm `load_rotated_model(model_dir)`, swap module LN sang `RMSNormNoAffine` trước khi load.
+
+**Verify reload:** cosine trở lại `1.0`, min `0.99999988`.
+
+#### 5. M2 RMSNorm Pass Static Control Nhưng M3 Fail
+
+**Script export:** `deployment/scripts/qnn/export_rotated_vision_onnx.py`.
+
+**Kết quả M2:**
+
+- Static ONNX-rotated vs PyTorch-rotated: mean `1.0000000`, min `0.99999988`.
+- Op counts: `Gelu=13`, `LayerNormalization=1`, `Pow=25`, `ReduceMean=25`.
+
+**Job M3:** W8A8 rotated RMSNorm quantize job `jp48z6o2g`.
+
+**Kết quả M3:** QDQ vs PyTorch gốc mean `0.162`, gần như không đổi so với W8A8 chưa rotate.
+
+**Surgery:** `all_activations_float = 0.978`, `all_weights_float = 0.162`.
+
+**Root cause:** thay LayerNorm bằng RMSNorm làm lộ `Pow(x^2)`, `ReduceMean` và internal division cho per-tensor activation quantization.
+
+**Quyết định:** bỏ conversion RMSNorm. Giữ fused LayerNorm.
+
+#### 6. Fix Rotation Bảo Toàn Mean
+
+**Fix:** xây Q sao cho `Q * 1 = 1`; rotation chỉ tác động lên không gian con trực giao với hướng mean.
+
+**Vì sao:** với LayerNorm identity-affine, Q trực giao bảo toàn mean cho `LN(Qx) = Q LN(x)`, nên fused LayerNorm có thể ở lại trong graph.
+
+**Triển khai:**
+
+- `_mean_preserving_orthogonal(dim, seed)` xây `Q = U blockdiag(1, Rc) U^T`.
+- Fold gamma/beta vào reader.
+- Đặt affine của LayerNorm thành identity nhưng vẫn giữ module LayerNorm.
+- Dùng Q cho residual writer và `Q^T` cho reader.
+- `load_rotated_model` đơn giản hóa lại về load model chuẩn.
+
+**Validation:**
+
+- Phase A/B invariance: `1.0`, min `0.99999988`.
+- Q orthogonality error: `3e-15`.
+- `Q * 1 = 1` error: `1e-14`.
+- Reload invariance: `1.0`.
+- Residual concentration: `252x -> 5.3x`.
+
+#### 7. M2 + M3 Rotation Bảo Toàn Mean
+
+**Kết quả export M2:**
+
+- Re-export `exported_model_rotated`.
+- Op counts: `LayerNormalization=26`, `Pow=0`, `Gelu=13`, `ReduceMean=0`.
+- Static control: khoảng `1.0`.
+
+**Job W8A8 M3:** `jpr9zro9p`.
+
+**Kết quả M3:** QDQ vs PyTorch gốc:
+
+- Mean `0.8975`.
+- Min `0.8747`.
+- Max `0.9297`.
+- Không NaN.
+
+**Chẩn đoán:** Hành trình W8A8 đi từ `0.14` chưa rotate sang `0.16` RMSNorm rotation rồi tới `0.90` với rotation bảo toàn mean. Lỗi còn lại là lỗi INT8 per-tensor diffuse tích lũy qua 12 block.
+
+**Quyết định:** compile/link và chạy board; sau đó đo retrieval, không chỉ cosine.
+
+#### 8. M4 Link Thành Công Và M5 Chạy Board
+
+**Job:**
+
+| Job | Loại | Kết quả |
+|---|---|---|
+| `jpv4j8lkp` | W8A8 quantize full flow | SUCCESS |
+| `jpxmwq8lg` | compile DLC | SUCCESS |
+| `jp2j211q5` | link context binary | SUCCESS |
+
+**Đầu ra:** `artifacts/deployment/runtime/rotated_w8a8_v2/vision_encoder.bin`, khoảng `89.7 MB`.
+
+**Chạy board:**
+
+- `qnn-net-run` trên `qc-rb3g2`, HTP v68, profiling basic, high performance.
+- 10 inferences hoàn tất.
+- Đầu ra sync về `artifacts/deployment/qnn_runs/rotated_w8a8_v2/`.
+
+**Fidelity trên board:**
+
+- QNN vs PyTorch mean `0.8982`.
+- Min `0.8606`.
+- Max `0.9283`.
+- Không NaN.
+- Khớp QDQ `0.8975` vớiin khoảng `0.0007`.
+
+**Runtime trên board:**
+
+- NetRun avg mỗi inference `34250 us` = `34.25 ms`.
+- Min/max `32958 / 35388 us`.
+- Accelerator execute `32478 us` = `32.5 ms`.
+- 4 HVX threads.
+- Throughput `22.5 inf/sec`.
+- Init/load binary `54688 us` = `54.7 ms`.
+
+**Quyết định:** runtime HTP trung thực; vấn đề còn lại là retrieval accuracy, không phải drift phần cứng.
+
+#### 9. Rotation-Only Retrieval Fail
+
+**Phương pháp đánh giá:**
+
+- Script: `deployment/scripts/qnn/eval_retrieval_quantized_vision.py`.
+- Embedding ảnh: QDQ ONNX `runtime/rotated_w8a8_v2/job_jpr9zro9p_qdq_onnx`.
+- Embedding text: FP32 PyTorch `encode_text`.
+- Dataset: VN3K test full, 2000 images + 4000 captions.
+- Metric bám theo `LitTBPS._compute_metrics`: raw pooler features và dot product, `utils.metrics.rank`, không dùng `Evaluator` normalized generic.
+
+**Sanity:** baseline FP32 T2I R@1 `52.40`, gần với lịch sử `52.28`.
+
+**Kết quả:**
+
+| Metric | FP32 baseline | Rotation W8A8 | Drop |
+|---|---:|---:|---:|
+| T2I R@1 | `52.40` | `45.42` | `-6.97` |
+| I2T R@1 | `55.30` | `49.40` | `-5.90` |
+| T2I R@5 / R@10 | `79.38 / 87.80` | `73.38 / 83.12` | - |
+
+**Artifact:**
+
+- `artifacts/deployment/runtime/rotated_w8a8_v2/retrieval_r1.json`
+- `artifacts/deployment/runtime/rotated_w8a8_v2/retrieval_embeddings.npz`
+- `artifacts/deployment/runtime/rotated_w8a8_v2/retrieval_full.log`
+
+**Quyết định:** chưa quantize text. Chỉ riêng quantization vision đã fail gate, nên both-INT8 sẽ tệ hơn hoặc bằng. Cải thiện vision trước.
+
+#### 10. Reject R2 Head-Dim Hadamard
+
+**Triển khai:** `rotate_vision_encoder.py` phase C, Hadamard block-diagonal trên head_dim=64 fold vào `v_proj` output và `out_proj` input. Không runtime op.
+
+**Gate local:** invariance cosine `1.0`, static ONNX control `1.0`, op counts `Gelu=13`, `LayerNormalization=26`, `Pow=0`.
+
+**Job AI Hub:** `jgomykjq5` quantize-only W8A8.
+
+**Kết quả:**
+
+| Metric | Không R2 | R2 |
+|---|---:|---:|
+| QDQ cosine mean/min | `0.8975 / 0.8747` | `0.9006 / 0.8564` |
+| T2I R@1 | `45.42` | `45.25` |
+| I2T R@1 | `49.40` | `47.15` |
+
+**Chẩn đoán:** R2 nhắm vào attention value path, nhưng lỗi còn lại chủ yếu là MLP/activation noise. R2 làm min cosine và retrieval giảm nhẹ.
+
+**Quyết định:** reject R2. Chuyển sang QAT/quant-robust finetune.
+
+#### 11. Diễn Tiến QAT Từ v1 Đến v6
+
+| Vòng | Thay đổi chính | Job AI Hub | QDQ mean/min | T2I R@1 | I2T R@1 | Quyết định |
+|---|---|---|---:|---:|---:|---|
+| rotation-only | không QAT | `jpr9zro9p` | `0.8975 / 0.8747` | `45.42` | `49.40` | Deploy được trên board, retrieval fail |
+| QAT v1 | per-sample fake-quant, local MPS | `jgzwej1kg` | `0.9223 / 0.8917` | `46.92` | `50.45` | Có ích, nhưng sim quá dễ |
+| QAT v2 | per-tensor fake-quant, toàn bộ layers, 5 epochs | `jgomym0x5` | `0.9281 / 0.9093` | `47.80` | `51.65` | Gần gate |
+| QAT v3 | EMA observer, toàn bộ layers, 8 epochs | `jp383qmn5` | `0.9353 / 0.919` | `48.20` | `52.30` | Pass gate |
+| QAT v4 | + `--quant-head`, 12 epochs | `jgd09l96p` | `0.9364 / 0.9091` | `48.50` | `52.95` | Binary deploy đã verify trên board |
+| QAT v5 | + `--quant-linears`, 15 epochs | `jpxm2w0lg` | `0.9437 / 0.9311` | `49.25` | `53.40` | Đã chạm ngưỡng tác dụng của single linear |
+| QAT v6 | + `--quant-attention` | `j57krdwvp` | **`0.9491 / 0.9266`** | **`49.30`** | **`53.85`** | Ứng viên accuracy tốt nhất hiện tại |
+
+**Chi tiết QAT v1:**
+
+- Teacher: rotated FP32 frozen.
+- Student: rotated + fake-quant trên GELU output và residual.
+- Val clean cosine `0.9951`, fake-quant sim `0.9754`.
+- Đã xác định transfer gap: per-sample fake-quant quá dễ.
+
+**Chi tiết QAT v2:**
+
+- Per-tensor fake-quant, layers 0-11, 4302 train images, batch 24, 5 epochs, 900 steps, lr `1e-5`, RTX 3060.
+- Val sim fake-quant cosine `0.9803`.
+- Kết quả `47.80`, chỉ thấp hơn deploy gate `0.20`.
+
+**Chi tiết QAT v3:**
+
+- EMA observer với per-tensor scale, matching AI Hub calibrate-once behavior.
+- 4302 images, batch 24, 8 epochs, 1440 steps.
+- Retrieval:
+  - T2I `48.20 / 75.42 / 85.10`, mAP `53.39`, mINP `46.60`.
+  - I2T `52.30 / 78.90 / 86.85`, mAP `47.89`, mINP `31.03`.
+- Pass gate `48.0`.
+
+**Chi tiết QAT v4:**
+
+- EMA + `--quant-head`, bao phủ post-layernorm/head attention/head MLP.
+- 12 epochs, 2160 steps, trainable 92.1M.
+- Đã verify trên board:
+  - Board fidelity `0.9363 / 0.9068`.
+  - QDQ fidelity `0.9364 / 0.9091`.
+  - NetRun avg `32.70 ms`, accelerator `31.2 ms`, `22.88 FPS`, init `53.3 ms`.
+- Runtime/size giống v2/rotation nhưng retrieval tốt hơn nhiều.
+
+**Chi tiết QAT v5:**
+
+- EMA + `--quant-head --quant-linears`.
+- Fake-quant bao phủ mọi `nn.Linear` output: q/k/v/out_proj, fc1, fc2, head linears.
+- Layers 0-11, 4302 images, batch 24, 15 epochs, 2700 steps.
+- Val sim cosine `0.978`, min `0.9453`.
+- QDQ min tăng `0.9091 -> 0.9311`, chứng minh plateau v4 là coverage gap, không phải trần cơ bản của W8A8.
+- Retrieval: T2I R@1 `49.25`, R@5 `77.28`, R@10 `85.80`, mAP `54.55`, mINP `47.86`; I2T R@1 `53.40`.
+- Khoảng cách còn lại tới stretch target 50: `0.75`.
+
+**Chi tiết QAT v6:**
+
+- Kế thừa v5 và thêm `--quant-attention`.
+- Bao phủ thêm 2 functional attention op: `Q.K^T` (scores), softmax probs và context `softmax.V`.
+- QDQ Job: `j57krdwvp`.
+- QDQ Cosine: mean `0.9491` (tăng nhẹ từ `0.9437`), min `0.9266` (giảm nhẹ từ `0.9311`).
+- Retrieval: T2I R@1 `49.30` (tăng từ `49.25`), R@5 `77.38`, R@10 `86.28`, mAP `54.87`, mINP `48.17`; I2T R@1 `53.85` (tăng từ `53.40`).
+- Mặc dù R@1 tiếp tục lập đỉnh mới cho W8A8, mức tăng khá nhỏ so với v5, cho thấy `--quant-attention` đem lại hiệu quả marginal.
+
+#### 12. Hiểu Về Model Size / Memory
+
+Breakdown đã khử trùng lặp của `exported_model/model_fp32.pt` theo parameter:
+
+| Thành phần | Params | FP32 | FP16 | INT8 |
+|---|---:|---:|---:|---:|
+| vision_model | 92.9M | 372 MB | 186 MB | 93 MB |
+| text_model | 277.7M | 1111 MB | 555 MB | 278 MB |
+| projection + other | 1.2M | 5 MB | 2 MB | 1 MB |
+| total | 371.8M | 1487 MB | 744 MB | 372 MB |
+
+Text chiếm 75% parameter của model. Riêng token embedding là `250000 x 768 = 192M params = 768 MB FP32`.
+
+**Quyết định:** text INT8 quan trọng cho memory cuối cùng, nhưng nên làm sau khi nhánh vision được accept/stretch xong.
+
+#### 13. Kế Hoạch Tiếp Theo Sau v6
+
+**Phân tích sau v6:**
+- `v6` cho thấy fake-quant attention có tăng nhẹ R@1 (`49.30`), tiến thêm 1 bước nhỏ tới mốc `50.0`.
+- Hiệu quả marginal của `v6` so với `v5` cho thấy việc QAT từng module lẻ đã chạm ngưỡng (diminishing returns).
+
+**Thứ tự dự kiến:**
+1. Cân nhắc Train QAT với số lượng mẫu lớn hơn hoặc dài epoch hơn để ép mô hình học tốt hơn bù lại loss lượng tử hóa.
+2. Nếu R@1 vẫn chưa vượt qua mốc `50.0`, cân nhắc thuật toán Learned Rotation (như SpinQuant) tối ưu hóa góc quay rotation dựa trên activation thay vì chỉ bảo toàn mean.
+3. Nếu R@1 `49.30` được xem là "đủ tốt" để đánh đổi, tiến hành compile/link `v6` và đo đạc Board Fidelity (thông qua `qnn-net-run`).
+4. Bắt đầu quy trình nén Text Encoder (`T0` - đo concentration) để hoàn thiện hệ thống W8A8 end-to-end.
+
+---
+
+## 3. Chỉ Mục Artifact Hiện Tại
+
+| Artifact | Ý nghĩa |
+|---|---|
+| `artifacts/deployment/exports/exported_model` | Baseline TBPS FP32/FP16 đã merge LoRA |
+| `artifacts/deployment/exports/exported_model_rotated` | Model đã rotate bảo toàn mean |
+| `artifacts/deployment/exports/exported_model_rotated_qat_v3` | Model QAT đầu tiên pass gate |
+| `artifacts/deployment/exports/exported_model_rotated_qat_v4` | Model deploy đã verify trên board |
+| `artifacts/deployment/exports/exported_model_rotated_qat_v5` | Ứng viên accuracy trước đó |
+| `artifacts/deployment/exports/exported_model_rotated_qat_v6` | Ứng viên accuracy tốt nhất hiện tại |
+| `artifacts/deployment/runtime/rotated_w8a8_v2/vision_encoder.bin` | Binary all-INT8 đầu tiên link được v68, retrieval fail |
+| `artifacts/deployment/runtime/rotated_w8a8_qat_v4/vision_encoder.bin` | Binary QAT v4 đã verify trên board khi có sẵn |
+| `artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_j57krdwvp_qdq_onnx` | Artifact QDQ tốt nhất hiện tại |
+| `artifacts/deployment/qnn_inputs/vn3k_train_calib_2000` | Raw calibration AI Hub |
+| `d7jzjy1m2` | Dataset AI Hub `msiglip-vision-vn3k-train-calib-2000` |
+
+---
+
+## 4. KẾ HOẠCH: quantize Text Encoder (full both-INT8 on-device)
+
+> Trạng thái: **PLANNING** (chưa chạy).
+> Mục tiêu: Đưa text encoder về INT8 W8A8 chạy trên v68 → hệ cả-hai-INT8 (~372MB weights, gọn cho RAM 4GB).
+
+Vision đã xong (v5 `49.25`, v4 board-verified). Text là 75% tham số (token-embedding 250k×768 = 768MB FP32) nên là phần ăn RAM chính.
+
+### 4.1 Cấu trúc text encoder (đã rà code)
+
+`SiglipTextTransformer`: `embeddings` (token 250k×768 + position) → `encoder` (12× **SiglipEncoderLayer y hệt vision**: LN1, attn q/k/v/out_proj, LN2, mlp fc1/GELU/fc2) → `final_layer_norm` → **last-token** `[:, -1, :]` → `head` (nn.Linear 768→768).
+
+* **Giống vision** (tái dùng được rotation + QAT): encoder layers, LayerNorm, GELU, attention.
+* **Khác vision:**
+* Input = **input_ids (int) + attention_mask** (vision: ảnh float, không mask). Mask cộng vào scores qua `_prepare_4d_attention_mask`.
+* Writer residual đầu vào = **token_embedding + position_embedding** (vision: patch-conv).
+* Pooler = **last-token + Linear head** (vision: MultiheadAttentionPoolingHead) → đơn giản hơn.
+
+### 4.2 Kế hoạch theo giai đoạn (diagnostic-first)
+
+* **T0:** Baseline plain W8A8 (AI Hub quantize-only) + **text-isolation R@1** (ảnh FP32 + text QDQ).
+* **Quyết định:** Concentration nhẹ → có thể bỏ qua rotation (đơn giản); nặng (như vision 252×) → cần rotation.
+
+**T1 — Áp method (theo T0):**
+
+* (Nếu cần) `rotate_text_encoder.py` MỚI: writers = token_embedding + position_embedding + out_proj + fc2; readers = q/k/v + fc1 + head (đọc final_layer_norm); mean-preserving Q (text cũng LayerNorm). KHÔNG có patch-conv / MHA-pooling-head.
+* QAT: tổng quát hóa `train_vision_quant_robust.py` sang text (`encode_text`, `text_model`, distill text embedding). Thang coverage v1→v6 dùng lại; `--quant-attention` đã có sẵn nhánh `+attention_mask` nên chạy cho text.
+
+**T2 — Quantize + board:** AI Hub W8A8 text → compile/link → `text_encoder.bin` → board (latency, fidelity). Xác nhận token-embedding table quant INT8 (768→192MB).
+
+**T3 — Số quyết định cuối:** mở rộng `eval_retrieval_quantized_vision.py` cho text qua QDQ ONNX. Đo:
+
+1. text-isolation (ảnh FP32 + text QDQ)
+2. **end-to-end both-INT8** (ảnh QDQ + text QDQ) = số deploy thật.
+
+### 4.3 Script: tái dùng / build / generalize
+
+| Script | Trạng thái |
+| --- | --- |
+| `prepare_vn3k_text_inputs.py`, `compare_text_onnx_with_pytorch.py` | ✅ tái dùng |
+| `profile_activation_outliers.py` | 🔧 adapt cho text |
+| `export_text_onnx.py` (opset-20, int inputs, last-token) | ⬜ build |
+| `rotate_text_encoder.py` (nếu T0 cần) | ⬜ build |
+| `train_vision_quant_robust.py` → text | 🔧 generalize (`--modality text`) |
+| `eval_retrieval_quantized_vision.py` → text QDQ + both-INT8 | 🔧 mở rộng |
+
+### 4.4 Rủi ro cần canh
+
+* **Input int trên AI Hub:** input_ids/attention_mask là chỉ số/mask, KHÔNG quantize. `submit_qaihub_quantize_compile.py` đang hardcode input ảnh float `[1,3,256,256]` → phải sửa `--input-specs` cho 2 int input của text.
+* **Pooler last-token** (`[:,-1,:]` gather) + **attention_mask** export ONNX đúng không.
+* **Token-embedding INT8** (per-row weight quant, vocab 250k): nguồn size win chính; kiểm cosine không sụt.
+
+### 4.5 Bước đầu tiên
+
+* **T0:** Viết `export_text_onnx.py` (opset-20) + adapt profiler → đo concentration text → quyết định rotation. Local/free, chưa tốn job AI Hub tới bước baseline W8A8.
+
+---
+
+## 5. T0 — Text concentration profiling: **text CẦN rotation** (giống vision)
+
+> Local/free. Scripts mới: `export_text_onnx.py` (opset-20, 2 int input, last-token pooler), `profile_text_activation_outliers.py` (import lại lõi của `profile_activation_outliers.py`, chỉ khác phần feed 2 int input).
+
+### Export + static control (T0a) — PASS
+- `export_text_onnx.py --model-dir exported_model` → `exported_model/text_onnx/text_encoder.onnx`. Op counts: **Gelu=12, LayerNormalization=25, Pow=0** (fused, sạch; 12 vì text head là Linear, không có gelu pooling-head).
+- Static control `compare_text_onnx_with_pytorch.py`: cosine **1.0000** / min `0.99999988`, no NaN → export trung thực.
+
+### Concentration (T0b) — residual stream tập trung nặng
+profile blocks 0-11 trên `vn3k_text_10` (10 mẫu), 206 target tensor.
+
+| Nhóm | abs_max | concentration | Kết luận |
+|---|---|---|---|
+| **Residual Adds** (`layers.N/Add`, `Add_1`, `fc2/Add`) | ~810 | **200–404×** | tập trung nặng (≈ vision 252×) |
+| Median toàn cục (194 tensor sạch) | — | 3.1 | đa số ổn; chỉ residual stream nặng |
+
+→ **Quyết định: text CẦN mean-preserving rotation.** Plain per-tensor W8A8 sẽ collapse như vision.
+
+### Artifact mask (text-specific, đã loại + ghi nhận rủi ro)
+- 12 tensor `…/self_attn/Add_output_0` có abs_max **3.4e38** (= FLT_MAX) = hằng số mask `_prepare_4d_attention_mask` cộng vào scores trước softmax. KHÔNG phải outlier (sau softmax → 0); đã loại khỏi phân tích concentration.
+- **Rủi ro lúc quantize text trên AI Hub:** per-tensor INT8 cho tensor scores+mask (dải −3.4e38) bất khả → cần AI Hub xử lý mask trong softmax fused, hoặc dùng giá trị mask ôn hòa hơn. Sẽ lộ ở baseline W8A8. (Vision không có — không mask.)
+
+### Artifacts
+- `exported_model/text_onnx/{text_encoder.onnx,.onnx.data}`
+- `runtime/diag/text_outliers/{summary.json, per_tensor.csv}`
+
+### Bước kế: T1 — `rotate_text_encoder.py`
+Mean-preserving rotation cho text: writers (fold `Q`) = token_embedding + position_embedding + out_proj + fc2; readers (fold `Qᵀ`) = q/k/v_proj + fc1 + head (đọc `final_layer_norm`); giữ fused LayerNorm; gate output-invariant cosine ~1.0. Không patch-conv / không MHA-pooling-head. Sau đó QAT (generalize `train_vision_quant_robust.py` sang text).

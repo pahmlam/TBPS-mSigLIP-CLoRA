@@ -166,7 +166,8 @@ packages can shadow the local folder.
 - `docs/journal/[train]-2026-06-11.md`: NACIR failure and attn+FFN r32.
 - `docs/journal/[train]-2026-06-13.md`: PiSSA rejection and Part Align `53.00`.
 - `changelog/training/changelog.md`: completed training/config/docs changes.
-- `deployment/docs/journal/`: deployment logs.
+- `deployment/docs/journal/[deploy-master].md`: canonical deployment/model-compression journal.
+- `deployment/docs/journal/[demo-system]-YYYY-MM-DD.md`: demo-system journal, separate from model compression.
 
 Do not edit `src/person_rlf.egg-info/PKG-INFO` unless packaging metadata
 regeneration is explicitly requested.
@@ -177,7 +178,7 @@ regeneration is explicitly requested.
 - If the prompt explicitly asks to update documentation, that is confirmation.
 - Durable mechanisms go to `docs/knowledge.md`.
 - Run results and temporary conclusions go to `docs/journal/[train]-YYYY-MM-DD.md`.
-- Deployment results go to `deployment/docs/journal/[deploy]-YYYY-MM-DD.md`.
+- Deployment results go to `deployment/docs/journal/[deploy-master].md`; this is the only deployment/model-compression journal.
 - Completed code/config/docs changes go to `changelog/{component}/changelog.md`
   after user confirmation, unless already requested.
 - For concept questions like "PiSSA là gì" or "Part-Align là gì", answer from

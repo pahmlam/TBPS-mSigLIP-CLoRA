@@ -14,9 +14,9 @@ HTP v68** via rotation-based equalization; the text encoder is the next workstre
 | **Vision W8A8 QDQ fidelity** | **PASS (near)** | `cosine 0.90` — rotation made all-INT8 viable (was 0.14 collapse) |
 | **Vision compile/link on v68** | **PASS** | all-INT8 links on HTP v68; `vision_encoder.bin` 89.7 MB |
 | **Vision on HTP board** | **PASS** | board fidelity `0.898` = QDQ; **22.5 FPS, 34 ms/img** |
-| **Vision R@1 (gate)** | **PASS** | T2I R@1 `48.50` (QAT v4) ≥ 48 vs FP32 `52.40`; QDQ cosine `0.9364`. Trajectory `45.42`→`46.92`→`47.80`→`48.20`→`48.50` (stretch 50 in progress) |
+| **Vision R@1 (gate)** | **PASS** | Current best is QAT v5: T2I R@1 `49.25`, I2T R@1 `53.40`, QDQ cosine `0.9437 / 0.9311`; QAT v4 remains board-verified at T2I R@1 `48.50` |
 | **Vision QAT `.bin` on board** | **PASS** | QAT v4 `.bin` board-verified on v68: fidelity `0.9363` ≈ QDQ, `32.7 ms` / `22.88 FPS` / ~90 MB |
-| Text encoder | TODO | unblocked; replicate recipe (rotation + QAT + W8A8) for full both-INT8 on-device |
+| Text encoder | Pending | start after vision stretch/acceptance; replicate recipe (rotation + QAT + W8A8) for full both-INT8 on-device |
 
 Key learnings (why this works on v68):
 
@@ -31,8 +31,9 @@ Key learnings (why this works on v68):
 
 Latest locked conclusions / full pipeline:
 
-- `deployment/docs/journal/[deploy]-2026-06-15.md` (sections 5-13: rotation method,
-  M1-M5 results, and the **full reproducible pipeline from ckpt → .bin in section 13**)
+- `deployment/docs/journal/[deploy-master].md` is the canonical deployment journal:
+  it consolidates all dated deploy logs, the full ckpt-to-bin pipeline, AI Hub/QNN
+  job history, board results, v5 best result, and the v6 next plan.
 
 Do not treat `_float` QDQ surgery candidates as deployable (diagnostic only;
 link-fail on internal float). Do not use W8A16 on v68 (A16 needs v73).
@@ -80,7 +81,7 @@ deployment/
   config/qnn/                          # HTP/QNN runtime JSON configs
   demo/                                # Modular demo-system scaffold
   docs/
-    journal/                           # Canonical deployment logs
+    journal/                           # Master deploy journal + archived dated logs
     deployment-plan.md                 # Older high-level plan; verify against journal plan
     system.md                          # RB3 hardware notes
     experiment.md                      # Proxy benchmark guide
@@ -138,8 +139,8 @@ epoch=56-val_score=52.28.ckpt        # LoRA-finetuned Lightning checkpoint
   -> [5] qnn-net-run on RB3 HTP -> compare_qnn_with_pytorch -> retrieval R@1
 ```
 
-Full step-by-step with commands and verification: see
-`deployment/docs/journal/[deploy]-2026-06-15.md` section 13.
+Full step-by-step with commands, job history, and verification: see
+`deployment/docs/journal/[deploy-master].md`.
 
 Why each step exists: LoRA merge is mandatory (ckpt is LoRA-finetuned); rotation
 spreads activation concentration so all-INT8 W8A8 (the only v68-deployable scheme)
@@ -226,7 +227,7 @@ flags in step [1] are the only differences):
 | qat_v5 | `--quant-linears` | 0.9437 | 49.25 |
 
 > Dated commands, AI Hub job IDs, and full results per round: journal
-> `deployment/docs/journal/[deploy]-2026-06-15.md` (sections 13–20). Method + math:
+> `deployment/docs/journal/[deploy-master].md`. Method + math:
 > `deployment/docs/w8a8_qat_rotated.md`.
 
 ## Quick Commands
@@ -372,37 +373,26 @@ python deployment/scripts/qnn/audit_qnn_native_env.py \
 Latest local Mac audit found no QNN/QAIRT native tools. Phase H10 needs a server
 or machine with the Qualcomm AI Stack / QNN SDK installed.
 
-## Latest Diagnostic Results
+## Current Key Results
 
 | Candidate | Result | Decision |
 |---|---:|---|
-| Static ONNX vs PyTorch, QAT v5 | `1.000000 / 0.9999998` | Export control PASS |
-| AI Hub Lite-MP INT8 QDQ, QAT v5 | `0.244236 / 0.203228` | FAIL, no compile/link |
-| AI Hub default INT8 QDQ, QAT v5 | `0.252687 / 0.211948` | FAIL, no compile/link |
-| AI Hub native W8A16 QDQ, QAT v5 | `0.155494 / 0.115508` | FAIL, no compile/link |
-| `all_weights + blocks 4-9 float` | `0.947507 / 0.913112` | Near-pass diagnostic |
-| `all_weights + blocks 4-10 float` | `0.964700 / 0.930359` | PASS diagnostic only |
-| `all_weights + blocks 4-11 float` | `0.970312 / 0.939976` | Best diagnostic only |
+| Rotation-only W8A8 | QDQ `0.8975 / 0.8747`, T2I R@1 `45.42` | Links/runs, retrieval gate FAIL |
+| QAT v3 | QDQ `0.9353 / 0.919`, T2I R@1 `48.20` | First retrieval gate PASS |
+| QAT v4 | QDQ `0.9364 / 0.9091`, T2I R@1 `48.50`; board `0.9363 / 0.9068` | Current board-verified deploy binary |
+| QAT v5 | QDQ `0.9437 / 0.9311`, T2I R@1 `49.25`, I2T R@1 `53.40` | Current best accuracy candidate |
+| QAT v6 planned | `--quant-attention` | Next stretch path toward T2I R@1 >= 50 |
 
-The best diagnostic proves the error is tied to interaction between weight QDQ
-and activation QDQ in encoder blocks 4-11, but it does not provide a deployable
-QNN graph.
+Historical failed diagnostics and rejected branches are consolidated in `deployment/docs/journal/[deploy-master].md`.
 
 ## Documentation Convention
 
-- Current multi-day deployment checklist:
-  `deployment/docs/journal/[deploy-plan]-2026-06-06.md`
-- Dated deployment logs:
-  `deployment/docs/journal/[deploy]-YYYY-MM-DD.md`
-- Demo-system logs:
-  `deployment/docs/journal/[demo-system]-YYYY-MM-DD.md`
-- Stable concepts such as ONNX, QNN, HTP, PTQ, and QAT:
-  `docs/knowledge.md`
-- Completed code/config/docs changes:
-  `changelog/deployment/changelog.md` after user confirmation.
+- Canonical deployment/model-compression journal: `deployment/docs/journal/[deploy-master].md`
+- Demo-system logs: `deployment/docs/journal/[demo-system]-YYYY-MM-DD.md`
+- Stable concepts such as ONNX, QNN, HTP, PTQ, and QAT: `docs/knowledge.md`
+- Completed code/config/docs changes: `changelog/deployment/changelog.md` after user confirmation.
 
-Do not write AI Hub job logs or QDQ/QNN fidelity results into
-`deployment/docs/aihub-experiments.md`; it is legacy.
+Write new AI Hub job logs and QDQ/QNN fidelity results into `deployment/docs/journal/[deploy-master].md`. Do not write them into `deployment/docs/aihub-experiments.md`; it is legacy.
 
 ## Hardware Profiling
 

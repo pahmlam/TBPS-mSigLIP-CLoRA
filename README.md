@@ -217,7 +217,7 @@ The baseline often retrieves visually similar distractors (hard negatives). Our 
 │   ├── docs/
 │   │   ├── deployment-plan.md         # Current deployment status and next steps
 │   │   ├── aihub-experiments.md       # Legacy redirect to deployment journal
-│   │   ├── journal/                   # Dated deployment logs and decisions
+│   │   ├── journal/                   # Master deploy journal + archived logs
 │   │   ├── system.md                  # RB3 hardware specs
 │   │   └── benchmark-rp.md            # Proxy benchmark results
 │   └── config/qnn/                    # QNN/HTP runtime config JSON files
@@ -310,12 +310,12 @@ Current progress:
 | ONNX export (opset-20, fused GELU) | Done | Removes decomposed cubic GELU outliers (`Pow=0`) |
 | Mean-preserving rotation | Done | QuaRot/SliceGPT-style; residual concentration 252x → 5.3x, output-invariant |
 | Vision W8A8 quantize + HTP link | Done | All-INT8 links on HTP **v68** → `vision_encoder.bin`, 89.7 MB |
-| Quantization-aware finetune (QAT v3) | Done | Per-tensor + EMA observer; recovers vision-only **T2I R@1 to 48.20** (gate ≥ 48) |
-| On-device RB3 run (vision) | Done | `qnn-net-run` on HTP v68: cosine 0.898, **34 ms/img, 22.5 FPS**, init 54.7 ms |
+| Quantization-aware finetune (QAT v5) | Done | Current best vision-only **T2I R@1 is 49.25** with `--quant-linears`; v4 is board-verified at 48.50 |
+| On-device RB3 run (vision) | Done | QAT v4 `qnn-net-run` on HTP v68: cosine `0.9363`, **32.7 ms/img, 22.88 FPS** |
 | Text encoder quantization | Pending | Text = 75% of params (250k-vocab embedding); needed for the 4GB RAM budget |
 | End-to-end board retrieval | Pending | Both encoders INT8 on board |
 
-Key deployment finding: HTP **v68** blocks 16-bit activations broadly (attention act×act and LayerNorm require v73+), so the only deployable path is all-INT8 (W8A8). ViT activation outliers ("massive activations") make naive per-tensor W8A8 collapse retrieval; the working recipe is **opset-20 GELU fusion + mean-preserving rotation (to spread residual outliers) + W8A8 + a short quantization-aware finetune**, which lifts vision-only T2I R@1 from 45.42 to 48.20. See [`deployment/docs/w8a8_qat_rotated.md`](deployment/docs/w8a8_qat_rotated.md) for the full method and [`deployment/docs/journal/`](deployment/docs/journal/) for dated AI Hub/QNN job logs.
+Key deployment finding: HTP **v68** blocks 16-bit activations broadly (attention act×act and LayerNorm require v73+), so the only deployable path is all-INT8 (W8A8). ViT activation outliers ("massive activations") make naive per-tensor W8A8 collapse retrieval; the working recipe is **opset-20 GELU fusion + mean-preserving rotation (to spread residual outliers) + W8A8 + quantization-aware finetune**, which lifts vision-only T2I R@1 from 45.42 to **49.25** in QAT v5. See [`deployment/docs/w8a8_qat_rotated.md`](deployment/docs/w8a8_qat_rotated.md) for the full method and [`deployment/docs/journal/[deploy-master].md`](deployment/docs/journal/[deploy-master].md) for the consolidated AI Hub/QNN/RB3 journal.
 
 The reproducible vision pipeline is: **(1)** merge LoRA → **(2)** mean-preserving rotation → **(3)** quantization-aware finetune → **(4)** export ONNX (opset-20) → **(5)** W8A8 quantize + HTP link → **(6)** board run. See [`deployment/docs/w8a8_qat_rotated.md`](deployment/docs/w8a8_qat_rotated.md) for the math, gates, and per-stage details.
 

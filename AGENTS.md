@@ -260,7 +260,8 @@ On Colab, prefer `unittest discover -s tests -p ...` instead of module-style pat
 - `changelog/training/changelog.md`: completed training/code/config/docs changes.
 - `reports/architecture-decisions.md`: significant architecture decisions.
 - `deployment/README.md`: deployment overview.
-- `deployment/docs/journal/`: dated deployment logs.
+- `deployment/docs/journal/[deploy-master].md`: canonical deployment/model-compression journal.
+- `deployment/docs/journal/[demo-system]-YYYY-MM-DD.md`: demo-system journal, separate from model compression.
 
 Do not edit `src/person_rlf.egg-info/PKG-INFO` unless packaging metadata regeneration is explicitly requested; it may contain stale README snapshots.
 
@@ -272,7 +273,7 @@ Classify documentation before writing:
 
 - **Knowledge** (`docs/knowledge.md`): durable concepts, definitions, mechanisms, and general trade-offs that should still be true months later.
 - **Training journal** (`docs/journal/[train]-YYYY-MM-DD.md`): training/model-optimization results, commands, logs, metrics, temporary conclusions, and next experiment decisions.
-- **Deployment journal** (`deployment/docs/journal/[deploy]-YYYY-MM-DD.md`): deploy results, AI Hub jobs, QNN/QDQ fidelity, board runtime, artifacts, and next deploy steps.
+- **Deployment journal** (`deployment/docs/journal/[deploy-master].md`): deploy results, AI Hub jobs, QNN/QDQ fidelity, board runtime, artifacts, current status, and next deploy steps. This is the only deployment/model-compression journal.
 - **Demo system journal** (`deployment/docs/journal/[demo-system]-YYYY-MM-DD.md`): modular demo-system work under `deployment/demo/`.
 - **Changelog** (`changelog/{component}/changelog.md`): completed code/config/docs changes after user-confirmed changelog writing.
 - **Paper notes** (`knowledge/response.md`, `knowledge/paper/`, etc.): reviewer responses, paper wording, and presentation-specific phrasing.

@@ -5,17 +5,17 @@
 | # | Priority | Type | Action | Status |
 |---|----------|------|--------|--------|
 | 1 | MED | feature | Added `deployment/scripts/qnn/summarize_raw_inputs.py` to validate prepared QNN raw inputs for byte size, finite values, `[-1,1]` range, and distribution statistics | COMPLETE |
-| 2 | MED | docs | Logged the Phase B audit result in `deployment/docs/journal/[deploy]-2026-06-04.md`: `vn3k_train_calib_500` has 500/500 valid float32 samples and no obvious raw preprocessing defect | COMPLETE |
+| 2 | MED | docs | Logged the Phase B audit result in the deployment journal: `vn3k_train_calib_500` has 500/500 valid float32 samples and no obvious raw preprocessing defect | COMPLETE |
 | 3 | HIGH | feature | Added `--quantize-only` and `--download-quantized` to `submit_qaihub_quantize_compile.py` so new candidates can stop at QDQ ONNX for fidelity gating before compile/link | COMPLETE |
 | 4 | MED | artifact | Created and audited local `artifacts/deployment/qnn_inputs/vn3k_train_calib_2000` with 2000 valid VN3K train raw inputs for the next AI Hub calibration upload | COMPLETE |
-| 5 | HIGH | docs | Logged quantize job `jgomex415` in `deployment/docs/journal/[deploy]-2026-06-04.md`: calib2000 W8A8 QDQ still failed (`cosine_l2_mean = 0.1692`), so compile/link remains blocked and the next candidate is W8A16 quantize-only | COMPLETE |
-| 6 | HIGH | docs | Logged quantize job `jp2j31dm5` in `deployment/docs/journal/[deploy]-2026-06-04.md`: calib2000 W8A16 QDQ only improved to `cosine_l2_mean = 0.1863`, still far below gate, so compile/link remains blocked and the next direction is exclude/mixed precision or another quantization pipeline | COMPLETE |
+| 5 | HIGH | docs | Logged quantize job `jgomex415` in the deployment journal: calib2000 W8A8 QDQ still failed (`cosine_l2_mean = 0.1692`), so compile/link remains blocked and the next candidate is W8A16 quantize-only | COMPLETE |
+| 6 | HIGH | docs | Logged quantize job `jp2j31dm5` in the deployment journal: calib2000 W8A16 QDQ only improved to `cosine_l2_mean = 0.1863`, still far below gate, so compile/link remains blocked and the next direction is exclude/mixed precision or another quantization pipeline | COMPLETE |
 
 ## [2026-06-02] Add PTQ/QDQ remediation plan
 
 | # | Priority | Type | Action | Status |
 |---|----------|------|--------|--------|
-| 1 | HIGH | docs | Created `deployment/docs/[deploy]-2026-06-02.md` with the next-step plan, gates, and checklist for fixing vision INT8 PTQ/QDQ fidelity before any further QNN link or text encoder work | COMPLETE |
+| 1 | HIGH | docs | Created the deployment next-step plan, gates, and checklist for fixing vision INT8 PTQ/QDQ fidelity before any further QNN link or text encoder work | COMPLETE |
 | 2 | MED | docs | Added `docs/knowledge.md` entry summarizing the QDQ gate strategy and rationale | COMPLETE |
 
 ## [2026-06-02] Diagnose QDQ ONNX fidelity failure
@@ -34,7 +34,7 @@
 | 3 | HIGH | bugfix | Fixed `submit_qaihub_quantize_compile.py` to resolve `--calibration-data d7x5gzne9` through `hub.get_dataset(...)` before calling `submit_quantize_job`, because `qai_hub 0.48.0` treats raw strings as local dataset paths | COMPLETE |
 | 4 | HIGH | bugfix | Updated `submit_qaihub_quantize_compile.py` to create a static-shape ONNX copy before quantization, because job `jp13422k5` showed `submit_quantize_job` rejects the exported dynamic-batch `image` input | COMPLETE |
 | 5 | HIGH | docs | Logged compile job `jpr9v62vp` as successful: static QDQ model compiled without `--preserve_io_datatype`, produced QNN DLC asset `mq389x29m`, and downloaded `vision_encoder_calib500.bin` locally | COMPLETE |
-| 6 | HIGH | docs | Updated `deployment/docs/deployment-plan.md` and `deployment/docs/[deploy]-2026-05-27.md` so the next step is running `vision_encoder_calib500.bin` on RB3, not compiling text yet | COMPLETE |
+| 6 | HIGH | docs | Updated deployment planning docs so the next step is running `vision_encoder_calib500.bin` on RB3, not compiling text yet | COMPLETE |
 | 7 | MED | docs | Updated `docs/knowledge.md` with the final `j5wx6x63p` finding and the reasoning that dataset `d7x5gzne9` is reusable while the compile flow must change | COMPLETE |
 | 8 | HIGH | docs | Recorded the on-board `vision_encoder_calib500.bin` fidelity failure: runtime passed on `vn3k_test_10_calib500`, but QNN-vs-PyTorch `cosine_l2_mean = 0.1300`, so the next gate is QDQ ONNX vs PyTorch diagnosis rather than text compile | COMPLETE |
 | 9 | MED | feature | Added `deployment/scripts/qnn/compare_onnx_with_pytorch.py` to compare a downloaded QDQ ONNX vision model against PyTorch on the exact same VN3K raw inputs | COMPLETE |
@@ -43,7 +43,7 @@
 
 | # | Priority | Type | Action | Status |
 |---|----------|------|--------|--------|
-| 1 | MED | docs | Added `deployment/docs/[deploy]-2026-05-27.md` report summarizing RB3 deployment status, verified HTP runtime metrics, dummy-cal fidelity failure, real-calibration job `j5wx6x63p`, risks, and next steps | COMPLETE |
+| 1 | MED | docs | Added a deployment progress report summarizing RB3 deployment status, verified HTP runtime metrics, dummy-cal fidelity failure, real-calibration job `j5wx6x63p`, risks, and next steps | COMPLETE |
 | 2 | LOW | docs | Logged AI Hub job `j5wx6x63p` in `deployment/docs/aihub-experiments.md` as a real-calibration compile attempt before the final failure log was available | COMPLETE |
 
 ## [2026-05-26] Fix QAI Hub calibration dataset ID reporting

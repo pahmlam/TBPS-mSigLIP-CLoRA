@@ -5,7 +5,7 @@
 > **Target device:** Qualcomm RB3 Gen2 / QCS6490 / Hexagon HTP **v68**.
 > **Best result:** vision-only **T2I Rank@1 = 48.20** (deploy gate ≥ 48 PASS), all-INT8 W8A8 context binary that links and runs on HTP v68.
 > **Canonical recipe:** `LoRA merge → mean-preserving rotation → opset-20 fused GELU/LayerNorm → quantization-aware finetune (EMA observer) → W8A8 quantize + compile/link → board run`.
-> **Cross-references:** dated logs in [`deployment/docs/journal/`](journal/); core scripts in `deployment/scripts/qnn/` and `deployment/scripts/lora_fp16/`.
+> **Cross-references:** consolidated deployment history in [`deployment/docs/journal/[deploy-master].md`](journal/[deploy-master].md); core scripts in `deployment/scripts/qnn/` and `deployment/scripts/lora_fp16/`.
 
 This is the canonical engineering document for the best deployment pipeline. It explains the hardware constraints that shape it, the mathematics of every transform, why earlier candidates failed, how to reproduce each stage, and the acceptance gates.
 
@@ -600,5 +600,4 @@ Model / training context:
 - [1] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, W. Chen. *LoRA: Low-Rank Adaptation of Large Language Models.* ICLR 2022. arXiv:2106.09685.
 - [2] X. Zhai, B. Mustafa, A. Kolesnikov, L. Beyer. *Sigmoid Loss for Language Image Pre-Training (SigLIP).* ICCV 2023. arXiv:2303.15343.
 - [3] Y. Sun, C. Cheng, Y. Zhang, C. Zhang, L. Zheng, Z. Wang, Y. Wei. *Circle Loss: A Unified Perspective of Pair Similarity Optimization.* CVPR 2020. arXiv:2002.10857.
-
 

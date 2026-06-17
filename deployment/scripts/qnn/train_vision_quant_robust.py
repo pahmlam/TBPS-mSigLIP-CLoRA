@@ -14,6 +14,7 @@ import argparse
 import copy
 import csv
 import json
+import math
 import random
 import shutil
 import sys
@@ -463,6 +464,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-val-samples", type=int)
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
+    parser.add_argument(
+        "--lr-schedule",
+        choices=["constant", "cosine"],
+        default="constant",
+        help="cosine: linear warmup (--warmup-frac) then cosine decay to "
+        "--min-lr-ratio * lr. Classic QAT trick to squeeze a sharper minimum.",
+    )
+    parser.add_argument("--warmup-frac", type=float, default=0.0, help="Fraction of total steps for linear LR warmup.")
+    parser.add_argument("--min-lr-ratio", type=float, default=0.0, help="Cosine floor as a fraction of --lr.")
     parser.add_argument("--mse-weight", type=float, default=0.05)
     parser.add_argument(
         "--clean-weight",
@@ -618,6 +628,28 @@ def main() -> None:
         weight_decay=args.weight_decay,
     )
 
+    # LR schedule: optional linear warmup then cosine decay to min_lr_ratio*lr.
+    steps_per_epoch = len(train_loader)
+    total_steps = args.max_steps if args.max_steps else args.epochs * steps_per_epoch
+    total_steps = max(1, total_steps)
+    warmup_steps = int(args.warmup_frac * total_steps)
+
+    def _lr_lambda(step: int) -> float:
+        if warmup_steps > 0 and step < warmup_steps:
+            return (step + 1) / warmup_steps
+        if args.lr_schedule == "cosine":
+            progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
+            progress = min(1.0, max(0.0, progress))
+            cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+            return args.min_lr_ratio + (1.0 - args.min_lr_ratio) * cosine
+        return 1.0
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, _lr_lambda)
+    print(
+        f"LR schedule: {args.lr_schedule} | total_steps={total_steps} "
+        f"warmup={warmup_steps} min_lr_ratio={args.min_lr_ratio}"
+    )
+
     history: list[dict] = []
     global_step = 0
     stop_training = False
@@ -650,7 +682,9 @@ def main() -> None:
                 [parameter for parameter in student.parameters() if parameter.requires_grad],
                 max_norm=1.0,
             )
+            cur_lr = optimizer.param_groups[0]["lr"]
             optimizer.step()
+            scheduler.step()
 
             clean_cos_mean = (
                 _batch_cosine(clean_student_output.detach(), teacher_output).mean().item()
@@ -670,12 +704,13 @@ def main() -> None:
                 "clean_cosine_loss": float(clean_cosine_loss.detach().cpu()),
                 "clean_mse_loss": float(clean_mse_loss.detach().cpu()),
                 "clean_train_cosine_l2_mean": clean_cos_mean,
+                "lr": cur_lr,
                 # Keep the legacy key for quick comparisons with earlier summaries.
                 "train_cosine_l2_mean": fake_cos_mean,
             }
             history.append(row)
             print(
-                "step={step} epoch={epoch} loss={loss:.6f} "
+                "step={step} epoch={epoch} lr={lr:.2e} loss={loss:.6f} "
                 "fake_cos={fake_train_cosine_l2_mean:.6f} "
                 "fake_mse={fake_mse_loss:.6f} "
                 "clean_cos={clean_train_cosine_l2_mean:.6f} "
@@ -710,6 +745,9 @@ def main() -> None:
         "val_input_dir": str(args.val_input_dir.expanduser().resolve()),
         "epochs": args.epochs,
         "max_steps": args.max_steps,
+        "lr_schedule": args.lr_schedule,
+        "warmup_frac": args.warmup_frac,
+        "min_lr_ratio": args.min_lr_ratio,
         "global_steps": global_step,
         "batch_size": args.batch_size,
         "lr": args.lr,
