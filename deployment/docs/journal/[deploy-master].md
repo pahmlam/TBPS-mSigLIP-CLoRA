@@ -934,8 +934,8 @@ val_fake_quant.mean >= 0.78
 | QAT v4 | + `--quant-head`, 12 epochs | `jgd09l96p` | `0.9364 / 0.9091` | `48.50` | `52.95` | Binary deploy đã verify trên board |
 | QAT v5 | + `--quant-linears`, 15 epochs | `jpxm2w0lg` | `0.9437 / 0.9311` | `49.25` | `53.40` | Đã chạm ngưỡng tác dụng của single linear |
 | QAT v6 | + `--quant-attention` | `j57krdwvp` | `0.9491 / 0.9266` | `49.30` | `53.85` | Trần coverage của random rotation |
-| QAT v7 | v6 coverage + cosine LR schedule, 20 epochs | _chờ_ | _chờ_ | _chờ_ | _chờ_ | Random rotation + lịch LR mượt hơn (baseline cho v8) |
-| QAT v8 | **Learned rotation (SpinQuant-style)** + v7 recipe | _chờ_ | _chờ_ | _chờ_ | _chờ_ | Q tối ưu theo activation thay vì random; ablation learned vs random |
+| QAT v7 | v6 coverage + cosine LR + lr `2e-5`, 20 epochs | `jpve62jmg` | `0.9485 / 0.9083` | `48.38` | `53.05` | **Regress** so v6: cosine+lr 2e-5 kém hơn const lr 1e-5 |
+| QAT v8 | **Learned rotation (SpinQuant-style)** + recipe **v6** (const lr 1e-5, 15 ep) | _chờ_ | _chờ_ | _chờ_ | _chờ_ | Q tối ưu theo activation; ablation learned vs random (dùng recipe v6 vì v7 thua) |
 
 **Chi tiết QAT v1:**
 
@@ -988,13 +988,14 @@ val_fake_quant.mean >= 0.78
 - Retrieval: T2I R@1 `49.30` (tăng từ `49.25`), R@5 `77.38`, R@10 `86.28`, mAP `54.87`, mINP `48.17`; I2T R@1 `53.85` (tăng từ `53.40`).
 - Mặc dù R@1 tiếp tục lập đỉnh mới cho W8A8, mức tăng khá nhỏ so với v5, cho thấy `--quant-attention` đem lại hiệu quả marginal.
 
-**Chi tiết QAT v7:** _(đang chạy, kết quả sẽ điền sau)_
+**Chi tiết QAT v7:** _(REGRESS — cosine + lr 2e-5 kém hơn v6)_
 
-- Kế thừa toàn bộ coverage của v6 (`--quant-head --quant-linears --quant-attention`, EMA observer).
-- Thay đổi duy nhất: thêm cosine LR schedule (`--lr-schedule cosine --warmup-frac 0.05 --min-lr-ratio 0.02`), 20 epochs.
-- Base vẫn là `exported_model_rotated` (random mean-preserving rotation), nên v7 là baseline "random rotation + lịch LR mượt".
-- Mục đích: tách bạch phần đóng góp của LR schedule khỏi phần đóng góp của learned rotation ở v8.
-- Artifact dự kiến: `artifacts/deployment/exports/exported_model_rotated_qat_v7`.
+- Kế thừa coverage v6 (`--quant-head --quant-linears --quant-attention`, EMA observer).
+- Thay đổi vs v6: cosine LR schedule (`--lr-schedule cosine --warmup-frac 0.05 --min-lr-ratio 0.02`), **lr `2e-5` (gấp đôi v6)**, 20 epochs.
+- Base `exported_model_rotated` (random mean-preserving), job QDQ `jpve62jmg`.
+- Kết quả: QDQ mean `0.9485` (≈ v6 `0.9491`), min `0.9083` (**giảm** từ v6 `0.9266`); retrieval T2I R@1 `48.38` (giảm từ `49.30`), I2T `53.05` (giảm từ `53.85`). Baseline sanity FP32 `52.40` pass.
+- **Kết luận:** thay đổi 3 thứ cùng lúc (cosine + lr×2 + epochs) → regress `-0.93` R@1. Nghi can chính là **lr 2e-5 overshoot** quanh điểm minimum lượng tử hóa; cosine floor (`4e-7`) không cứu lại được hỏng ở epoch đầu.
+- **Hệ quả cho v8:** recipe tốt nhất vẫn là **v6** (const lr `1e-5`, 15 epochs). v8 (learned rotation) nên dùng recipe v6 để delta R@1 cô lập đúng phần *rotation* (learned vs random), không lẫn schedule đã thua.
 
 **Chi tiết QAT v8 — Learned Rotation (SpinQuant-style):** _(chờ chạy, kết quả sẽ điền sau)_
 
@@ -1011,7 +1012,7 @@ val_fake_quant.mean >= 0.78
 - **Tham số hóa Cayley.** Để giữ `Q` trực giao chính xác suốt quá trình Adam: `Q = U · blockdiag(1, Cayley(skew)) · Uᵀ`, với `U[:,0] = 1/√d` ghim ràng buộc bảo toàn mean (vector 1 là eigenvector). `Cayley(S) = (I − S)(I + S)⁻¹` với `S` phản đối xứng luôn cho ma trận trực giao.
 - **Quy trình.** Phase A (fold affine của LayerNorm vào reader, đặt LN identity) → cache activation tại rotation site trên calib → tối ưu `Q` → Phase B (fold `Q` vào weight). Output là model drop-in tương đương `exported_model_rotated` về shape, nạp thẳng vào pipeline export/QAT/quantize/eval.
 - **Gate output-invariance.** Vì rotation chỉ là đổi cơ sở trực giao bảo toàn mean, embedding FP32 phải bất biến: gate yêu cầu cosine(ref, rotated) min ≥ `0.9999` trước khi lưu. Smoke test (8 ảnh, 80 step): objective `29268 → 1209`, max|a| `122 → 24`, cosine min `0.99999982`, orth_err `4.2e-15`, mean_err `4.8e-14`.
-- **Ablation.** v8 và v7 giống nhau mọi thứ trừ `Q` (learned vs random), cùng QAT recipe ⇒ delta R@1 là ablation sạch "learned vs random rotation under identical QAT".
+- **Ablation.** Dùng recipe **v6** (const lr `1e-5`, 15 ep) cho v8 (vì v7 cosine+lr2e-5 đã regress). v8 (learned + recipe v6) vs **v6** (random + recipe v6) giống nhau mọi thứ trừ `Q` ⇒ delta R@1 là ablation sạch "learned vs random rotation under identical QAT".
 - Script: `deployment/scripts/qnn/learn_rotation.py`.
 - Artifact dự kiến: `exported_model_rotated_learned` (Q đã fold) → `exported_model_rotated_learned_qat_v8`.
 

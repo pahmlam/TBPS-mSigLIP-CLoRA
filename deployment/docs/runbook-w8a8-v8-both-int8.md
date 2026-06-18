@@ -45,9 +45,10 @@ PYTHONUNBUFFERED=1 python deployment/scripts/qnn/learn_rotation.py --model-dir a
 ```
 **GATE**: in `GATE PASS` (cosine min ≥ 0.9999) thì mới lưu `model_fp32.pt`. → `VISION_BASE=exported_model_rotated_learned`.
 
-### A2. QAT v8 (local/free, cuda)
+### A2. QAT v8 (local/free, cuda) — recipe **v6** (const lr 1e-5, 15 ep)
+> v7 (cosine + lr 2e-5) đã regress (`48.38` < v6 `49.30`), nên v8 dùng recipe v6 để ablation cô lập đúng phần rotation.
 ```bash
-PYTHONUNBUFFERED=1 python deployment/scripts/qnn/train_vision_quant_robust.py --model-dir artifacts/deployment/exports/exported_model_rotated_learned --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 --val-input-dir artifacts/deployment/qnn_inputs/vn3k_test_100 --output-dir artifacts/deployment/exports/exported_model_rotated_learned_qat_v8 --device cuda --batch-size 16 --epochs 20 --lr 2e-5 --lr-schedule cosine --warmup-frac 0.05 --min-lr-ratio 0.02 --fake-quant-observer ema --quant-head --quant-linears --quant-attention --start-layer 0 --end-layer 11 --num-workers 4
+PYTHONUNBUFFERED=1 python deployment/scripts/qnn/train_vision_quant_robust.py --model-dir artifacts/deployment/exports/exported_model_rotated_learned --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 --val-input-dir artifacts/deployment/qnn_inputs/vn3k_test_100 --output-dir artifacts/deployment/exports/exported_model_rotated_learned_qat_v8 --device cuda --batch-size 16 --epochs 15 --lr 1e-5 --fake-quant-observer ema --quant-head --quant-linears --quant-attention --start-layer 0 --end-layer 11 --num-workers 4
 ```
 
 ### A3. Export ONNX opset-20 (local/free)
@@ -112,9 +113,10 @@ PYTHONUNBUFFERED=1 python deployment/scripts/qnn/learn_rotation_text.py --model-
 ```
 **GATE** cosine min ≥ 0.9999 → `TEXT_BASE=exported_model_text_rotated_learned`.
 
-### B2. Text QAT (local/free, cuda) — `--modality text`
+### B2. Text QAT (local/free, cuda) — `--modality text`, recipe **v6** (const lr 1e-5, 15 ep)
+> Dùng recipe v6 (giống vision sau khi v7 cosine thua). Nếu muốn thử cosine cho text thì chạy thêm 1 biến thể để so.
 ```bash
-PYTHONUNBUFFERED=1 python deployment/scripts/qnn/train_vision_quant_robust.py --modality text --model-dir artifacts/deployment/exports/exported_model_text_rotated --train-input-dir artifacts/deployment/qnn_inputs/vn3k_text_train_4000 --val-input-dir artifacts/deployment/qnn_inputs/vn3k_text_test_100 --output-dir artifacts/deployment/exports/exported_model_text_rotated_qat_t1 --device cuda --batch-size 16 --epochs 20 --lr 2e-5 --lr-schedule cosine --warmup-frac 0.05 --min-lr-ratio 0.02 --fake-quant-observer ema --quant-head --quant-linears --quant-attention --start-layer 0 --end-layer 11 --num-workers 4
+PYTHONUNBUFFERED=1 python deployment/scripts/qnn/train_vision_quant_robust.py --modality text --model-dir artifacts/deployment/exports/exported_model_text_rotated --train-input-dir artifacts/deployment/qnn_inputs/vn3k_text_train_4000 --val-input-dir artifacts/deployment/qnn_inputs/vn3k_text_test_100 --output-dir artifacts/deployment/exports/exported_model_text_rotated_qat_t1 --device cuda --batch-size 16 --epochs 15 --lr 1e-5 --fake-quant-observer ema --quant-head --quant-linears --quant-attention --start-layer 0 --end-layer 11 --num-workers 4
 ```
 > Đổi `--model-dir` sang `..._text_rotated_learned` nếu chọn mode learned ở B1.
 
