@@ -119,13 +119,7 @@ The model improves retrieval in cases where visually similar distractors differ 
 
 The default training objective is:
 
-$$
-\mathcal{L}
-= \mathcal{L}_{N\text{-}ITC/MVS}
-+ 0.1\,\mathcal{L}_{C\text{-}ITC}
-+ 0.4\,\mathcal{L}_{SS}
-+ \alpha_5(t)\,\mathcal{L}_{circle}
-$$
+$$\mathcal{L} = \mathcal{L}_{N\text{-}ITC/MVS} + 0.1\,\mathcal{L}_{C\text{-}ITC} + 0.4\,\mathcal{L}_{SS} + \alpha_5(t)\,\mathcal{L}_{circle}$$
 
 Circle Loss is the hard-negative component:
 
@@ -142,51 +136,25 @@ Circle Loss is the hard-negative component:
 
 The baseline optimizes a multi-task objective over $L_2$-normalized image embeddings $\mathbf{v}_i$ and text embeddings $\mathbf{u}_i$:
 
-$$
-\mathcal{L}_{base}
-= \alpha_1 \mathcal{L}_{N\text{-}ITC}
-+ \alpha_2 \mathcal{L}_{MVS}
-+ \alpha_3 \mathcal{L}_{C\text{-}ITC}
-+ \alpha_4 \mathcal{L}_{SS}
-$$
+$$\mathcal{L}_{base} = \alpha_1 \mathcal{L}_{N\text{-}ITC} + \alpha_2 \mathcal{L}_{MVS} + \alpha_3 \mathcal{L}_{C\text{-}ITC} + \alpha_4 \mathcal{L}_{SS}$$
 
 N-ITC is the sigmoid-based pairwise alignment loss:
 
-$$
-\mathcal{L}_{N\text{-}ITC}
-= -\frac{1}{N}\sum_{i=1}^{N}\sum_{j=1}^{N}
-\log\sigma\left(z_{ij}\left(\gamma\,\mathbf{v}_i^\top\mathbf{u}_j - c\right)\right)
-$$
+$$\mathcal{L}_{N\text{-}ITC} = -\frac{1}{N}\sum_{i=1}^{N}\sum_{j=1}^{N} \log\sigma\left(z_{ij}\left(\gamma\,\mathbf{v}_i^\top\mathbf{u}_j - c\right)\right)$$
 
 where $z_{ij} \in \{+1, -1\}$ indicates matched and unmatched image-text pairs.
 
 The auxiliary Cross-modal Circle Loss mines hard positives and hard negatives:
 
-$$
-\mathcal{L}_{circle}
-= \log\left[
-1
-+ \sum_{j \in \mathcal{N}} e^{\gamma\,\alpha_n^j(s_n^j - m)}
-\cdot
-\sum_{i \in \mathcal{P}} e^{-\gamma\,\alpha_p^i(s_p^i - (1-m))}
-\right]
-$$
+$$\mathcal{L}_{circle} = \log\left[1 + \sum_{j \in \mathcal{N}} e^{\gamma\,\alpha_n^j(s_n^j - m)} \cdot \sum_{i \in \mathcal{P}} e^{-\gamma\,\alpha_p^i(s_p^i - (1-m))}\right]$$
 
 with adaptive weights:
 
-$$
-\alpha_p^i = [1 + m - s_p^i]_+,
-\qquad
-\alpha_n^j = [s_n^j + m]_+
-$$
+$$\alpha_p^i = [1 + m - s_p^i]_+,\qquad \alpha_n^j = [s_n^j + m]_+$$
 
 The final objective is:
 
-$$
-\mathcal{L}
-= \mathcal{L}_{base}
-+ \alpha_5(t)\,\mathcal{L}_{circle}
-$$
+$$\mathcal{L} = \mathcal{L}_{base} + \alpha_5(t)\,\mathcal{L}_{circle}$$
 
 </details>
 
