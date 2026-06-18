@@ -15,7 +15,8 @@ PYTHONUNBUFFERED=1 python deployment/scripts/qnn/train_vision_quant_robust.py \
     --model-dir artifacts/deployment/exports/exported_model_rotated \
     --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 \
     --val-input-dir artifacts/deployment/qnn_inputs/vn3k_test_100 \
-    --output-dir artifacts/deployment/exports/exported_model_rotated_qat_v6 \
-    --device cuda --batch-size 24 --epochs 15 --lr 1e-5 \
+    --output-dir artifacts/deployment/exports/exported_model_rotated_qat_v7 \
+    --device cuda --batch-size 16 --epochs 20 --lr 2e-5 \
+    --lr-schedule cosine --warmup-frac 0.05 --min-lr-ratio 0.02 \
     --fake-quant-observer ema --quant-head --quant-linears --quant-attention \
     --start-layer 0 --end-layer 11 --num-workers 4
