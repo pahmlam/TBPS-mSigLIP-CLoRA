@@ -4,6 +4,8 @@
 
 **Hard-negative-aware training for Vietnamese, English, and Chinese TBPS, with an INT8 deployment path for Qualcomm RB3 Gen2.**
 
+*Model training method is accepted at ICIP 2026 Tampere Finland*
+
 <p>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white">
   <img alt="PyTorch Lightning" src="https://img.shields.io/badge/Lightning-2.x-792EE5?style=for-the-badge&logo=lightning&logoColor=white">
@@ -54,7 +56,7 @@
 
 ## What This Repository Contains
 
-This repository implements the training and deployment stack for paper **A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search** accepted at ICIP 2026 Tampere Finland.
+This repository implements the training and deployment stack for paper **A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search**.
 
 The core idea is deliberately simple:
 
