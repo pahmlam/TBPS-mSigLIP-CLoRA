@@ -1,441 +1,324 @@
-
----
-
 # A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search
 
-This repository contains the official implementation for the paper: **"A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search"**, along with ongoing work on parameter-efficient accuracy extensions and edge deployment on the **Qualcomm RB3 Gen2**.
+Official implementation of **"A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search"**: mSigLIP + LoRA + Curriculum Circle Loss for multilingual text-based person search, with ongoing edge deployment on Qualcomm RB3 Gen2.
 
-##  Abstract
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white">
+  <img alt="PyTorch Lightning" src="https://img.shields.io/badge/PyTorch%20Lightning-2.x-792EE5?style=flat-square&logo=lightning&logoColor=white">
+  <img alt="Hydra" src="https://img.shields.io/badge/Hydra-config-89B8CD?style=flat-square">
+  <img alt="LoRA" src="https://img.shields.io/badge/PEFT-LoRA-2F855A?style=flat-square">
+  <img alt="RB3 QNN" src="https://img.shields.io/badge/RB3%20Gen2-QNN%20W8A8-111827?style=flat-square">
+</p>
 
-Multilingual Text-Based Person Search (TBPS) remains challenging in low-resource settings due to ambiguous cross-modal alignment. Although recent methods such as TBPS-mSigLIP employ noise-robust contrastive learning, they suffer from **limited gradient discrimination** between easy and hard negatives.
-
-To address this, we propose an efficient optimization framework that integrates **Cross-modal Circle Loss** with **Low-Rank Adaptation (LoRA)**. Circle Loss enhances fine-grained discrimination via adaptive pair-wise re-weighting, while LoRA stabilizes training by constraining optimization to a low-rank subspace. We further introduce a **Curriculum Hard-Mining Schedule** to balance alignment stability and discrimination. Experiments across three typologically diverse languages — Vietnamese, English, and Chinese — demonstrate consistent improvements, establishing a new state-of-the-art **Rank@1 accuracy of 52.28%** on VnPersonSearch and **59.35%** on PRW-TPS-CN, with only **1.57% trainable parameters**. Additionally, we explore parameter-efficient accuracy extensions (local part-token alignment and attention+FFN LoRA) and deploy the optimized model on edge hardware (Qualcomm RB3 Gen2) for real-time INT8 inference.
-
----
-
-## Current Status Snapshot
+## Status at a Glance
 
 | Track | Current state | Next step |
 |---|---|---|
-| **Main training result (paper)** | LoRA + Curriculum Circle Loss reaches **52.28% R@1** on VN3K and **59.35% R@1** on PRW-TPS-CN | Reported headline; deployment target |
-| **Accuracy extension (ablation)** | Part-Token Alignment + attention/FFN LoRA r32 reaches **53.00% R@1** on VN3K (single seed) | Complete CUHK-PEDES and PRW-TPS-CN runs, then report as ablation |
-| **Deployment** | Vision encoder runs **INT8 (W8A8) on HTP v68** via GELU fusion + mean-preserving rotation + QAT; best QDQ/retrieval candidate is **QAT v6: T2I R@1 49.30 / I2T R@1 53.85**; QAT v4 is board-verified | Quantize text encoder, then end-to-end board retrieval |
+| **Paper result** | LoRA + Curriculum Circle Loss reaches **52.28% T2I R@1** on VN3K and **59.35% T2I R@1** on PRW-TPS-CN | Reported headline and deployment source checkpoint |
+| **Accuracy extension** | Part-Token Alignment + Attn/FFN LoRA r32 reaches **53.00% T2I R@1** and **53.25% I2T R@1** on VN3K (single seed) | Complete CUHK-PEDES and PRW-TPS-CN ablations |
+| **Edge deployment** | Vision encoder runs all-INT8 **W8A8 on HTP v68**; best QDQ/retrieval candidate is **QAT v6: 49.30 T2I R@1 / 53.85 I2T R@1**; QAT v4 is board-verified | Quantize text encoder, then run end-to-end board retrieval |
 
----
+## Contents
 
-##  Framework Architecture
+- [Why This Matters](#why-this-matters)
+- [Method Overview](#method-overview)
+- [Main Results](#main-results)
+- [Accuracy Extension](#accuracy-extension)
+- [Quick Start](#quick-start)
+- [Deployment on RB3 Gen2](#deployment-on-rb3-gen2)
+- [Repository Map](#repository-map)
+- [Documentation Map](#documentation-map)
+- [Contact](#contact)
 
-We propose a unified framework constructed upon the **mSigLIP** foundation model. To bridge the gap in hard-negative mining, we incorporate an **Auxiliary Cross-Modal Circle Loss** for geometric refinement and utilize **LoRA** on the Transformer backbone (Query, Key, Value, Output projections) to ensure optimization stability and memory efficiency (allowing **3x** larger batch sizes). Only **5.9M / 376M parameters (1.57%)** are trainable.
+## Why This Matters
+
+Multilingual Text-Based Person Search (TBPS) retrieves person images from natural-language descriptions. It is difficult in low-resource and multilingual settings because the model must separate visually similar people using subtle cross-modal cues.
+
+This work starts from `siglip-base-patch16-256-multilingual` and adds:
+
+- **Cross-modal Circle Loss** for explicit hard-negative mining.
+- **Curriculum hard-mining** so Circle Loss is introduced after early global alignment stabilizes.
+- **LoRA adapters** for parameter-efficient optimization: **5.9M trainable parameters, about 1.57% of the 376M-parameter base model**.
+- **Optional local alignment and deployment extensions**: Part-Token Alignment for accuracy ablations, and QNN W8A8 deployment for Qualcomm RB3 Gen2.
+
+## Method Overview
+
+The framework keeps the mSigLIP dual encoder and adds a hard-negative branch on top of the baseline image-text objectives.
 
 ![Framework Architecture](figures/framework.png)
 
-*Figure 1: The overall architecture of the proposed Multilingual TBPS framework. It features a dual-pathway optimization: (1) The baseline noise-robust objectives (N-ITC, etc.) for global alignment, and (2) An auxiliary Circle Loss branch for explicit hard-negative mining, stabilized by LoRA.*
+**Core objective.** The default training objective combines the baseline mSigLIP losses with a curriculum-weighted Cross-modal Circle Loss:
 
----
+```text
+N-ITC/MVS + 0.1 * C-ITC + 0.4 * SimCLR + curriculum(t) * Circle
+```
 
-##  Key Contributions & Analysis
+Circle Loss uses margin `m = 0.25`, scale `gamma = 128`, and a curriculum schedule:
 
-### 1. Theoretical Gradient Analysis
+| Epoch | Circle weight | Phase |
+|---:|---:|---|
+| 0-5 | `0` | Warmup, Circle off |
+| 6-20 | linear ramp to `0.1` | Hard-mining warmup |
+| 21-60 | `0.1` | Stable hard-negative refinement |
 
-Why does mSigLIP fail on hard negatives? We analyze the gradient dynamics of the standard Sigmoid loss (N-ITC) versus our Circle Loss.
+<details>
+<summary><strong>Mathematical formulation</strong></summary>
 
-![Gradients](figures/gradient_3d_optimized_pub.png)
+The baseline optimizes a multi-task objective over L2-normalized image embeddings `v_i` and text embeddings `u_i`:
 
-*Figure 2: Theoretical visualization of gradient magnitude. (Left) **N-ITC (Cyan)** exhibits vanishing gradients for semi-hard negatives (), leading to insensitivity. **Circle Loss (Red)** imposes a sharp penalty after the margin, effectively mining hard negatives. (Right) Circle Loss maintains strong signals for positive pairs even as they approach similarity 1.0, preventing premature convergence.*
+```text
+L_base = alpha_1 L_N-ITC + alpha_2 L_MVS + alpha_3 L_C-ITC + alpha_4 L_SS
+```
 
-### 2. Geometric Refinement
+N-ITC is the sigmoid-based pairwise alignment loss:
 
-Our method transforms the embedding space geometry. By applying a **Curriculum Hard-Mining Schedule** (linearly warming up the Circle Loss weight), we prevent the disruption of early global alignment while enforcing strict spherical constraints in later stages.
+```text
+L_N-ITC = -(1/N) sum_i sum_j log sigma(z_ij * (gamma * v_i^T u_j - c))
+```
 
-![Geometric](figures/distribution_final_v5_pub.png)
+where `z_ij` is `+1` for matched pairs and `-1` otherwise.
 
-*Figure 3: Geometric Analysis of Similarity Distribution ( vs. ). (Left) The Baseline distribution converges linearly to the decision boundary (), causing overlap. (Right) **Ours (LoRA + Circle)** lifts the distribution towards the theoretical margin (), creating a clear spherical boundary that separates correct matches from hard negatives.*
+The auxiliary Cross-modal Circle Loss mines hard positives and hard negatives:
 
----
+```text
+L_circle =
+  log(1 + sum_{j in N} exp(gamma * alpha_n^j * (s_n^j - m))
+          * sum_{i in P} exp(-gamma * alpha_p^i * (s_p^i - (1 - m))))
+```
 
-##  Mathematical Formulation
+with adaptive weights:
 
-### Baseline Objective (TBPS-mSigLIP)
+```text
+alpha_p = [1 + m - s_p]_+
+alpha_n = [s_n + m]_+
+```
 
-The baseline optimizes a multi-task objective over $L_2$-normalized image embeddings $\mathbf{v}_i$ and text embeddings $\mathbf{u}_i$:
+The final objective is:
 
-$$\mathcal{L}_{\text{base}} = \alpha_1 \mathcal{L}_{N\text{-}ITC} + \alpha_2 \mathcal{L}_{MVS} + \alpha_3 \mathcal{L}_{C\text{-}ITC} + \alpha_4 \mathcal{L}_{SS}$$
+```text
+L = L_base + alpha_5(t) * L_circle
+```
 
-**N-ITC** (Noise-robust Image-Text Contrastive) — sigmoid-based pairwise alignment:
+</details>
 
-$$\mathcal{L}_{N\text{-}ITC} = -\frac{1}{N}\sum_{i=1}^{N}\sum_{j=1}^{N} \log\sigma\!\left(z_{ij}\left(\gamma\,\mathbf{v}_i^\top\mathbf{u}_j - c\right)\right)$$
+### Analysis Figures
 
-where $z_{ij} \in \{+1, -1\}$ indicates matched pairs, and $\gamma, c$ are learned scale and bias.
+| Gradient behavior | Embedding geometry |
+|---|---|
+| ![Gradient analysis](figures/gradient_3d_optimized_pub.png) | ![Geometry analysis](figures/distribution_final_v5_pub.png) |
 
-### Auxiliary Cross-Modal Circle Loss
+## Main Results
 
-We introduce Circle Loss to explicitly mine hard negatives via adaptive pair-wise re-weighting:
+### VN3K / 3000VnPersonSearch
 
-$$\mathcal{L}_{\text{circle}} = \log\left[1 + \sum_{j \in \mathcal{N}} e^{\gamma\,\alpha_n^j(s_n^j - m)} \cdot \sum_{i \in \mathcal{P}} e^{-\gamma\,\alpha_p^i(s_p^i - (1-m))}\right]$$
+| Method | R@1 | R@5 | R@10 | mAP | mINP |
+|---|---:|---:|---:|---:|---:|
+| TBPS-mSigLIP (Full FT) | 49.70 | 75.93 | 84.75 | 54.96 | 48.66 |
+| Ours (LoRA only) | 49.90 | 78.05 | 86.30 | 55.83 | 49.45 |
+| Ours (LoRA + Circle fixed) | 50.53 | 77.78 | 86.43 | 55.94 | 49.37 |
+| **Ours (LoRA + Curriculum Circle)** | **52.28** | **79.55** | **88.03** | **57.32** | **50.57** |
 
-where $\mathcal{P}$, $\mathcal{N}$ are positive/negative pair sets, $s$ is cosine similarity, $\gamma=128$ is the scale factor, and $m=0.25$ is the margin. The adaptive weights:
+Best result uses seed `2400`. Mean over 3 seeds: `R@1 = 51.52 +/- 0.68`.
 
-$$\alpha_p^i = [1 + m - s_p^i]_+, \qquad \alpha_n^j = [s_n^j + m]_+$$
+### 10% CUHK-PEDES
 
-dynamically amplify gradients for hard samples (poorly separated pairs) while suppressing well-separated ones.
+| Method | R@1 | R@5 | R@10 | mAP | mINP |
+|---|---:|---:|---:|---:|---:|
+| TBPS-mSigLIP (Baseline) | 46.73 | 68.65 | 77.55 | 41.75 | 26.56 |
+| Ours (LoRA + Circle fixed) | 56.87 | **77.18** | 84.15 | 50.70 | 34.61 |
+| **Ours (LoRA + Curriculum Circle)** | **57.10** | 76.98 | **84.34** | **50.90** | **34.85** |
 
-### Total Objective with Curriculum Schedule
+### PRW-TPS-CN
 
-$$\mathcal{L} = \mathcal{L}_{\text{base}} + \alpha_5(t) \cdot \mathcal{L}_{\text{circle}}$$
+| Method | R@1 | R@5 | R@10 | mAP | mINP |
+|---|---:|---:|---:|---:|---:|
+| TPAN | 21.63 | 42.54 | 52.99 | - | - |
+| TBPS-mSigLIP (Baseline) | 46.78 | 60.28 | 66.82 | 35.41 | 10.61 |
+| **Ours (mSigLIP-CLoRA)** | **59.35** | **70.58** | **75.48** | **46.44** | **15.10** |
 
-The curriculum schedule for $\alpha_5(t)$ prevents early disruption of global alignment:
+### Qualitative Retrieval
 
-| Epoch $t$ | $\alpha_5(t)$ | Phase |
-|---|---|---|
-| $t \leq 5$ | $0$ | Warmup (Circle off) |
-| $5 < t \leq 20$ | $0.1 \times \frac{t - 5}{15}$ | Linear ramp |
-| $t > 20$ | $0.1$ | Stable |
+The baseline often retrieves visually similar distractors. Curriculum Circle Loss improves fine-grained discrimination over details such as shoes, logos, and clothing attributes.
 
-### How to Run
+![Qualitative retrieval comparison](figures/flipped_cases_visualization.png)
+
+## Accuracy Extension
+
+> **Status:** experimental / post-paper ablation. This is not the deployed model. The edge pipeline targets the published `52.28` checkpoint because rotation and quantization artifacts are model-specific.
+
+Two extra levers are explored beyond the paper configuration:
+
+- **Part-Token Alignment** aligns image part regions with text tokens for local supervision.
+- **Attention + FFN LoRA r32** extends LoRA targets from attention projections to FFN projections (`fc1`, `fc2`).
+
+| Method | T2I R@1 | T2I R@5 | T2I R@10 | I2T R@1 | Notes |
+|---|---:|---:|---:|---:|---|
+| LoRA + Curriculum Circle (paper) | 52.28 | 79.55 | 88.03 | - | Reported headline, seed 2400 |
+| + Attention/FFN LoRA r32 | 52.83 | 79.03 | 87.58 | 52.30 | Larger adapter capacity |
+| **+ Part-Token Alignment** | **53.00** | 78.60 | 87.30 | **53.25** | Best R@1, strongest I2T gain |
+
+Run the current ablation recipe:
 
 ```bash
 bash run_part_align_lora_attn_ffn_r32.sh \
   dataset.batch_size=64 dataset.test_batch_size=128 trainer.accumulate_grad_batches=2
 ```
 
----
+## Quick Start
 
-##  Experimental Results
-
-We evaluate our method on **3000VnPersonSearch** (Low-resource, Vietnamese), **CUHK-PEDES** (High-resource, English), and **PRW-TPS-CN** (Chinese).
-
-### Quantitative Performance (VN3K)
-
-Our method with Curriculum Learning achieves State-of-the-Art performance, significantly outperforming the full fine-tuning baseline despite using only 1.57% trainable parameters.
-
-| Method                       | R@1   | R@5   | R@10  | mAP   | mINP  |
-| ---------------------------- | ----- | ------| ----- | ----- | ----- |
-| TBPS-mSigLIP (Full FT)       | 49.70 | 75.93 | 84.75 | 54.96 | 48.66 |
-| Ours (LoRA Only)             | 49.90 | 78.05 | 86.30 | 55.83 | 49.45 |
-| Ours (LoRA + Circle Fixed)   | 50.53 | 77.78 | 86.43 | 55.94 | 49.37 |
-| **Ours (LoRA + Curriculum)** | **52.28** | **79.55** | **88.03** | **57.32** | **50.57** |
-
-*Best result with seed 2400. Mean over 3 seeds: R@1 = 51.52 +/- 0.68%.*
-
-### Quantitative Performance (10% CUHK-PEDES, English)
-
-| Method                       | R@1   | R@5   | R@10  | mAP   | mINP  |
-| ---------------------------- | ----- | ------| ----- | ----- | ----- |
-| TBPS-mSigLIP (Baseline)      | 46.73 | 68.65 | 77.55 | 41.75 | 26.56 |
-| Ours (LoRA + Circle Fixed)   | 56.87 | **77.18** | 84.15 | 50.70 | 34.61 |
-| **Ours (LoRA + Curriculum)** | **57.10** | 76.98 | **84.34** | **50.90** | **34.85** |
-
-### Quantitative Performance (PRW-TPS-CN, Chinese)
-
-| Method                       | R@1   | R@5   | R@10  | mAP   | mINP  |
-| ---------------------------- | ----- | ------| ----- | ----- | ----- |
-| TPAN                         | 21.63 | 42.54 | 52.99 | -     | -     |
-| TBPS-mSigLIP (Baseline)      | 46.78 | 60.28 | 66.82 | 35.41 | 10.61 |
-| **Ours (mSigLIP-CLoRA)**    | **59.35** | **70.58** | **75.48** | **46.44** | **15.10** |
-
-### Qualitative Visualization
-
-The baseline often retrieves visually similar distractors (hard negatives). Our method successfully discriminates fine-grained attributes (e.g., shoe color, logo details).
-
-![Visualize](figures/flipped_cases_visualization.png)
-
-*Figure 4: Qualitative comparison. Green boxes indicate correct matches; Red boxes are incorrect. Note how our method ranks the Ground Truth at #1 even in challenging cases where the baseline fails.*
-
----
-
-##  Repository Structure
-
-```
-├── src/msiglip/                       # Python package: training, data, model, solver, utils
-│   ├── train.py                       # Training entry point implementation
-│   ├── evaluate.py                    # Evaluation entry point implementation
-│   ├── lightning_models.py            # LitTBPS (PyTorch Lightning module)
-│   ├── lightning_data.py              # TBPSDataModule (data loading, augmentation)
-│   ├── model/                         # TBPS + mSigLIP + losses
-│   ├── data/                          # Dataset classes & augmentation
-│   ├── solver/                        # Optimizer and LR scheduler
-│   └── utils/                         # Metrics, visualization, tokenizer utilities
-├── trainer.py                         # Backward-compatible wrapper
-├── test.py                            # Backward-compatible wrapper
-├── notebooks/workspace.ipynb          # Notebook lab for embedding/loss validation
-├── run_cir_loss.sh                    # LoRA + Curriculum Circle Loss training
-├── run_part_align_lora_attn_ffn_r32.sh # Part-Token Alignment + Attn/FFN LoRA (ablation)
-├── run_full_finetune.sh               # Full fine-tuning baseline
-├── configs/                           # Hydra configuration
-│   ├── cir_msiglip.yaml               # Main config
-│   ├── paths/default.yaml             # Centralized data/artifact paths
-│   ├── loss/cir_msiglip.yaml          # Loss flags, Circle, Part-Align config
-│   └── ...                            # backbone, trainer, optimizer, dataset, tokenizer, logger, aug
-├── artifacts/                         # Ignored generated outputs
-│   ├── training/                      # Hydra runs, multirun outputs
-│   ├── models/                        # Local checkpoints/pretrained model files
-│   └── deployment/                    # Exports, QNN inputs/runs/logs/runtime state
-├── scripts/                           # Helper scripts for checkpoints/data preparation
-├── experiments/                       # Experiment logs & ablation notes
-├── knowledge/                         # Research notes & paper drafts
-├── reports/                           # Design notes and implementation plans
-├── changelog/                         # Training/deployment changelogs
-├── figures/                           # Paper figures
-├── docs/                              # Project documentation
-│   ├── ARCHITECTURE.md                # Full architecture with diagrams
-│   ├── EXPERIMENT_SUMMARY.md          # Canonical experiment record
-│   ├── knowledge.md                   # Vietnamese durable concept/definition base
-│   └── journal/                       # Dated training/model-optimization logs
-│
-├── deployment/                        # Edge deployment & compression
-│   ├── scripts/
-│   │   ├── analyze_checkpoint.py      # Checkpoint size/RAM compatibility
-│   │   ├── inference_test.py          # ONNX/PyTorch inference test
-│   │   ├── lora_fp16/export.py        # Merge LoRA, export FP32/FP16 state dicts
-│   │   └── onnx/
-│   │       ├── export.py              # Export vision/text ONNX with external weights
-│   │       └── to_fp16.py             # Local ONNX FP16 conversion
-│   ├── hardware_profiling/            # RB3 hardware tests with proxy models
-│   ├── docs/
-│   │   ├── deployment-plan.md         # Current deployment status and next steps
-│   │   ├── aihub-experiments.md       # Legacy redirect to deployment journal
-│   │   ├── journal/                   # Master deploy journal + archived logs
-│   │   ├── system.md                  # RB3 hardware specs
-│   │   └── benchmark-rp.md            # Proxy benchmark results
-│   └── config/qnn/                    # QNN/HTP runtime config JSON files
-│
-└── ref/                               # Reference implementations (RDE, etc.)
-```
-
----
-
-##  Installation
-
-### 1. Clone and Setup
+### 1. Install
 
 ```bash
 git clone https://github.com/pahmlam/Research_on_CircleLoss_for_TBPS-mSigLIP.git
 cd Research_on_CircleLoss_for_TBPS-mSigLIP
-./setup.sh
-
-```
-
-### 2. Environment
-
-We recommend using `uv` for fast dependency management.
-
-```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
-
 ```
 
-### 3. Prepare Data & Checkpoints
+The package targets Python `>=3.11`. The recommended dependency workflow is `uv sync`.
 
-Download the `siglip-base-patch16-256-multilingual` checkpoints and organize your datasets (VN3K, CUHK-PEDES) in the root directory.
+### 2. Prepare Data and Checkpoints
+
+Download the `siglip-base-patch16-256-multilingual` checkpoint and organize datasets under the project root or the configured paths.
+
+Expected datasets:
+
+| Dataset | Language | Role |
+|---|---|---|
+| VN3K / 3000VnPersonSearch | Vietnamese | Main low-resource benchmark |
+| CUHK-PEDES | English | Natural-noise / multilingual robustness benchmark |
+| PRW-TPS-CN | Chinese | Cross-lingual generalization benchmark |
 
 ```bash
 uv run scripts/prepare_checkpoints.py
-
 ```
 
----
+### 3. Train
 
-##  Training
-
-Use the provided scripts for normal experiments. The scripts keep the Hydra overrides in one place and avoid long ad-hoc command lines.
-
-### Train with Curriculum Hard-Mining (Recommended)
-
-This runs the proposed method: LoRA + mSigLIP + Auxiliary Circle Loss with a warm-up schedule.
+Paper recipe:
 
 ```bash
-./run_cir_loss.sh
+bash run_cir_loss.sh
 ```
 
-### Train Accuracy Extension (Part-Token Alignment + Attn/FFN LoRA)
-
-This runs the post-paper accuracy ablation: local part-token alignment combined with LoRA extended to the FFN projections at rank 32. It reaches 53.00% R@1 on VN3K (single seed) and is reported as an ablation, not as the deployed model.
+Post-paper Part-Align ablation:
 
 ```bash
 bash run_part_align_lora_attn_ffn_r32.sh \
   dataset.batch_size=64 dataset.test_batch_size=128 trainer.accumulate_grad_batches=2
 ```
 
-### Full Fine-Tuning Baseline
+Full fine-tuning baseline:
 
 ```bash
-./run_full_finetune.sh
+bash run_full_finetune.sh
 ```
 
-### Train Baseline (mSigLIP)
+Hydra baseline entrypoint:
 
 ```bash
-uv run trainer.py -cn m_siglip img_size_str="'(256,256)'" dataset=vn3k loss.softlabel_ratio=0.0 trainer.max_epochs=60
-
+uv run trainer.py -cn m_siglip img_size_str="'(256,256)'" \
+  dataset=vn3k loss.softlabel_ratio=0.0 trainer.max_epochs=60
 ```
 
----
+### 4. Evaluate
 
-## Deployment Status
+`test.py` wraps `src/msiglip/evaluate.py` through Fire:
 
-Edge deployment targets the **Qualcomm RB3 Gen2 / QCS6490** with local image/text embedding inference.
+```bash
+uv run test.py --ckpt_path artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt \
+  --dataset_name vn3k
+```
 
-> **Canonical deployment references:** [`deployment/docs/w8a8_qat_rotated.md`](deployment/docs/w8a8_qat_rotated.md) explains the rotation/QAT method and gates; [`deployment/docs/journal/[deploy-master].md`](deployment/docs/journal/[deploy-master].md) is the consolidated AI Hub/QNN/RB3 journal; [`deployment/docs/runbook-w8a8-v8-both-int8.md`](deployment/docs/runbook-w8a8-v8-both-int8.md) is the forward runbook for learned rotation and both-INT8 work.
+## Deployment on RB3 Gen2
 
-### Current Status (2026-06-17)
+The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN context binaries. The current vision encoder path is all-INT8 W8A8.
+
+Canonical references:
+
+- [Rotated W8A8 + QAT method](deployment/docs/w8a8_qat_rotated.md)
+- [Deploy master journal](deployment/docs/journal/[deploy-master].md)
+- [v8 / both-INT8 runbook](deployment/docs/runbook-w8a8-v8-both-int8.md)
+
+### Current Deployment State
 
 | Area | Status | Notes |
 |---|---|---|
-| FP32/FP16 export (LoRA merge) | PASS | `deployment/scripts/lora_fp16/export.py` merges LoRA into `exported_model` |
-| Rotation equalization | PASS | mean-preserving `Q` + folded gamma/beta; output-invariant; residual concentration 252x -> 5.3x |
-| ONNX export (opset 20) | PASS | fused `Gelu` and fused `LayerNormalization`; static control ~= 1.0 |
-| Vision W8A8 QDQ fidelity | PASS | QAT v6 QDQ cosine `0.9491 / 0.9266` mean/min |
-| Vision compile/link on v68 | PASS | all-INT8 links on HTP v68; deployed context binary is about 90 MB |
-| Vision on HTP board | PASS | QAT v4 board fidelity `0.9363 / 0.9068`, `32.70 ms/img`, `22.88 FPS` |
-| Vision retrieval gate | PASS | Current best QDQ/retrieval candidate is QAT v6: T2I R@1 `49.30`, I2T R@1 `53.85`; QAT v4 remains board-verified at T2I R@1 `48.50` |
-| Text encoder | Pending | Text is 75% of params; replicate rotation + QAT + W8A8 after vision is accepted or stretch work completes |
-| End-to-end board retrieval | Pending | Both encoders INT8 on board |
+| LoRA merge and FP32/FP16 export | PASS | `deployment/scripts/lora_fp16/export.py` |
+| Mean-preserving rotation | PASS | Output-invariant, residual concentration 252x -> 5.3x |
+| ONNX opset 20 export | PASS | Fused `Gelu`, fused `LayerNormalization`, `Pow=0` |
+| Vision W8A8 QDQ fidelity | PASS | QAT v6 cosine `0.9491 / 0.9266` mean/min |
+| Vision context binary on v68 | PASS | all-INT8 links on HTP v68 |
+| Vision board verification | PASS | QAT v4 board fidelity `0.9363 / 0.9068`, `32.70 ms/img`, `22.88 FPS` |
+| Vision retrieval | PASS | QAT v6: T2I R@1 `49.30`, I2T R@1 `53.85` |
+| Text encoder | Pending | Next workstream for full both-INT8 retrieval |
 
-Key deployment findings:
-
-- HTP **v68 rejects 16-bit activations (A16)** for LayerNorm and attention matmul, so W8A16 can reach high QDQ fidelity but still fail context linking on v68.
-- Plain W8A8 collapses due to residual-stream activation concentration; the deployable path is all-INT8 W8A8 plus model-side equalization.
-- Opset-20 fused `Gelu` avoids exposing tanh-GELU `Pow(x^3)` to quantization. Fused `LayerNormalization` must stay fused; converting to RMSNorm re-exposes `Pow(x^2)`.
-- Mean-preserving rotation spreads residual outliers while preserving LayerNorm behavior; QAT then trains the rotated model to tolerate the deploy-faithful W8A8 quantizer.
-
-Do not treat `_float` QDQ surgery candidates as deployable; they are diagnostics and link-fail on internal float. Do not use W8A16 on v68; A16 needs v73-class support.
-
-### Model Footprint
-
-Full `model_fp32.pt` is the whole TBPS model (vision + text). The deployed `vision_encoder.bin` is the vision encoder only. Parameter counts below are deduplicated because TBPS aliases `vision_model`/`text_model` to `backbone.*`.
-
-| Component | Params | FP32 | FP16 | INT8 |
-|---|---:|---:|---:|---:|
-| vision_model | 92.9 M | 372 MB | 186 MB | **93 MB** (deployed `.bin` ~= 90 MB) |
-| text_model | 277.7 M | 1111 MB | 555 MB | 278 MB |
-| projection + other | 1.2 M | 5 MB | 2 MB | 1 MB |
-| **TOTAL** | **371.8 M** | **1487 MB** | **744 MB** | **372 MB** |
-
-Text is 75% of parameters. The token embedding alone is `250000 x 768` = 192 M params (768 MB FP32), driven by the 250k multilingual vocabulary. On a 4 GB board, text FP32 (1.1 GB) is the real memory cost; text INT8 is the next lever.
-
-### Deployment Directory Map
-
-```text
-deployment/
-  scripts/
-    analyze_checkpoint.py              # Check checkpoint size/state/RAM hints
-    inference_test.py                  # Host inference smoke test
-    lora_fp16/export.py                # Merge LoRA and export FP32/FP16 state
-    onnx/export.py                     # Export vision/text ONNX directories
-    onnx/to_fp16.py                    # Optional ONNX FP16 conversion
-    qnn/
-      prepare_vn3k_vision_inputs.py    # Build raw image inputs + input_list
-      prepare_vn3k_text_inputs.py      # Build token/input-list assets for text work
-      upload_qaihub_calibration_dataset.py
-      submit_qaihub_quantize_compile.py
-      submit_qaihub_compile_link.py
-      compare_onnx_with_pytorch.py
-      compare_qnn_with_pytorch.py
-      eval_retrieval_quantized_vision.py
-      qdq_surgery.py
-      analyze_qdq_encodings.py
-      tune_qdq_activation_encodings.py
-      train_vision_quant_robust.py
-      learn_rotation.py
-      audit_qnn_native_env.py
-  config/qnn/                          # HTP/QNN runtime JSON configs
-  demo/                                # Modular demo-system scaffold
-  docs/
-    journal/                           # Master deploy journal + demo-system logs
-    deployment-plan.md                 # Older high-level plan; verify against journal
-    system.md                          # RB3 hardware notes
-    experiment.md                      # Proxy benchmark guide
-    benchmark-rp.md                    # Proxy benchmark results
-    w8a8_qat_rotated.md                # Canonical rotation/QAT method
-    runbook-w8a8-v8-both-int8.md       # Current forward runbook for v8/text/both-INT8
-  hardware_profiling/                  # RB3 proxy benchmark scripts
-  deploy_utils.py
-```
-
-Generated deployment artifacts and logs belong under `artifacts/deployment/`.
-
-### Target Device
-
-| Component | Specification |
-|---|---|
-| SoC | Qualcomm QCS6490 |
-| CPU | 4x Cortex-A78 + 4x Cortex-A55 |
-| GPU | Adreno 643 |
-| DSP/HTP | Hexagon 770 / HTP V68 |
-| RAM | About 4 GB usable for inference |
-| Runtime target | QNN context binary on HTP |
-
-Important hardware constraint: HTP requires integer tensors at the model I/O boundary. Internal floating-point tensors can also break context linking, depending on the graph pattern.
+Key constraint: HTP v68 rejects broad A16 activation paths for LayerNorm and attention matmul, so W8A16 is not deployable on this board even when QDQ fidelity is high. The successful path is opset-20 fused ops + mean-preserving rotation + W8A8 + QAT.
 
 ### Deployment Gates
 
-Do not advance a candidate unless it passes the relevant gate.
-
 | Gate | Threshold | Meaning |
 |---|---:|---|
-| Merge LoRA | no `lora` / `adapter` / `base_layer` keys | Export must be a deployable dense model |
-| Rotation FP32 invariance | cosine min `>= 0.9999` | Rotation must preserve model behavior |
-| Static ONNX vs PyTorch | `cosine_l2_mean >= 0.999` | Export/preprocess control |
+| LoRA merge | no `lora` / `adapter` / `base_layer` keys | Export must be a dense deployable model |
+| Rotation invariance | cosine min `>= 0.9999` | Rotation must preserve FP32 behavior |
+| Static ONNX vs PyTorch | cosine mean `>= 0.999` | Export/preprocess control |
 | ONNX op sanity | `Pow=0`, fused `Gelu`, fused `LayerNormalization` | Avoid exposed GELU/RMSNorm internals |
-| QDQ ONNX vs PyTorch mean | target `>= 0.95` | Candidate worth compile/link |
-| QDQ ONNX vs PyTorch min | `>= 0.90` | No severe sample drift |
-| QNN vs PyTorch after link | `>= 0.90` | Candidate worth wider RB3 benchmark |
-| Full retrieval | `T2I R@1 >= 48.0` | Minimum deploy target vs `52.28` / `52.40` FP32 baseline |
-| Stretch retrieval | `T2I R@1 >= 50.0` | Current optimization target |
+| QDQ ONNX vs PyTorch | mean `>= 0.95`, min `>= 0.90` | Candidate worth compile/link |
+| QNN board vs PyTorch | mean `>= 0.90` | Runtime on board is faithful enough |
+| Full retrieval | T2I R@1 `>= 48.0` | Minimum deploy target vs FP32 baseline |
+| Stretch retrieval | T2I R@1 `>= 50.0` | Current optimization target |
 
-Diagnostic compile exception: AI Hub-native QDQ from a QAT model may be compiled if it reaches `mean >= 0.93` and `min >= 0.88`. This exception does **not** apply to `_float`, ORT QDQ, or INT16 surgery patterns that have already link-failed.
+### Model Footprint
 
-Cosine is only a fidelity proxy. Retrieval R@1 is decisive: the rotation-only candidate has QDQ cosine near `0.90` but fails retrieval at T2I R@1 `45.42`.
+| Component | Params | FP32 | FP16 | INT8 |
+|---|---:|---:|---:|---:|
+| vision_model | 92.9M | 372 MB | 186 MB | 93 MB |
+| text_model | 277.7M | 1111 MB | 555 MB | 278 MB |
+| projection + other | 1.2M | 5 MB | 2 MB | 1 MB |
+| **Total** | **371.8M** | **1487 MB** | **744 MB** | **372 MB** |
 
-### Pipeline (current, rotation-based INT8 for v68)
+Text is 75% of parameters because the multilingual token embedding has `250000 x 768` entries. This is why text INT8 is the next major memory lever for 4 GB RB3 deployment.
+
+<details>
+<summary><strong>Deployment pipeline and QAT commands</strong></summary>
 
 ```text
-epoch=56-val_score=52.28.ckpt        # LoRA-finetuned Lightning checkpoint
-  -> [1] lora_fp16/export.py          # MERGE LoRA -> dense base weights
+epoch=56-val_score=52.28.ckpt
+  -> [1] lora_fp16/export.py
          exported_model/{model_fp32.pt, model_fp16.pt, config.yaml}
-  -> [2] qnn/rotate_vision_encoder.py # mean-preserving rotation + folded gamma/beta
+  -> [2] qnn/rotate_vision_encoder.py
          exported_model_rotated/{model_fp32.pt, config.yaml}
   -> [3] qnn/train_vision_quant_robust.py
          exported_model_rotated_qat_v6/{model_fp32.pt, config.yaml}
   -> [4] qnn/export_rotated_vision_onnx.py --opset 20
          exported_model_rotated_qat_v6/vision_onnx/{vision_encoder.onnx,.data}
   -> [5] qnn/submit_qaihub_quantize_compile.py
-         W8A8 QDQ / context binary with quantized I/O on RB3 Gen2
-  -> [6] qnn-net-run on RB3 HTP -> compare_qnn_with_pytorch -> retrieval R@1
+         W8A8 QDQ / context binary with quantized I/O
+  -> [6] qnn-net-run on RB3 HTP
+         compare_qnn_with_pytorch -> retrieval R@1
 ```
 
-Why each step exists: LoRA merge is mandatory because the checkpoint is LoRA-finetuned; rotation spreads activation concentration so all-INT8 W8A8 becomes viable on v68; opset-20 fuses `Gelu`/`LayerNormalization`; QAT aligns the model with AI Hub's calibrate-once, per-tensor W8A8 quantizer. Swapping to a different checkpoint (for example the 53.00 Part-Align model) requires rerunning from step [1].
-
-### QAT Iteration Workflow (per-round commands)
-
-Rotation alone gives only `T2I R@1 45.42` (gate fail). Quantization-aware fine-tuning of the rotated model closes the gap. Set `V` to the round name, for example `qat_v6`. AI Hub steps are the only cloud-job steps; the other steps are local/free.
-
-**One-time prep** (shared by QAT rounds):
+One-time prep:
 
 ```bash
-# [A] Merge LoRA -> exported_model/
 python deployment/scripts/lora_fp16/export.py \
   --ckpt artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt \
   --output-dir artifacts/deployment/exports/exported_model
 
-# [B] Mean-preserving rotation -> exported_model_rotated/
 python deployment/scripts/qnn/rotate_vision_encoder.py \
   --model-dir artifacts/deployment/exports/exported_model \
   --output-dir artifacts/deployment/exports/exported_model_rotated \
   --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --seed 2400 --skip-r2
 
-# [C] Prepare full-train inputs for QAT (4302 images)
 python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
   --dataset-root VN3K --split train --selection random --seed 2400 \
   --num-samples 4302 --output-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 \
   --path-mode relative
 ```
 
-**Per round** (`qat_v6` shown):
+QAT v6:
 
 ```bash
-# [1] QAT distillation (teacher=rotated FP32, student=fake-quant). LONG (GPU).
 python deployment/scripts/qnn/train_vision_quant_robust.py \
   --model-dir artifacts/deployment/exports/exported_model_rotated \
   --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 \
@@ -446,12 +329,10 @@ python deployment/scripts/qnn/train_vision_quant_robust.py \
   --fake-quant-observer ema \
   --quant-head --quant-linears --quant-attention
 
-# [2] Export rotated/QAT ONNX, opset 20 (fused Gelu/LayerNorm).
 python deployment/scripts/qnn/export_rotated_vision_onnx.py \
   --model-dir artifacts/deployment/exports/exported_model_rotated_qat_v6 \
   --opset 20
 
-# [3] Static control gate (ONNX vs PyTorch, must be ~1.0).
 python deployment/scripts/qnn/compare_onnx_with_pytorch.py \
   --onnx-model artifacts/deployment/exports/exported_model_rotated_qat_v6/vision_onnx \
   --model-dir artifacts/deployment/exports/exported_model_rotated_qat_v6 \
@@ -459,15 +340,17 @@ python deployment/scripts/qnn/compare_onnx_with_pytorch.py \
   --precision fp32 \
   --json artifacts/deployment/exports/exported_model_rotated_qat_v6/static_vs_pytorch_summary.json \
   --csv artifacts/deployment/exports/exported_model_rotated_qat_v6/static_vs_pytorch.csv
+```
 
-# [4] AI Hub W8A8 quantize-only -> QDQ ONNX. CLOUD JOB (log the job id).
+AI Hub QDQ diagnostic and local retrieval gate:
+
+```bash
 python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
   --model artifacts/deployment/exports/exported_model_rotated_qat_v6/vision_onnx \
   --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 \
   --quantize-only --wait \
   --download-quantized artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_qdq_onnx
 
-# [5] Decisive local numbers: QDQ cosine + retrieval R@1.
 python deployment/scripts/qnn/compare_onnx_with_pytorch.py \
   --onnx-model artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_qdq_onnx \
   --model-dir artifacts/deployment/exports/exported_model \
@@ -475,58 +358,26 @@ python deployment/scripts/qnn/compare_onnx_with_pytorch.py \
   --precision fp32 \
   --json artifacts/deployment/runtime/rotated_w8a8_qat_v6/qdq_vs_pytorch_summary.json \
   --csv artifacts/deployment/runtime/rotated_w8a8_qat_v6/qdq_vs_pytorch.csv
+
 python deployment/scripts/qnn/eval_retrieval_quantized_vision.py \
   --qdq-onnx artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_qdq_onnx \
   --model-dir artifacts/deployment/exports/exported_model \
   --json artifacts/deployment/runtime/rotated_w8a8_qat_v6/retrieval_r1.json
 ```
 
-If R@1 passes the gate, deploy with the full flow (drop `--quantize-only`, use `--download .../vision_encoder.bin`) and then run `qnn-net-run` on the board.
+</details>
 
-**What each round changed, and the result:**
+<details>
+<summary><strong>RB3/QNN quick commands</strong></summary>
 
-| Round | QAT flags added | QDQ cosine mean/min | T2I R@1 | I2T R@1 | Decision |
-|---|---|---:|---:|---:|---|
-| rotation only | no QAT | `0.8975 / 0.8747` | 45.42 | 49.40 | Links/runs, retrieval gate FAIL |
-| qat_v1 | per-sample fake-quant | `0.9223 / 0.8917` | 46.92 | 50.45 | Helpful but sim too easy |
-| qat_v2 | per-tensor fake-quant | `0.9281 / 0.9093` | 47.80 | 51.65 | Near gate |
-| qat_v3 | `--fake-quant-observer ema` | `0.9353 / 0.919` | 48.20 | 52.30 | First retrieval gate PASS |
-| qat_v4 | `--quant-head` | `0.9364 / 0.9091` | 48.50 | 52.95 | Board-verified deploy binary |
-| qat_v5 | `--quant-linears` | `0.9437 / 0.9311` | 49.25 | 53.40 | Strong accuracy candidate |
-| **qat_v6** | `--quant-attention` | **`0.9491 / 0.9266`** | **49.30** | **53.85** | Best QDQ/retrieval candidate |
-| qat_v7 | cosine LR + lr `2e-5`, 20 epochs | `0.9485 / 0.9083` | 48.38 | 53.05 | Regressed |
-| qat_v8 planned | learned rotation + recipe v6 | pending | pending | pending | Forward ablation |
-
-Dated commands, AI Hub job IDs, and full results per round are consolidated in [`deployment/docs/journal/[deploy-master].md`](deployment/docs/journal/[deploy-master].md). Method and math are in [`deployment/docs/w8a8_qat_rotated.md`](deployment/docs/w8a8_qat_rotated.md).
-
-### Quick Commands
-
-#### 1. Analyze a checkpoint
+Analyze a checkpoint:
 
 ```bash
 python deployment/scripts/analyze_checkpoint.py \
   --ckpt artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt
 ```
 
-#### 2. Merge LoRA and export FP32/FP16 state
-
-```bash
-python deployment/scripts/lora_fp16/export.py \
-  --ckpt artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt \
-  --output-dir artifacts/deployment/exports/exported_model
-```
-
-#### 3. Export baseline ONNX
-
-```bash
-python deployment/scripts/onnx/export.py \
-  --model-dir artifacts/deployment/exports/exported_model \
-  --precision fp32
-```
-
-Use FP32 ONNX for stability unless a specific diagnostic requires FP16. The current deploy path uses `export_rotated_vision_onnx.py` after rotation/QAT.
-
-#### 4. Prepare raw VN3K vision inputs
+Prepare smoke/calibration inputs:
 
 ```bash
 python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
@@ -536,11 +387,7 @@ python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
   --num-samples 10 \
   --output-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
   --path-mode relative
-```
 
-For calibration:
-
-```bash
 python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
   --dataset-root VN3K \
   --split train \
@@ -551,13 +398,7 @@ python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
   --path-mode relative
 ```
 
-Known calibration dataset:
-
-```text
-d7jzjy1m2 / msiglip-vision-vn3k-train-calib-2000
-```
-
-#### 5. Upload calibration data to Qualcomm AI Hub
+Upload calibration data:
 
 ```bash
 python deployment/scripts/qnn/upload_qaihub_calibration_dataset.py \
@@ -565,23 +406,13 @@ python deployment/scripts/qnn/upload_qaihub_calibration_dataset.py \
   --name msiglip-vision-vn3k-train-calib-2000
 ```
 
-#### 6. Quantize and compile/link with the newer AI Hub API
+Known vision calibration dataset:
 
-Use this helper instead of deprecated `qai-hub submit-compile-job --quantize_full_type ...`, because the deprecated CLI can preserve FP I/O and make HTP reject the model.
-
-For QDQ diagnostics first:
-
-```bash
-python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
-  --model artifacts/deployment/exports/exported_model_rotated_qat_v6/vision_onnx \
-  --calibration-data d7jzjy1m2 \
-  --weights-dtype int8 --activations-dtype int8 \
-  --quantize-only \
-  --wait \
-  --download-quantized artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_qdq_onnx
+```text
+d7jzjy1m2 / msiglip-vision-vn3k-train-calib-2000
 ```
 
-For full quantize + compile + link:
+Compile/link a full context binary:
 
 ```bash
 python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
@@ -592,21 +423,7 @@ python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
   --download artifacts/deployment/runtime/rotated_w8a8_qat_v6/vision_encoder.bin
 ```
 
-#### 7. Compare QDQ ONNX against PyTorch
-
-```bash
-python deployment/scripts/qnn/compare_onnx_with_pytorch.py \
-  --onnx-model artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_qdq_onnx \
-  --model-dir artifacts/deployment/exports/exported_model \
-  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
-  --precision fp32 \
-  --json artifacts/deployment/runtime/rotated_w8a8_qat_v6/qdq_vs_pytorch_summary.json \
-  --csv artifacts/deployment/runtime/rotated_w8a8_qat_v6/qdq_vs_pytorch.csv
-```
-
-Only compile/link candidates that pass the QDQ gate, except for the documented diagnostic exception above.
-
-#### 8. Run a QNN context binary on RB3
+Run on RB3:
 
 ```bash
 qnn-net-run \
@@ -619,9 +436,7 @@ qnn-net-run \
   --perf_profile high_performance
 ```
 
-Use `qnn-net-run`, not `snpe-net-run`, for QNN context binaries.
-
-#### 9. Compare QNN outputs against PyTorch
+Compare board outputs against PyTorch:
 
 ```bash
 python deployment/scripts/qnn/compare_qnn_with_pytorch.py \
@@ -633,16 +448,17 @@ python deployment/scripts/qnn/compare_qnn_with_pytorch.py \
   --csv artifacts/deployment/qnn_runs/rotated_w8a8_qat_v6/qnn_vs_pytorch.csv
 ```
 
-#### 10. Audit QNN/QAIRT native toolchain
+Audit native QNN/QAIRT tools:
 
 ```bash
 python deployment/scripts/qnn/audit_qnn_native_env.py \
   --json artifacts/deployment/runtime/qnn_native/env_audit.json
 ```
 
-Latest local Mac audit found no QNN/QAIRT native tools. Native QNN work needs a server or machine with the Qualcomm AI Stack / QNN SDK installed.
+</details>
 
-### Current Key Results
+<details>
+<summary><strong>QAT iteration history</strong></summary>
 
 | Candidate | Result | Decision |
 |---|---:|---|
@@ -654,28 +470,50 @@ Latest local Mac audit found no QNN/QAIRT native tools. Native QNN work needs a 
 | QAT v7 | QDQ `0.9485 / 0.9083`, T2I R@1 `48.38`, I2T R@1 `53.05` | Regressed vs v6 |
 | QAT v8 planned | learned rotation + recipe v6 | Next ablation toward stretch target |
 
-Historical failed diagnostics, rejected branches, AI Hub job IDs, and full artifacts are consolidated in [`deployment/docs/journal/[deploy-master].md`](deployment/docs/journal/[deploy-master].md).
+</details>
 
-### Documentation Convention
+## Repository Map
 
-- Canonical deployment/model-compression journal: [`deployment/docs/journal/[deploy-master].md`](deployment/docs/journal/[deploy-master].md)
-- Demo-system logs: `deployment/docs/journal/[demo-system]-YYYY-MM-DD.md`
-- Stable concepts such as ONNX, QNN, HTP, PTQ, and QAT: `docs/knowledge.md`
-- Completed code/config/docs changes: `changelog/deployment/changelog.md` after user confirmation.
+```text
+src/msiglip/                       # Training, data, model, solver, utilities
+  lightning_models.py              # LitTBPS Lightning module
+  lightning_data.py                # TBPSDataModule
+  model/                           # mSigLIP, LoRA, TBPS, losses, evidence bank
+  data/                            # VN3K, CUHK-PEDES, PRW-TPS-CN datasets
+  solver/                          # Optimizer and scheduler
 
-Write new AI Hub job logs and QDQ/QNN fidelity results into `deployment/docs/journal/[deploy-master].md`. Do not write them into `deployment/docs/aihub-experiments.md`; it is legacy.
+configs/                           # Hydra configs for model, loss, datasets, LoRA
+trainer.py                         # Hydra training entrypoint wrapper
+test.py                            # Fire evaluation wrapper
+notebooks/workspace.ipynb          # Local research/loss playground
+run_*.sh                           # Reproducible training recipes
 
-### Hardware Profiling
+deployment/                        # RB3/QNN deployment and compression
+  scripts/                         # Export, ONNX, QNN, QAT, diagnostics
+  config/qnn/                      # HTP/QNN runtime config JSON files
+  docs/                            # Deployment docs and runbooks
+  hardware_profiling/              # RB3 profiling helpers
 
-Proxy hardware profiling scripts remain under `deployment/hardware_profiling/`. They are useful for RB3 environment checks, but they are not acceptance tests for mSigLIP. Deployment acceptance requires mSigLIP QNN fidelity and retrieval metrics.
-
-```bash
-cd deployment/hardware_profiling
-./run_all.sh
+artifacts/                         # Generated outputs (ignored)
+docs/                              # Architecture, experiment summaries, journals
+knowledge/                         # Research notes and paper drafts
+reports/                           # Design notes and architecture decisions
+changelog/                         # Training/deployment changelogs
+figures/                           # README and paper figures
 ```
 
----
+## Documentation Map
 
-##  Contact
+| Document | Purpose |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full training/model architecture reference |
+| [docs/EXPERIMENT_SUMMARY.md](docs/EXPERIMENT_SUMMARY.md) | Canonical older experiment summary |
+| [docs/noise-robust-multilingual-framework.md](docs/noise-robust-multilingual-framework.md) | MNEB-HN research and implementation design |
+| [docs/journal/](docs/journal/) | Dated training/model-optimization journals |
+| [deployment/docs/w8a8_qat_rotated.md](deployment/docs/w8a8_qat_rotated.md) | Canonical W8A8 rotation/QAT deployment method |
+| [deployment/docs/journal/[deploy-master].md](deployment/docs/journal/[deploy-master].md) | Consolidated deployment/model-compression journal |
+| [deployment/docs/runbook-w8a8-v8-both-int8.md](deployment/docs/runbook-w8a8-v8-both-int8.md) | Forward runbook for learned rotation, text, and both-INT8 |
 
-For any questions, please open an issue or contact the authors.
+## Contact
+
+For questions, please open an issue or contact the authors.
