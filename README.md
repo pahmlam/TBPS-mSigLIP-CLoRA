@@ -145,9 +145,9 @@ where $z_{ij} \in \{+1, -1\}$ indicates matched and unmatched image-text pairs.
 
 C-ITC enforces structured alignment through in-modality consistency and cross-modality symmetry:
 
-$$\mathcal{L}_{C^I\text{-}ITC} = \frac{1}{N^2}\sum_{i,j}\left(\operatorname{sim}(\mathbf{v}_i,\mathbf{v}_j)-\operatorname{sim}(\mathbf{u}_i,\mathbf{u}_j)\right)^2$$
+$$\mathcal{L}_{C^I\text{-}ITC} = \frac{1}{N^2}\sum_{i,j}\left(\mathrm{sim}(\mathbf{v}_i,\mathbf{v}_j)-\mathrm{sim}(\mathbf{u}_i,\mathbf{u}_j)\right)^2$$
 
-$$\mathcal{L}_{C^C\text{-}ITC} = \frac{1}{N^2}\sum_{i,j}\left(\operatorname{sim}(\mathbf{v}_i,\mathbf{u}_j)-\operatorname{sim}(\mathbf{v}_j,\mathbf{u}_i)\right)^2$$
+$$\mathcal{L}_{C^C\text{-}ITC} = \frac{1}{N^2}\sum_{i,j}\left(\mathrm{sim}(\mathbf{v}_i,\mathbf{u}_j)-\mathrm{sim}(\mathbf{v}_j,\mathbf{u}_i)\right)^2$$
 
 $$\mathcal{L}_{C\text{-}ITC} = \lambda_I \mathcal{L}_{C^I\text{-}ITC} + \lambda_C \mathcal{L}_{C^C\text{-}ITC},\qquad \lambda_I=\lambda_C=0.25$$
 
@@ -155,7 +155,7 @@ MVS enforces consistency between original images and augmented views using the N
 
 SS is a SimCLR-style self-supervision loss over two augmented views of the same image:
 
-$$\mathcal{L}_{SS} = -\frac{1}{2N}\sum_{i=1}^{2N}\log\frac{\exp\left(\operatorname{sim}(\mathbf{v}_i,\mathbf{v}_{i^+})/\tau_s\right)}{\sum_{k\neq i}\exp\left(\operatorname{sim}(\mathbf{v}_i,\mathbf{v}_k)/\tau_s\right)}$$
+$$\mathcal{L}_{SS} = -\frac{1}{2N}\sum_{i=1}^{2N}\log\frac{\exp\left(\mathrm{sim}(\mathbf{v}_i,\mathbf{v}_{i^+})/\tau_s\right)}{\sum_{k\neq i}\exp\left(\mathrm{sim}(\mathbf{v}_i,\mathbf{v}_k)/\tau_s\right)}$$
 
 The auxiliary Cross-modal Circle Loss mines hard positives and hard negatives:
 
