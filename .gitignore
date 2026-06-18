@@ -60,4 +60,3 @@ artifacts/deployment/**/.DS_Store
 artifacts/deployment/**/__pycache__/
 
 msiglip_colab_qat_v1.tar.gz
-vn3k_train_all_4302/
