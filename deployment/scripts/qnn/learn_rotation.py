@@ -140,15 +140,20 @@ class MeanPreservingRotation(nn.Module):
         # Learnable skew on the (dim-1) complement; start at 0 -> Q = identity.
         self.skew_param = nn.Parameter(torch.zeros(dim - 1, dim - 1, dtype=torch.float64, device=device))
 
-    def matrix(self) -> torch.Tensor:
+    def matrix(self, dtype: torch.dtype | None = None) -> torch.Tensor:
+        """Build Q. Pass dtype=torch.float32 for a fast optimization step (GPU
+        float64 is throttled ~1/32-1/64); use float64 (default) for the final
+        fold + orthogonality check where 1e-15 precision matters."""
         d = self.dim
-        A = self.skew_param - self.skew_param.t()  # skew-symmetric
+        skew = self.skew_param if dtype is None else self.skew_param.to(dtype)
+        A = skew - skew.t()  # skew-symmetric
         eye = torch.eye(d - 1, dtype=A.dtype, device=A.device)
         # Cayley: R_c = (I - A)(I + A)^{-1}  (orthogonal)
         Rc = torch.linalg.solve((eye + A).t(), (eye - A).t()).t()
         R = torch.eye(d, dtype=A.dtype, device=A.device)
         R[1:, 1:] = Rc
-        return self.U @ R @ self.U.t()
+        U = self.U if dtype is None else self.U.to(dtype)
+        return U @ R @ U.t()
 
 
 def _per_tensor_max_sq(rotated: torch.Tensor) -> torch.Tensor:
@@ -208,7 +213,9 @@ def main() -> None:
         vision_model, calib_paths, args.image_size, device,
         args.tokens_per_image, args.seed,
     )
-    acts = [a.to(torch.float64).to(device) for a in acts]
+    # Optimize in float32 (GPU float64 is throttled ~1/32-1/64). The fold + gate
+    # below recompute Q in float64 for exact orthogonality.
+    acts = [a.to(torch.float32).to(device) for a in acts]
     print(f"  cached {len(acts)} site tensors; rows each ~{acts[0].shape[0]}")
 
     # Baseline (identity rotation) objective for reference.
@@ -222,8 +229,7 @@ def main() -> None:
     print(f"Optimizing learned rotation: {args.steps} steps (base obj={base_obj:.1f}, max|a|={base_maxabs:.1f}) ...")
     for step in range(args.steps):
         opt.zero_grad()
-        Q = rot.matrix()
-        Qt = Q.t()
+        Qt = rot.matrix(torch.float32).t()  # float32 optimization path
         obj = 0.0
         for a in acts:
             obj = obj + _per_tensor_max_sq(a @ Qt)  # rotated reader/writer activation = a · Q^T
@@ -231,16 +237,17 @@ def main() -> None:
         opt.step()
         if step % 100 == 0 or step == args.steps - 1:
             with torch.no_grad():
-                cur_max = max((a @ rot.matrix().t()).abs().max().item() for a in acts)
+                cur_max = max((a @ rot.matrix(torch.float32).t()).abs().max().item() for a in acts)
             print(f"  step {step:4d}  obj={float(obj):.1f}  max|Qa|={cur_max:.2f}")
 
     with torch.no_grad():
-        Q = rot.matrix().detach()
+        Q = rot.matrix(torch.float64).detach()  # precise Q for fold + orthogonality
         orth_err = (Q @ Q.t() - torch.eye(dim, dtype=Q.dtype, device=device)).abs().max().item()
         ones = torch.ones(dim, dtype=Q.dtype, device=device)
         mean_err = (Q @ ones - ones).abs().max().item()
-        final_obj = sum(_per_tensor_max_sq(a @ Q.t()) for a in acts).item()
-        final_maxabs = max((a @ Q.t()).abs().max().item() for a in acts)
+        Q32t = rot.matrix(torch.float32).t()
+        final_obj = sum(_per_tensor_max_sq(a @ Q32t) for a in acts).item()
+        final_maxabs = max((a @ Q32t).abs().max().item() for a in acts)
 
     print(f"Learned Q: orth_err={orth_err:.2e} mean_err={mean_err:.2e}")
     print(f"Objective {base_obj:.1f} -> {final_obj:.1f}  | max|a| {base_maxabs:.2f} -> {final_maxabs:.2f}")
