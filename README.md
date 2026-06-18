@@ -1,113 +1,82 @@
-# A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search
+<div align="center">
 
-Official implementation of **"A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search"**: mSigLIP + LoRA + Curriculum Circle Loss for multilingual text-based person search, with ongoing edge deployment on Qualcomm RB3 Gen2.
+# mSigLIP for Multilingual Text-Based Person Search
 
-<p align="center">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white">
-  <img alt="PyTorch Lightning" src="https://img.shields.io/badge/PyTorch%20Lightning-2.x-792EE5?style=flat-square&logo=lightning&logoColor=white">
-  <img alt="Hydra" src="https://img.shields.io/badge/Hydra-config-89B8CD?style=flat-square">
-  <img alt="LoRA" src="https://img.shields.io/badge/PEFT-LoRA-2F855A?style=flat-square">
-  <img alt="RB3 QNN" src="https://img.shields.io/badge/RB3%20Gen2-QNN%20W8A8-111827?style=flat-square">
+**Hard-negative-aware training for Vietnamese, English, and Chinese TBPS, with an INT8 deployment path for Qualcomm RB3 Gen2.**
+
+<p>
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white">
+  <img alt="PyTorch Lightning" src="https://img.shields.io/badge/Lightning-2.x-792EE5?style=for-the-badge&logo=lightning&logoColor=white">
+  <img alt="Hydra" src="https://img.shields.io/badge/Hydra-config-2563EB?style=for-the-badge">
+  <img alt="LoRA" src="https://img.shields.io/badge/PEFT-LoRA-15803D?style=for-the-badge">
+  <img alt="QNN" src="https://img.shields.io/badge/RB3%20Gen2-QNN%20W8A8-111827?style=for-the-badge">
 </p>
 
-## Status at a Glance
+<p>
+  <a href="#results">Results</a> •
+  <a href="#method">Method</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#deployment">Deployment</a> •
+  <a href="#project-map">Project Map</a>
+</p>
 
-| Track | Current state | Next step |
+</div>
+
+---
+
+## Snapshot
+
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <strong>VN3K / Vietnamese</strong><br>
+      <span style="font-size:24px"><strong>52.28</strong></span><br>
+      T2I Rank@1, paper headline
+    </td>
+    <td width="33%" align="center">
+      <strong>PRW-TPS-CN / Chinese</strong><br>
+      <span style="font-size:24px"><strong>59.35</strong></span><br>
+      T2I Rank@1, multilingual generalization
+    </td>
+    <td width="33%" align="center">
+      <strong>RB3 Gen2 / HTP v68</strong><br>
+      <span style="font-size:24px"><strong>49.30</strong></span><br>
+      Vision-only INT8 QAT v6 T2I Rank@1
+    </td>
+  </tr>
+</table>
+
+| Track | Status | Current next step |
 |---|---|---|
-| **Paper result** | LoRA + Curriculum Circle Loss reaches **52.28% T2I R@1** on VN3K and **59.35% T2I R@1** on PRW-TPS-CN | Reported headline and deployment source checkpoint |
-| **Accuracy extension** | Part-Token Alignment + Attn/FFN LoRA r32 reaches **53.00% T2I R@1** and **53.25% I2T R@1** on VN3K (single seed) | Complete CUHK-PEDES and PRW-TPS-CN ablations |
-| **Edge deployment** | Vision encoder runs all-INT8 **W8A8 on HTP v68**; best QDQ/retrieval candidate is **QAT v6: 49.30 T2I R@1 / 53.85 I2T R@1**; QAT v4 is board-verified | Quantize text encoder, then run end-to-end board retrieval |
+| **Training** | LoRA + Curriculum Circle Loss is the main reported method. It trains **5.9M parameters, about 1.57% of the 376M-parameter base model**. | Keep the paper recipe as the clean deployment baseline. |
+| **Multilingual evaluation** | VN3K, 10% CUHK-PEDES, and PRW-TPS-CN results are reported below. | Extend full multilingual ablations only when needed. |
+| **Edge deployment** | Vision encoder W8A8 path works on RB3 Gen2 HTP v68. QAT v6 is the best QDQ/retrieval candidate; QAT v4 is board-verified. | Quantize text encoder, then validate both-INT8 retrieval on board. |
 
-## Contents
+## What This Repository Contains
 
-- [Why This Matters](#why-this-matters)
-- [Method Overview](#method-overview)
-- [Main Results](#main-results)
-- [Accuracy Extension](#accuracy-extension)
-- [Quick Start](#quick-start)
-- [Deployment on RB3 Gen2](#deployment-on-rb3-gen2)
-- [Repository Map](#repository-map)
-- [Documentation Map](#documentation-map)
-- [Contact](#contact)
+This repository implements the training and deployment stack for paper **A Hard Negative-Aware Optimization for Multilingual Text-Based Person Search** accepted at ICIP 2026 Tampere Finland.
 
-## Why This Matters
-
-Multilingual Text-Based Person Search (TBPS) retrieves person images from natural-language descriptions. It is difficult in low-resource and multilingual settings because the model must separate visually similar people using subtle cross-modal cues.
-
-This work starts from `siglip-base-patch16-256-multilingual` and adds:
-
-- **Cross-modal Circle Loss** for explicit hard-negative mining.
-- **Curriculum hard-mining** so Circle Loss is introduced after early global alignment stabilizes.
-- **LoRA adapters** for parameter-efficient optimization: **5.9M trainable parameters, about 1.57% of the 376M-parameter base model**.
-- **Optional local alignment and deployment extensions**: Part-Token Alignment for accuracy ablations, and QNN W8A8 deployment for Qualcomm RB3 Gen2.
-
-## Method Overview
-
-The framework keeps the mSigLIP dual encoder and adds a hard-negative branch on top of the baseline image-text objectives.
-
-![Framework Architecture](figures/framework.png)
-
-**Core objective.** The default training objective combines the baseline mSigLIP losses with a curriculum-weighted Cross-modal Circle Loss:
+The core idea is deliberately simple:
 
 ```text
-N-ITC/MVS + 0.1 * C-ITC + 0.4 * SimCLR + curriculum(t) * Circle
+mSigLIP multilingual dual encoder
+  + LoRA adapters
+  + N-ITC/MVS, C-ITC, SimCLR
+  + curriculum-weighted Cross-modal Circle Loss
+  -> multilingual person retrieval embeddings
 ```
 
-Circle Loss uses margin `m = 0.25`, scale `gamma = 128`, and a curriculum schedule:
+The method keeps the large multilingual mSigLIP backbone mostly frozen and trains a compact LoRA subspace. Circle Loss is introduced through a curriculum so the model first learns stable global image-text alignment, then focuses on hard negatives.
 
-| Epoch | Circle weight | Phase |
-|---:|---:|---|
-| 0-5 | `0` | Warmup, Circle off |
-| 6-20 | linear ramp to `0.1` | Hard-mining warmup |
-| 21-60 | `0.1` | Stable hard-negative refinement |
+## Results
 
-<details>
-<summary><strong>Mathematical formulation</strong></summary>
+### Main Results
 
-The baseline optimizes a multi-task objective over L2-normalized image embeddings `v_i` and text embeddings `u_i`:
-
-```text
-L_base = alpha_1 L_N-ITC + alpha_2 L_MVS + alpha_3 L_C-ITC + alpha_4 L_SS
-```
-
-N-ITC is the sigmoid-based pairwise alignment loss:
-
-```text
-L_N-ITC = -(1/N) sum_i sum_j log sigma(z_ij * (gamma * v_i^T u_j - c))
-```
-
-where `z_ij` is `+1` for matched pairs and `-1` otherwise.
-
-The auxiliary Cross-modal Circle Loss mines hard positives and hard negatives:
-
-```text
-L_circle =
-  log(1 + sum_{j in N} exp(gamma * alpha_n^j * (s_n^j - m))
-          * sum_{i in P} exp(-gamma * alpha_p^i * (s_p^i - (1 - m))))
-```
-
-with adaptive weights:
-
-```text
-alpha_p = [1 + m - s_p]_+
-alpha_n = [s_n + m]_+
-```
-
-The final objective is:
-
-```text
-L = L_base + alpha_5(t) * L_circle
-```
-
-</details>
-
-### Analysis Figures
-
-| Gradient behavior | Embedding geometry |
-|---|---|
-| ![Gradient analysis](figures/gradient_3d_optimized_pub.png) | ![Geometry analysis](figures/distribution_final_v5_pub.png) |
-
-## Main Results
+| Dataset | Language | Main result | Notes |
+|---|---|---:|---|
+| VN3K / 3000VnPersonSearch | Vietnamese | **52.28 T2I R@1** | Paper headline, seed `2400` |
+| 10% CUHK-PEDES | English | **57.10 T2I R@1** | Low-data English setting |
+| PRW-TPS-CN | Chinese | **59.35 T2I R@1** | Multilingual generalization |
 
 ### VN3K / 3000VnPersonSearch
 
@@ -138,35 +107,98 @@ Best result uses seed `2400`. Mean over 3 seeds: `R@1 = 51.52 +/- 0.68`.
 
 ### Qualitative Retrieval
 
-The baseline often retrieves visually similar distractors. Curriculum Circle Loss improves fine-grained discrimination over details such as shoes, logos, and clothing attributes.
-
 ![Qualitative retrieval comparison](figures/flipped_cases_visualization.png)
 
-## Accuracy Extension
+The model improves retrieval in cases where visually similar distractors differ only by fine-grained clothing, shoe, or logo attributes.
 
-> **Status:** experimental / post-paper ablation. This is not the deployed model. The edge pipeline targets the published `52.28` checkpoint because rotation and quantization artifacts are model-specific.
+## Method
 
-Two extra levers are explored beyond the paper configuration:
+![Framework Architecture](figures/framework.png)
 
-- **Part-Token Alignment** aligns image part regions with text tokens for local supervision.
-- **Attention + FFN LoRA r32** extends LoRA targets from attention projections to FFN projections (`fc1`, `fc2`).
+### Loss Stack
 
-| Method | T2I R@1 | T2I R@5 | T2I R@10 | I2T R@1 | Notes |
-|---|---:|---:|---:|---:|---|
-| LoRA + Curriculum Circle (paper) | 52.28 | 79.55 | 88.03 | - | Reported headline, seed 2400 |
-| + Attention/FFN LoRA r32 | 52.83 | 79.03 | 87.58 | 52.30 | Larger adapter capacity |
-| **+ Part-Token Alignment** | **53.00** | 78.60 | 87.30 | **53.25** | Best R@1, strongest I2T gain |
+The default training objective is:
 
-Run the current ablation recipe:
+$$
+\mathcal{L}
+= \mathcal{L}_{N\text{-}ITC/MVS}
++ 0.1\,\mathcal{L}_{C\text{-}ITC}
++ 0.4\,\mathcal{L}_{SS}
++ \alpha_5(t)\,\mathcal{L}_{circle}
+$$
 
-```bash
-bash run_part_align_lora_attn_ffn_r32.sh \
-  dataset.batch_size=64 dataset.test_batch_size=128 trainer.accumulate_grad_batches=2
-```
+Circle Loss is the hard-negative component:
+
+| Setting | Value |
+|---|---:|
+| Margin `m` | `0.25` |
+| Scale `gamma` | `128` |
+| Epochs 0-5 | Circle off |
+| Epochs 6-20 | Linear ramp to `0.1` |
+| Epochs 21-60 | Stable at `0.1` |
+
+<details>
+<summary><strong>Mathematical details</strong></summary>
+
+The baseline optimizes a multi-task objective over $L_2$-normalized image embeddings $\mathbf{v}_i$ and text embeddings $\mathbf{u}_i$:
+
+$$
+\mathcal{L}_{base}
+= \alpha_1 \mathcal{L}_{N\text{-}ITC}
++ \alpha_2 \mathcal{L}_{MVS}
++ \alpha_3 \mathcal{L}_{C\text{-}ITC}
++ \alpha_4 \mathcal{L}_{SS}
+$$
+
+N-ITC is the sigmoid-based pairwise alignment loss:
+
+$$
+\mathcal{L}_{N\text{-}ITC}
+= -\frac{1}{N}\sum_{i=1}^{N}\sum_{j=1}^{N}
+\log\sigma\left(z_{ij}\left(\gamma\,\mathbf{v}_i^\top\mathbf{u}_j - c\right)\right)
+$$
+
+where $z_{ij} \in \{+1, -1\}$ indicates matched and unmatched image-text pairs.
+
+The auxiliary Cross-modal Circle Loss mines hard positives and hard negatives:
+
+$$
+\mathcal{L}_{circle}
+= \log\left[
+1
++ \sum_{j \in \mathcal{N}} e^{\gamma\,\alpha_n^j(s_n^j - m)}
+\cdot
+\sum_{i \in \mathcal{P}} e^{-\gamma\,\alpha_p^i(s_p^i - (1-m))}
+\right]
+$$
+
+with adaptive weights:
+
+$$
+\alpha_p^i = [1 + m - s_p^i]_+,
+\qquad
+\alpha_n^j = [s_n^j + m]_+
+$$
+
+The final objective is:
+
+$$
+\mathcal{L}
+= \mathcal{L}_{base}
++ \alpha_5(t)\,\mathcal{L}_{circle}
+$$
+
+</details>
+
+### Analysis Figures
+
+| Gradient behavior | Embedding geometry |
+|---|---|
+| ![Gradient analysis](figures/gradient_3d_optimized_pub.png) | ![Geometry analysis](figures/distribution_final_v5_pub.png) |
 
 ## Quick Start
 
-### 1. Install
+### Install
 
 ```bash
 git clone https://github.com/pahmlam/Research_on_CircleLoss_for_TBPS-mSigLIP.git
@@ -175,37 +207,30 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 ```
 
-The package targets Python `>=3.11`. The recommended dependency workflow is `uv sync`.
+The project targets Python `>=3.11`. `uv sync` is the recommended dependency workflow.
 
-### 2. Prepare Data and Checkpoints
-
-Download the `siglip-base-patch16-256-multilingual` checkpoint and organize datasets under the project root or the configured paths.
+### Prepare Data and Checkpoints
 
 Expected datasets:
 
 | Dataset | Language | Role |
 |---|---|---|
 | VN3K / 3000VnPersonSearch | Vietnamese | Main low-resource benchmark |
-| CUHK-PEDES | English | Natural-noise / multilingual robustness benchmark |
-| PRW-TPS-CN | Chinese | Cross-lingual generalization benchmark |
+| CUHK-PEDES | English | English retrieval benchmark |
+| PRW-TPS-CN | Chinese | Multilingual generalization benchmark |
+
+Prepare local mSigLIP checkpoint assets:
 
 ```bash
 uv run scripts/prepare_checkpoints.py
 ```
 
-### 3. Train
+### Train
 
 Paper recipe:
 
 ```bash
 bash run_cir_loss.sh
-```
-
-Post-paper Part-Align ablation:
-
-```bash
-bash run_part_align_lora_attn_ffn_r32.sh \
-  dataset.batch_size=64 dataset.test_batch_size=128 trainer.accumulate_grad_batches=2
 ```
 
 Full fine-tuning baseline:
@@ -221,7 +246,7 @@ uv run trainer.py -cn m_siglip img_size_str="'(256,256)'" \
   dataset=vn3k loss.softlabel_ratio=0.0 trainer.max_epochs=60
 ```
 
-### 4. Evaluate
+### Evaluate
 
 `test.py` wraps `src/msiglip/evaluate.py` through Fire:
 
@@ -230,30 +255,24 @@ uv run test.py --ckpt_path artifacts/models/checkpoints/epoch=56-val_score=52.28
   --dataset_name vn3k
 ```
 
-## Deployment on RB3 Gen2
+## Deployment
 
 The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN context binaries. The current vision encoder path is all-INT8 W8A8.
+
+| Deployment item | Current state |
+|---|---|
+| Source checkpoint | `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` |
+| Best QDQ/retrieval candidate | QAT v6, `49.30` T2I R@1, `53.85` I2T R@1 |
+| Board-verified binary | QAT v4 W8A8 context binary |
+| Board runtime | `32.70 ms/img`, `22.88 FPS` |
+| Context size | about `90 MB` for vision encoder |
+| Text encoder | Pending |
 
 Canonical references:
 
 - [Rotated W8A8 + QAT method](deployment/docs/w8a8_qat_rotated.md)
 - [Deploy master journal](deployment/docs/journal/[deploy-master].md)
 - [v8 / both-INT8 runbook](deployment/docs/runbook-w8a8-v8-both-int8.md)
-
-### Current Deployment State
-
-| Area | Status | Notes |
-|---|---|---|
-| LoRA merge and FP32/FP16 export | PASS | `deployment/scripts/lora_fp16/export.py` |
-| Mean-preserving rotation | PASS | Output-invariant, residual concentration 252x -> 5.3x |
-| ONNX opset 20 export | PASS | Fused `Gelu`, fused `LayerNormalization`, `Pow=0` |
-| Vision W8A8 QDQ fidelity | PASS | QAT v6 cosine `0.9491 / 0.9266` mean/min |
-| Vision context binary on v68 | PASS | all-INT8 links on HTP v68 |
-| Vision board verification | PASS | QAT v4 board fidelity `0.9363 / 0.9068`, `32.70 ms/img`, `22.88 FPS` |
-| Vision retrieval | PASS | QAT v6: T2I R@1 `49.30`, I2T R@1 `53.85` |
-| Text encoder | Pending | Next workstream for full both-INT8 retrieval |
-
-Key constraint: HTP v68 rejects broad A16 activation paths for LayerNorm and attention matmul, so W8A16 is not deployable on this board even when QDQ fidelity is high. The successful path is opset-20 fused ops + mean-preserving rotation + W8A8 + QAT.
 
 ### Deployment Gates
 
@@ -280,7 +299,7 @@ Key constraint: HTP v68 rejects broad A16 activation paths for LayerNorm and att
 Text is 75% of parameters because the multilingual token embedding has `250000 x 768` entries. This is why text INT8 is the next major memory lever for 4 GB RB3 deployment.
 
 <details>
-<summary><strong>Deployment pipeline and QAT commands</strong></summary>
+<summary><strong>Vision W8A8 pipeline and QAT commands</strong></summary>
 
 ```text
 epoch=56-val_score=52.28.ckpt
@@ -370,13 +389,6 @@ python deployment/scripts/qnn/eval_retrieval_quantized_vision.py \
 <details>
 <summary><strong>RB3/QNN quick commands</strong></summary>
 
-Analyze a checkpoint:
-
-```bash
-python deployment/scripts/analyze_checkpoint.py \
-  --ckpt artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt
-```
-
 Prepare smoke/calibration inputs:
 
 ```bash
@@ -396,14 +408,6 @@ python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
   --num-samples 2000 \
   --output-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_2000 \
   --path-mode relative
-```
-
-Upload calibration data:
-
-```bash
-python deployment/scripts/qnn/upload_qaihub_calibration_dataset.py \
-  --input-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_2000 \
-  --name msiglip-vision-vn3k-train-calib-2000
 ```
 
 Known vision calibration dataset:
@@ -448,13 +452,6 @@ python deployment/scripts/qnn/compare_qnn_with_pytorch.py \
   --csv artifacts/deployment/qnn_runs/rotated_w8a8_qat_v6/qnn_vs_pytorch.csv
 ```
 
-Audit native QNN/QAIRT tools:
-
-```bash
-python deployment/scripts/qnn/audit_qnn_native_env.py \
-  --json artifacts/deployment/runtime/qnn_native/env_audit.json
-```
-
 </details>
 
 <details>
@@ -472,7 +469,7 @@ python deployment/scripts/qnn/audit_qnn_native_env.py \
 
 </details>
 
-## Repository Map
+## Project Map
 
 ```text
 src/msiglip/                       # Training, data, model, solver, utilities
@@ -502,7 +499,7 @@ changelog/                         # Training/deployment changelogs
 figures/                           # README and paper figures
 ```
 
-## Documentation Map
+## Documentation
 
 | Document | Purpose |
 |---|---|
