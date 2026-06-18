@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Vision-only quantization-aware fine-tuning by teacher-student distillation.
+"""Quantization-aware fine-tuning by teacher-student distillation (vision OR text).
 
-This script does not export a custom QDQ graph. It fine-tunes the FP32 vision
-encoder while injecting lightweight fake-quant noise into the sensitive vision
-blocks, then saves a normal FP32 deployment export directory. The follow-up
-step is to run the existing ONNX export and AI Hub native quantizer on that
-tuned FP32 model.
+This script does not export a custom QDQ graph. It fine-tunes the FP32 encoder
+(`--modality vision` or `--modality text`) while injecting lightweight fake-quant
+noise into the sensitive blocks, then saves a normal FP32 deployment export
+directory. The follow-up step is the existing ONNX export + AI Hub native
+quantizer on that tuned FP32 model.
+
+The two towers share the SiglipEncoderLayer / SiglipAttention, so the fake-quant
+coverage ladder (GELU + residual -> +head -> +linears -> +attention matmuls) and
+the EMA per-tensor observer are identical. Only the data path differs: vision
+distills `encode_image` on NCHW image .raw inputs; text distills `encode_text`
+on int input_ids+attention_mask .raw inputs, with a last-token Linear head.
 """
 
 from __future__ import annotations
@@ -69,6 +75,46 @@ class RawVisionDataset(Dataset):
 
     def __getitem__(self, index: int) -> torch.Tensor:
         return _read_raw_tensor(self.raw_paths[index], self.image_size).squeeze(0)
+
+
+class RawTextDataset(Dataset):
+    """Dataset backed by QNN-ready int `input_ids` + `attention_mask` .raw tensors.
+
+    Each sample is a dict of two integer tensors (shape (seq_len,)); the default
+    collate stacks them into a batched dict consumed by `encode_text`.
+    """
+
+    def __init__(
+        self,
+        input_dir: Path,
+        input_list_name: str,
+        seq_len: int,
+        max_samples: int | None = None,
+    ) -> None:
+        # Lazy import keeps the vision path free of the onnx/onnxruntime deps.
+        from compare_text_onnx_with_pytorch import _parse_dual_input_list, _read_raw_ints
+
+        self._read_raw_ints = _read_raw_ints
+        self.seq_len = seq_len
+        self.rows = _parse_dual_input_list(input_dir.expanduser().resolve(), input_list_name)
+        if max_samples is not None:
+            self.rows = self.rows[:max_samples]
+        if not self.rows:
+            raise ValueError(f"No dual int inputs found in {input_dir}")
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        import numpy as np
+
+        entry = self.rows[index]
+        ids = self._read_raw_ints(entry["input_ids"], self.seq_len)  # (1, L)
+        attn = self._read_raw_ints(entry["attention_mask"], self.seq_len)  # (1, L)
+        return {
+            "input_ids": torch.from_numpy(ids.astype(np.int64)).squeeze(0),  # (L,)
+            "attention_mask": torch.from_numpy(attn.astype(np.int64)).squeeze(0),  # (L,)
+        }
 
 
 def _fake_quant_symmetric(
@@ -135,7 +181,13 @@ def _make_fq_attention_forward(controller: "FakeQuantController", key: str):
 
 
 class FakeQuantController:
-    """Installs activation fake-quant hooks for selected SigLIP vision blocks."""
+    """Installs activation fake-quant hooks for selected SigLIP encoder blocks.
+
+    `modality` selects the tower: "vision" -> backbone.vision_model (MHA pooling
+    head), "text" -> backbone.text_model (final_layer_norm + Linear head). The
+    encoder-layer hooks (GELU, residual, linears, attention matmuls) are identical
+    across towers because both use the same SiglipEncoderLayer / SiglipAttention.
+    """
 
     def __init__(
         self,
@@ -150,8 +202,11 @@ class FakeQuantController:
         quant_head: bool = False,
         quant_linears: bool = False,
         quant_attention: bool = False,
+        modality: str = "vision",
     ) -> None:
         self.model = model
+        self.modality = modality
+        self.tower_name = "vision_model" if modality == "vision" else "text_model"
         self.start_layer = start_layer
         self.end_layer = end_layer
         self.quant_head = quant_head
@@ -169,23 +224,28 @@ class FakeQuantController:
         self.handles: list[torch.utils.hooks.RemovableHandle] = []
         self.hooked_modules: list[str] = []
 
+    def _tower(self) -> nn.Module:
+        return getattr(self.model.backbone, self.tower_name)
+
     def install(self) -> None:
-        layers = self.model.backbone.vision_model.encoder.layers
+        tower = self._tower()
+        prefix = f"backbone.{self.tower_name}"
+        layers = tower.encoder.layers
         if self.start_layer < 0 or self.end_layer >= len(layers):
             raise ValueError(
                 f"Layer range {self.start_layer}-{self.end_layer} is invalid for "
-                f"{len(layers)} vision encoder layers."
+                f"{len(layers)} {self.modality} encoder layers."
             )
 
         for index in range(self.start_layer, self.end_layer + 1):
             layer = layers[index]
             self._hook_module(
-                f"backbone.vision_model.encoder.layers.{index}.mlp.activation_fn",
+                f"{prefix}.encoder.layers.{index}.mlp.activation_fn",
                 layer.mlp.activation_fn,
                 output_is_tuple=False,
             )
             self._hook_module(
-                f"backbone.vision_model.encoder.layers.{index}",
+                f"{prefix}.encoder.layers.{index}",
                 layer,
                 output_is_tuple=True,
             )
@@ -198,45 +258,57 @@ class FakeQuantController:
                     "self_attn.out_proj", "mlp.fc1", "mlp.fc2",
                 ):
                     self._hook_module(
-                        f"backbone.vision_model.encoder.layers.{index}.{sub}",
+                        f"{prefix}.encoder.layers.{index}.{sub}",
                         layer.get_submodule(sub),
                         output_is_tuple=False,
                     )
             if self.quant_attention:
                 # Forward hooks cannot reach the two intra-attention matmuls; replace
                 # the eager attention forward with a fake-quant-aware copy instead.
+                # Same SiglipAttention class for both towers; text passes the 4D
+                # attention_mask (added after scores are quantized).
                 attn = layer.self_attn
-                key = f"backbone.vision_model.encoder.layers.{index}.self_attn"
+                key = f"{prefix}.encoder.layers.{index}.self_attn"
                 attn.forward = types.MethodType(_make_fq_attention_forward(self, key), attn)
                 self.patched_attn.append(attn)
                 self.hooked_modules.append(key + " [scores/probs/context]")
 
         if self.quant_head:
-            # The pooling head produces the final embedding; its INT8 error is not
-            # averaged out by any later layer. post_layernorm feeds it. nn.MHA
-            # returns (attn_out, attn_weights) -> tuple hook quantizes attn_out.
-            vm = self.model.backbone.vision_model
+            self._install_head_hooks(tower, prefix)
+
+    def _install_head_hooks(self, tower: nn.Module, prefix: str) -> None:
+        """Hook the final embedding-producing stage; its INT8 error is not averaged
+        out by any later layer.
+
+        Vision: MHA pooling head (post_layernorm -> head.attention -> head.mlp ->
+        head). nn.MHA returns (attn_out, weights) -> tuple hook. Text: a plain
+        Linear head reading the last-token-pooled final_layer_norm output.
+        """
+        if self.modality == "vision":
             self._hook_module(
-                "backbone.vision_model.post_layernorm", vm.post_layernorm, output_is_tuple=False
+                f"{prefix}.post_layernorm", tower.post_layernorm, output_is_tuple=False
             )
             self._hook_module(
-                "backbone.vision_model.head.attention", vm.head.attention, output_is_tuple=True
+                f"{prefix}.head.attention", tower.head.attention, output_is_tuple=True
             )
             self._hook_module(
-                "backbone.vision_model.head.mlp.activation_fn",
-                vm.head.mlp.activation_fn,
+                f"{prefix}.head.mlp.activation_fn",
+                tower.head.mlp.activation_fn,
                 output_is_tuple=False,
             )
-            self._hook_module(
-                "backbone.vision_model.head", vm.head, output_is_tuple=False
-            )
+            self._hook_module(f"{prefix}.head", tower.head, output_is_tuple=False)
             if self.quant_linears:
                 for sub in ("mlp.fc1", "mlp.fc2"):
                     self._hook_module(
-                        f"backbone.vision_model.head.{sub}",
-                        vm.head.get_submodule(sub),
+                        f"{prefix}.head.{sub}",
+                        tower.head.get_submodule(sub),
                         output_is_tuple=False,
                     )
+        else:
+            self._hook_module(
+                f"{prefix}.final_layer_norm", tower.final_layer_norm, output_is_tuple=False
+            )
+            self._hook_module(f"{prefix}.head", tower.head, output_is_tuple=False)
 
     def close(self) -> None:
         for handle in self.handles:
@@ -298,6 +370,13 @@ def _set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def _text_seq_len(config, fallback: int = 64) -> int:
+    try:
+        return int(config.tokenizer.model_max_length)
+    except Exception:
+        return fallback
+
+
 def _resolve_device(device: str) -> str:
     if device != "auto":
         return device
@@ -308,25 +387,30 @@ def _resolve_device(device: str) -> str:
     return "cpu"
 
 
-def _freeze_for_vision_qat(
+def _freeze_for_qat(
     model: nn.Module,
+    modality: str,
     start_layer: int,
     end_layer: int,
-    train_visual_projection: bool,
+    train_projection: bool,
     train_head: bool = False,
 ) -> list[str]:
     for parameter in model.parameters():
         parameter.requires_grad = False
 
+    tower_name = "vision_model" if modality == "vision" else "text_model"
+    projection_attr = "visual_projection" if modality == "vision" else "text_projection"
     trainable_prefixes = [
-        f"backbone.vision_model.encoder.layers.{index}."
+        f"backbone.{tower_name}.encoder.layers.{index}."
         for index in range(start_layer, end_layer + 1)
     ]
-    if train_visual_projection and hasattr(model.backbone, "visual_projection"):
-        trainable_prefixes.append("backbone.visual_projection.")
+    if train_projection and hasattr(model.backbone, projection_attr):
+        trainable_prefixes.append(f"backbone.{projection_attr}.")
     if train_head:
-        trainable_prefixes.append("backbone.vision_model.head.")
-        trainable_prefixes.append("backbone.vision_model.post_layernorm.")
+        trainable_prefixes.append(f"backbone.{tower_name}.head.")
+        # The final norm feeding the head: post_layernorm (vision) / final_layer_norm (text).
+        final_norm = "post_layernorm" if modality == "vision" else "final_layer_norm"
+        trainable_prefixes.append(f"backbone.{tower_name}.{final_norm}.")
 
     trainable_names: list[str] = []
     for name, parameter in model.named_parameters():
@@ -335,7 +419,7 @@ def _freeze_for_vision_qat(
             trainable_names.append(name)
 
     if not trainable_names:
-        raise RuntimeError("No trainable parameters selected for vision QAT.")
+        raise RuntimeError(f"No trainable parameters selected for {modality} QAT.")
     return trainable_names
 
 
@@ -378,6 +462,20 @@ def _weighted_distillation_loss(
     return cosine_weight * cosine_loss + mse_weight * mse_loss, cosine_loss, mse_loss
 
 
+def _batch_to_device(batch, device: str):
+    """Move a vision tensor batch or a text {input_ids, attention_mask} dict batch."""
+    if isinstance(batch, dict):
+        return {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+    return batch.to(device, non_blocking=True)
+
+
+def _encode(model: nn.Module, batch, modality: str) -> torch.Tensor:
+    """Dispatch to the modality's encoder. Text takes the int-input dict."""
+    if modality == "vision":
+        return model.encode_image(batch)
+    return model.encode_text(batch)
+
+
 @torch.no_grad()
 def _evaluate(
     teacher: nn.Module,
@@ -386,6 +484,7 @@ def _evaluate(
     device: str,
     fake_quant: FakeQuantController,
     fake_quant_enabled: bool,
+    modality: str = "vision",
 ) -> dict:
     student.eval()
     teacher.eval()
@@ -396,10 +495,10 @@ def _evaluate(
     cosines: list[float] = []
     mse_values: list[float] = []
     with context:
-        for images in loader:
-            images = images.to(device, non_blocking=True)
-            teacher_output = teacher.encode_image(images).detach()
-            student_output = student.encode_image(images).detach()
+        for batch in loader:
+            batch = _batch_to_device(batch, device)
+            teacher_output = _encode(teacher, batch, modality).detach()
+            student_output = _encode(student, batch, modality).detach()
             batch_cosine = _batch_cosine(student_output, teacher_output)
             cosines.extend(float(value) for value in batch_cosine.cpu())
             mse_values.append(
@@ -455,8 +554,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--input-list", default="input_list.txt")
     parser.add_argument("--precision", choices=["fp32"], default="fp32")
+    parser.add_argument(
+        "--modality",
+        choices=["vision", "text"],
+        default="vision",
+        help=(
+            "vision (default): distill encode_image on NCHW image .raw inputs. "
+            "text: distill encode_text on int input_ids+attention_mask .raw inputs "
+            "(SiglipTextTransformer, last-token Linear head). Same QAT machinery."
+        ),
+    )
     parser.add_argument("--device", default="auto")
     parser.add_argument("--image-size", type=int, default=256)
+    parser.add_argument(
+        "--seq-len",
+        type=int,
+        default=0,
+        help="Text only. Token sequence length of the .raw inputs. 0 = config tokenizer max length.",
+    )
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--max-steps", type=int, help="Optional global train-step cap.")
@@ -560,18 +675,25 @@ def main() -> None:
     print("Loading teacher/student models")
     print(f"  model_dir: {model_dir}")
     print(f"  device:    {device}")
-    teacher, _ = _load_pytorch_model(model_dir, args.precision, device)
+    print(f"  modality:  {args.modality}")
+    teacher, config = _load_pytorch_model(model_dir, args.precision, device)
     student = copy.deepcopy(teacher)
 
     teacher.eval()
     for parameter in teacher.parameters():
         parameter.requires_grad = False
 
-    trainable_names = _freeze_for_vision_qat(
+    seq_len = 0
+    if args.modality == "text":
+        seq_len = args.seq_len or _text_seq_len(config)
+        print(f"  seq_len:   {seq_len}")
+
+    trainable_names = _freeze_for_qat(
         student,
+        modality=args.modality,
         start_layer=args.start_layer,
         end_layer=args.end_layer,
-        train_visual_projection=not args.no_train_visual_projection,
+        train_projection=not args.no_train_visual_projection,
         train_head=args.quant_head,
     )
     trainable_count, total_count = _trainable_parameter_count(student)
@@ -589,24 +711,27 @@ def main() -> None:
         quant_head=args.quant_head,
         quant_linears=args.quant_linears,
         quant_attention=args.quant_attention,
+        modality=args.modality,
     )
     fake_quant.install()
     print("Fake-quant hooks:")
     for name in fake_quant.hooked_modules:
         print(f"  - {name}")
 
-    train_dataset = RawVisionDataset(
-        args.train_input_dir,
-        args.input_list,
-        args.image_size,
-        max_samples=args.max_train_samples,
-    )
-    val_dataset = RawVisionDataset(
-        args.val_input_dir,
-        args.input_list,
-        args.image_size,
-        max_samples=args.max_val_samples,
-    )
+    if args.modality == "vision":
+        train_dataset: Dataset = RawVisionDataset(
+            args.train_input_dir, args.input_list, args.image_size, max_samples=args.max_train_samples
+        )
+        val_dataset: Dataset = RawVisionDataset(
+            args.val_input_dir, args.input_list, args.image_size, max_samples=args.max_val_samples
+        )
+    else:
+        train_dataset = RawTextDataset(
+            args.train_input_dir, args.input_list, seq_len, max_samples=args.max_train_samples
+        )
+        val_dataset = RawTextDataset(
+            args.val_input_dir, args.input_list, seq_len, max_samples=args.max_val_samples
+        )
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -655,15 +780,15 @@ def main() -> None:
     stop_training = False
     for epoch in range(args.epochs):
         student.train()
-        for images in train_loader:
-            images = images.to(device, non_blocking=True)
+        for batch in train_loader:
+            batch = _batch_to_device(batch, device)
             optimizer.zero_grad(set_to_none=True)
             with torch.no_grad():
-                teacher_output = teacher.encode_image(images).detach()
+                teacher_output = _encode(teacher, batch, args.modality).detach()
 
             with fake_quant.disabled():
-                clean_student_output = student.encode_image(images)
-            fake_student_output = student.encode_image(images)
+                clean_student_output = _encode(student, batch, args.modality)
+            fake_student_output = _encode(student, batch, args.modality)
 
             clean_loss, clean_cosine_loss, clean_mse_loss = _weighted_distillation_loss(
                 clean_student_output,
@@ -725,10 +850,10 @@ def main() -> None:
             break
 
     clean_eval = _evaluate(
-        teacher, student, val_loader, device, fake_quant, fake_quant_enabled=False
+        teacher, student, val_loader, device, fake_quant, fake_quant_enabled=False, modality=args.modality
     )
     fake_eval = _evaluate(
-        teacher, student, val_loader, device, fake_quant, fake_quant_enabled=True
+        teacher, student, val_loader, device, fake_quant, fake_quant_enabled=True, modality=args.modality
     )
 
     fake_quant.close()
@@ -741,6 +866,8 @@ def main() -> None:
     summary = {
         "source_model_dir": str(model_dir),
         "output_dir": str(output_dir),
+        "modality": args.modality,
+        "seq_len": seq_len if args.modality == "text" else None,
         "train_input_dir": str(args.train_input_dir.expanduser().resolve()),
         "val_input_dir": str(args.val_input_dir.expanduser().resolve()),
         "epochs": args.epochs,
@@ -772,7 +899,8 @@ def main() -> None:
         "val_fake_quant": fake_eval,
         "history": history,
     }
-    _write_json(output_dir / "vision_quant_robust_summary.json", summary)
+    summary_name = "vision_quant_robust_summary.json" if args.modality == "vision" else "text_quant_robust_summary.json"
+    _write_json(output_dir / summary_name, summary)
     _write_trainable_csv(output_dir / "trainable_parameters.csv", trainable_names)
 
     print("\nSaved QAT/fine-tuned FP32 export:")
@@ -780,10 +908,16 @@ def main() -> None:
     print("Validation:")
     print(json.dumps({"clean": clean_eval, "fake_quant": fake_eval}, indent=2))
     print("\nNext export command:")
-    print(
-        "  python3 deployment/scripts/onnx/export.py "
-        f"--model-dir {_display_path(output_dir)} --precision fp32"
-    )
+    if args.modality == "vision":
+        print(
+            "  python3 deployment/scripts/qnn/export_rotated_vision_onnx.py "
+            f"--model-dir {_display_path(output_dir)} --opset 20"
+        )
+    else:
+        print(
+            "  python3 deployment/scripts/qnn/export_text_onnx.py "
+            f"--model-dir {_display_path(output_dir)}"
+        )
 
 
 if __name__ == "__main__":

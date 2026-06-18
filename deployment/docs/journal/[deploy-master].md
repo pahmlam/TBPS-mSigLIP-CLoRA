@@ -923,7 +923,7 @@ val_fake_quant.mean >= 0.78
 
 **Quyết định:** reject R2. Chuyển sang QAT/quant-robust finetune.
 
-#### 11. Diễn Tiến QAT Từ v1 Đến v6
+#### 11. Diễn Tiến QAT Từ v1 Đến v8
 
 | Vòng | Thay đổi chính | Job AI Hub | QDQ mean/min | T2I R@1 | I2T R@1 | Quyết định |
 |---|---|---|---:|---:|---:|---|
@@ -933,7 +933,9 @@ val_fake_quant.mean >= 0.78
 | QAT v3 | EMA observer, toàn bộ layers, 8 epochs | `jp383qmn5` | `0.9353 / 0.919` | `48.20` | `52.30` | Pass gate |
 | QAT v4 | + `--quant-head`, 12 epochs | `jgd09l96p` | `0.9364 / 0.9091` | `48.50` | `52.95` | Binary deploy đã verify trên board |
 | QAT v5 | + `--quant-linears`, 15 epochs | `jpxm2w0lg` | `0.9437 / 0.9311` | `49.25` | `53.40` | Đã chạm ngưỡng tác dụng của single linear |
-| QAT v6 | + `--quant-attention` | `j57krdwvp` | **`0.9491 / 0.9266`** | **`49.30`** | **`53.85`** | Ứng viên accuracy tốt nhất hiện tại |
+| QAT v6 | + `--quant-attention` | `j57krdwvp` | `0.9491 / 0.9266` | `49.30` | `53.85` | Trần coverage của random rotation |
+| QAT v7 | v6 coverage + cosine LR schedule, 20 epochs | _chờ_ | _chờ_ | _chờ_ | _chờ_ | Random rotation + lịch LR mượt hơn (baseline cho v8) |
+| QAT v8 | **Learned rotation (SpinQuant-style)** + v7 recipe | _chờ_ | _chờ_ | _chờ_ | _chờ_ | Q tối ưu theo activation thay vì random; ablation learned vs random |
 
 **Chi tiết QAT v1:**
 
@@ -985,6 +987,33 @@ val_fake_quant.mean >= 0.78
 - QDQ Cosine: mean `0.9491` (tăng nhẹ từ `0.9437`), min `0.9266` (giảm nhẹ từ `0.9311`).
 - Retrieval: T2I R@1 `49.30` (tăng từ `49.25`), R@5 `77.38`, R@10 `86.28`, mAP `54.87`, mINP `48.17`; I2T R@1 `53.85` (tăng từ `53.40`).
 - Mặc dù R@1 tiếp tục lập đỉnh mới cho W8A8, mức tăng khá nhỏ so với v5, cho thấy `--quant-attention` đem lại hiệu quả marginal.
+
+**Chi tiết QAT v7:** _(đang chạy, kết quả sẽ điền sau)_
+
+- Kế thừa toàn bộ coverage của v6 (`--quant-head --quant-linears --quant-attention`, EMA observer).
+- Thay đổi duy nhất: thêm cosine LR schedule (`--lr-schedule cosine --warmup-frac 0.05 --min-lr-ratio 0.02`), 20 epochs.
+- Base vẫn là `exported_model_rotated` (random mean-preserving rotation), nên v7 là baseline "random rotation + lịch LR mượt".
+- Mục đích: tách bạch phần đóng góp của LR schedule khỏi phần đóng góp của learned rotation ở v8.
+- Artifact dự kiến: `artifacts/deployment/exports/exported_model_rotated_qat_v7`.
+
+**Chi tiết QAT v8 — Learned Rotation (SpinQuant-style):** _(chờ chạy, kết quả sẽ điền sau)_
+
+- **Điểm mới về phương pháp:** thay vì dùng ma trận quay ngẫu nhiên bảo toàn mean (v1–v7), v8 *học* ma trận quay `Q` bằng cách tối ưu trực tiếp đại lượng quyết định scale INT8.
+- **Công thức.** Gọi `a` là activation tại các "rotation site" của residual stream (output của `layer_norm1/2`, `out_proj`, `fc2`, `post_layernorm`). Per-tensor INT8 scale là `s = max|a| / 127`. Ta tối thiểu hóa tổng bình phương biên độ cực đại sau khi quay:
+
+  ```
+  min_Q  Σ_sites ( max_ij | (a · Qᵀ)_ij | )²
+  s.t.   Q Qᵀ = I            (trực giao, bảo toàn norm)
+         Q · 1 = 1           (bảo toàn mean → giữ được LayerNorm đã fuse)
+  ```
+
+- **Tại sao là max-abs² chứ không phải quant-MSE.** Với straight-through estimator (STE), gradient của `q(x) − x` bị detach nên mục tiêu quant-MSE có gradient bằng 0 theo `Q`. Ngược lại, `max|a·Qᵀ|²` khả vi theo `Q` và *chính là* đại lượng đặt ra bước lượng tử hóa per-tensor. Giảm nó ⇒ giảm scale ⇒ giảm clipping/rounding error ⇒ tăng R@1.
+- **Tham số hóa Cayley.** Để giữ `Q` trực giao chính xác suốt quá trình Adam: `Q = U · blockdiag(1, Cayley(skew)) · Uᵀ`, với `U[:,0] = 1/√d` ghim ràng buộc bảo toàn mean (vector 1 là eigenvector). `Cayley(S) = (I − S)(I + S)⁻¹` với `S` phản đối xứng luôn cho ma trận trực giao.
+- **Quy trình.** Phase A (fold affine của LayerNorm vào reader, đặt LN identity) → cache activation tại rotation site trên calib → tối ưu `Q` → Phase B (fold `Q` vào weight). Output là model drop-in tương đương `exported_model_rotated` về shape, nạp thẳng vào pipeline export/QAT/quantize/eval.
+- **Gate output-invariance.** Vì rotation chỉ là đổi cơ sở trực giao bảo toàn mean, embedding FP32 phải bất biến: gate yêu cầu cosine(ref, rotated) min ≥ `0.9999` trước khi lưu. Smoke test (8 ảnh, 80 step): objective `29268 → 1209`, max|a| `122 → 24`, cosine min `0.99999982`, orth_err `4.2e-15`, mean_err `4.8e-14`.
+- **Ablation.** v8 và v7 giống nhau mọi thứ trừ `Q` (learned vs random), cùng QAT recipe ⇒ delta R@1 là ablation sạch "learned vs random rotation under identical QAT".
+- Script: `deployment/scripts/qnn/learn_rotation.py`.
+- Artifact dự kiến: `exported_model_rotated_learned` (Q đã fold) → `exported_model_rotated_learned_qat_v8`.
 
 #### 12. Hiểu Về Model Size / Memory
 
@@ -1118,3 +1147,80 @@ profile blocks 0-11 trên `vn3k_text_10` (10 mẫu), 206 target tensor.
 
 ### Bước kế: T1 — `rotate_text_encoder.py`
 Mean-preserving rotation cho text: writers (fold `Q`) = token_embedding + position_embedding + out_proj + fc2; readers (fold `Qᵀ`) = q/k/v_proj + fc1 + head (đọc `final_layer_norm`); giữ fused LayerNorm; gate output-invariant cosine ~1.0. Không patch-conv / không MHA-pooling-head. Sau đó QAT (generalize `train_vision_quant_robust.py` sang text).
+
+---
+
+## 6. T1 — Text rotation: **PASS**, residual concentration `404× → 5.3×`
+
+> Local/free. Script mới: `rotate_text_encoder.py` (tái dùng toàn bộ low-level folds + `_mean_preserving_orthogonal` của `rotate_vision_encoder.py`; chỉ khác bản đồ writer/reader của text và gate dùng `encode_text` với 2 int input).
+
+### Bản đồ rotation (SiglipTextTransformer)
+- **Writers** (fold `W ← QW, b ← Qb`; embedding: `P ← P Qᵀ`): `embeddings.token_embedding`, `embeddings.position_embedding`, mỗi layer `self_attn.out_proj`, mỗi layer `mlp.fc2`.
+- **Readers** (fold `W ← W Qᵀ`): mỗi layer `q/k/v_proj` (đọc `layer_norm1`), `mlp.fc1` (đọc `layer_norm2`), `head` (đọc `final_layer_norm`, sau last-token pooler).
+- 3 LayerNorm (`layer_norm1/2`, `final_layer_norm`): fold affine vào readers → set identity, **giữ fused LayerNorm**. `Q` bảo toàn mean (`Q·1=1`) nên identity-affine LayerNorm giao hoán với `Q`.
+- Khác vision: không có patch-conv (token_embedding là Embedding writer thay thế) và không có MHA-pooling-head (head text là `nn.Linear` reader đơn giản → không cần slicing K/V của packed in_proj). `backbone.text_projection` nằm ở không gian head-output chưa quay → không đụng.
+
+### Gate output-invariance (T1) — PASS
+- `encode_text` FP32 cosine vs model gốc trên `vn3k_text_10`: mean `1.0`, **min `0.99999982`**.
+- `Q` orthogonality err `3.1e-15`; `Q·1=1` err `1.0e-14`.
+- Static control ONNX (rotated) vs PyTorch (rotated): cosine_raw `1.0`, cosine_l2 `0.99999988`, no NaN.
+- Export ONNX opset-20 rotated: **Gelu=12, LayerNormalization=25, Pow=0** (sạch, fused).
+
+### Concentration sau rotation (bằng chứng rotation có tác dụng)
+profile lại `text_outliers_rotated` trên cùng 10 mẫu, lọc bỏ tensor mask `self_attn/Add` (hằng `3.4e38`).
+
+| Nhóm | BEFORE (T0) | AFTER (T1) | Ghi chú |
+|---|---:|---:|---|
+| **Residual Adds** (`layers.N/Add`, `Add_1`, `fc2/Add`) max conc | `404.3×` | **`5.3×`** | residual stream gần như phẳng |
+| Residual Adds max abs_max | `828` | **`113`** | per-tensor scale giảm mạnh |
+| `mlp/fc1/Add` (pre-GELU intermediate, 3072-d) | — | `66.7×` | hotspot còn lại, **không** trên trục residual 768-d → QAT fake-quant GELU xử lý (giống vision v3+) |
+
+→ Mean-preserving `Q` đã trải đều outlier của residual stream như trên vision. Hotspot pre-GELU còn lại là phần QAT đảm nhiệm, đúng pattern vision.
+
+> Lưu ý verdict script báo "DIFFUSE" là **báo động giả** do hằng mask `3.4e38` (T0 đã phân loại benign — về 0 sau softmax). Tín hiệu residual stream thực tế đã phẳng rõ ràng.
+
+### Commands (local/free)
+```bash
+# [T1-1] Rotate text (gate cosine ~1.0 mới lưu)
+venv/bin/python deployment/scripts/qnn/rotate_text_encoder.py --model-dir artifacts/deployment/exports/exported_model --output-dir artifacts/deployment/exports/exported_model_text_rotated --input-dir artifacts/deployment/qnn_inputs/vn3k_text_10
+
+# [T1-2] Export rotated text ONNX opset-20
+venv/bin/python deployment/scripts/qnn/export_text_onnx.py --model-dir artifacts/deployment/exports/exported_model_text_rotated
+
+# [T1-3] Static control (rotated ONNX vs rotated PyTorch)
+venv/bin/python deployment/scripts/qnn/compare_text_onnx_with_pytorch.py --onnx-model artifacts/deployment/exports/exported_model_text_rotated/text_onnx/text_encoder.onnx --model-dir artifacts/deployment/exports/exported_model_text_rotated --input-dir artifacts/deployment/qnn_inputs/vn3k_text_10 --json /tmp/text_rotated_static.json --csv /tmp/text_rotated_static.csv
+
+# [T1-4] Re-profile concentration để xác nhận rotation phẳng residual
+venv/bin/python deployment/scripts/qnn/profile_text_activation_outliers.py --onnx-model artifacts/deployment/exports/exported_model_text_rotated/text_onnx --input-dir artifacts/deployment/qnn_inputs/vn3k_text_10 --json artifacts/deployment/runtime/diag/text_outliers_rotated/summary.json --csv artifacts/deployment/runtime/diag/text_outliers_rotated/per_tensor.csv
+```
+
+### Artifacts
+- `exported_model_text_rotated/{config.yaml, model_fp32.pt, rotation_summary.json}`
+- `exported_model_text_rotated/text_onnx/{text_encoder.onnx, .onnx.data}`
+- `runtime/diag/text_outliers_rotated/{summary.json, per_tensor.csv}`
+
+### Bước kế: T1-QAT — generalize `train_vision_quant_robust.py` sang text (`--modality text`)
+Drive `encode_text`, distill sentence embedding, xử lý 2 int input + attention_mask, dùng lại thang coverage EMA v3→v6. Base = `exported_model_text_rotated`.
+
+### T1-QAT + T2 + T3: scripts đã generalize sang text (đã smoke-verify, chưa có số thật)
+
+**T1-QAT — `train_vision_quant_robust.py --modality text`** (✅ generalized, smoke PASS):
+- Thêm `--modality {vision,text}` + `--seq-len`. Text path: `RawTextDataset` (2 int .raw → dict, default-collate), controller resolve tower (`text_model`, head = `final_layer_norm` + Linear `head`), freeze prefix text (`text_projection`/`final_layer_norm`), encode qua `encode_text`.
+- Dùng lại nguyên: EMA observer, thang coverage GELU+residual→head→linears→attention, fake-quant attention matmul (cùng class `SiglipAttention`; text truyền 4D mask, quantize scores **trước** khi cộng mask).
+- Vision path regression: clean cosine `1.0`, không đổi.
+- Lệnh QAT: xem README/commands; base `exported_model_text_rotated` → `exported_model_text_rotated_qat_t1`.
+
+**T3 — `eval_retrieval_quantized_vision.py` mở rộng** (✅ extended, verified):
+- Thêm `--text-qdq-onnx` + `--skip-vision-qdq`. Ma trận 4 combo (raw dot product, khớp `_compute_metrics`):
+  - `baseline_fp32` (text FP32 + image FP32, phải ~52.28)
+  - `vision_int8` (text FP32 + image QDQ)
+  - `text_int8` (text QDQ + image FP32)
+  - `both_int8` (text QDQ + image QDQ) = **số deploy thật**, là gate.
+- Text QDQ chạy trên cùng token tensor như FP32 → drop tách bạch đúng phần text-quant. Deploy combo tự chọn = most-quantized available.
+- Verify: feed text ONNX FP32 (rotated, output-invariant) → `text_int8 == baseline`, `both_int8 == vision_int8` (đúng như kỳ vọng vì text ONNX = FP32).
+
+**T2 — `submit_qaihub_quantize_compile.py --modality text`** (✅ added, verified prepare-only):
+- `--modality text` đặt default an toàn: `--input-specs` = 2 int input `((1,S),"int64")`, `--compile-options` = `""` (BỎ `--quantize_io` vì token id tới ~250k, không thể int8 hóa graph I/O). Vision default không đổi.
+- Verify: staticize `input_ids`/`attention_mask` → `(1,64)`, giữ INT64 (elem_type 7).
+- **Rủi ro còn lại (canh ở T2 QDQ-fidelity gate):** hằng mask `3.4e38` trong `scores+mask`; nếu per-tensor INT8 collapse sẽ lộ ở cosine gate (local, rẻ).
+- **Prerequisite:** cần upload **text** calibration dataset (int input_ids+attention_mask) lên AI Hub; dataset vision `d7jzjy1m2` KHÔNG dùng được.

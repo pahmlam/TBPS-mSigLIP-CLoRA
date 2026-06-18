@@ -168,9 +168,30 @@ def parse_args() -> argparse.Namespace:
         help="AI Hub target device name.",
     )
     parser.add_argument(
+        "--modality",
+        choices=["vision", "text"],
+        default="vision",
+        help=(
+            "Selects safe defaults for --input-specs and --compile-options. "
+            "vision: float image input + --quantize_io. text: two int inputs "
+            "(input_ids, attention_mask) and NO --quantize_io (token IDs reach "
+            "~250k and cannot be int8-quantized as graph I/O). Explicit flags override."
+        ),
+    )
+    parser.add_argument(
+        "--seq-len",
+        type=int,
+        default=64,
+        help="Text only. Token sequence length for the int input-specs.",
+    )
+    parser.add_argument(
         "--input-specs",
-        default='{"image": ((1, 3, 256, 256), "float32")}',
-        help="Python literal input specs for compile/link.",
+        default=None,
+        help=(
+            "Python literal input specs for compile/link. Default by --modality: "
+            "vision -> {\"image\": ((1,3,256,256),\"float32\")}; "
+            "text -> {\"input_ids\": ((1,S),\"int64\"), \"attention_mask\": ((1,S),\"int64\")}."
+        ),
     )
     parser.add_argument(
         "--static-model-dir",
@@ -206,10 +227,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--compile-options",
-        default="--quantize_io",
+        default=None,
         help=(
-            "Additional cli-like compile options. Default asks the new API to "
-            "quantize graph I/O instead of preserving FP I/O."
+            "Additional cli-like compile options. Default by --modality: vision -> "
+            "'--quantize_io' (quantize graph I/O); text -> '' (preserve int I/O — "
+            "token IDs must stay integer, not int8)."
         ),
     )
     parser.add_argument(
@@ -262,6 +284,21 @@ def main() -> None:
         raise RuntimeError("--download and --download-quantized require --wait")
 
     model = args.model.expanduser().resolve()
+
+    # Resolve modality-dependent defaults (explicit flags always win).
+    if args.input_specs is None:
+        if args.modality == "vision":
+            args.input_specs = '{"image": ((1, 3, 256, 256), "float32")}'
+        else:
+            s = args.seq_len
+            args.input_specs = (
+                f'{{"input_ids": ((1, {s}), "int64"), '
+                f'"attention_mask": ((1, {s}), "int64")}}'
+            )
+    if args.compile_options is None:
+        # Vision quantizes graph I/O; text MUST preserve int I/O (token IDs > int8).
+        args.compile_options = "--quantize_io" if args.modality == "vision" else ""
+
     input_specs = _parse_input_specs(args.input_specs)
     quantize_model = model
     if not args.no_staticize:

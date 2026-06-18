@@ -66,16 +66,32 @@ def parse_args() -> argparse.Namespace:
         help="Directory containing input_list.txt and raw calibration files.",
     )
     parser.add_argument("--input-list", default="input_list.txt")
+    parser.add_argument(
+        "--modality",
+        choices=["vision", "text"],
+        default="vision",
+        help=(
+            "vision: float32 image .raw under a single key. text: two int keys "
+            "(input_ids, attention_mask) parsed from a dual input_list."
+        ),
+    )
     parser.add_argument("--image-size", type=int, default=256)
+    parser.add_argument("--seq-len", type=int, default=64, help="Text only. Token sequence length.")
+    parser.add_argument(
+        "--id-dtype",
+        choices=["int64", "int32"],
+        default="int64",
+        help="Text only. Integer dtype to upload (must match the text ONNX input type).",
+    )
     parser.add_argument(
         "--input-name",
         default="image",
-        help="Dataset key. Must match ONNX/QNN model input tensor name.",
+        help="Vision only. Dataset key; must match the ONNX input tensor name.",
     )
     parser.add_argument(
         "--name",
-        default="msiglip-vision-vn3k-calibration",
-        help="AI Hub dataset name.",
+        default=None,
+        help="AI Hub dataset name. Default by modality.",
     )
     parser.add_argument(
         "--max-samples",
@@ -85,26 +101,54 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _build_text_dataset(input_dir: Path, input_list: str, seq_len: int, id_dtype: str, max_samples: int | None):
+    """Parse a dual input_list and return {"input_ids": [...], "attention_mask": [...]}."""
+    import sys as _sys
+
+    script_dir = str(Path(__file__).resolve().parent)
+    if script_dir not in _sys.path:
+        _sys.path.insert(0, script_dir)
+    import numpy as np
+    from compare_text_onnx_with_pytorch import _parse_dual_input_list, _read_raw_ints
+
+    rows = _parse_dual_input_list(input_dir, input_list)
+    if max_samples:
+        rows = rows[:max_samples]
+    np_dtype = np.int64 if id_dtype == "int64" else np.int32
+    ids = [_read_raw_ints(r["input_ids"], seq_len).astype(np_dtype) for r in rows]
+    masks = [_read_raw_ints(r["attention_mask"], seq_len).astype(np_dtype) for r in rows]
+    return {"input_ids": ids, "attention_mask": masks}, len(rows)
+
+
 def main() -> None:
     args = parse_args()
 
     import qai_hub as hub
 
     input_dir = args.input_dir.expanduser().resolve()
-    raw_paths = _parse_input_list(input_dir, args.input_list)
-    if args.max_samples:
-        raw_paths = raw_paths[: args.max_samples]
 
-    arrays = [_read_raw_numpy(path, args.image_size) for path in raw_paths]
-    dataset = hub.upload_dataset({args.input_name: arrays}, name=args.name)
+    if args.modality == "text":
+        data, count = _build_text_dataset(
+            input_dir, args.input_list, args.seq_len, args.id_dtype, args.max_samples
+        )
+        name = args.name or "msiglip-text-vn3k-calibration"
+    else:
+        raw_paths = _parse_input_list(input_dir, args.input_list)
+        if args.max_samples:
+            raw_paths = raw_paths[: args.max_samples]
+        data = {args.input_name: [_read_raw_numpy(path, args.image_size) for path in raw_paths]}
+        count = len(data[args.input_name])
+        name = args.name or "msiglip-vision-vn3k-calibration"
+
+    dataset = hub.upload_dataset(data, name=name)
     dataset_id = getattr(dataset, "dataset_id", None)
     dataset_name = (
         getattr(dataset, "dataset_name", None)
         or getattr(dataset, "name", None)
-        or args.name
+        or name
     )
 
-    print(f"Uploaded {len(arrays)} samples")
+    print(f"Uploaded {count} samples ({args.modality}, keys={list(data.keys())})")
     print(f"Dataset name: {dataset_name}")
     if dataset_id:
         print(f"Dataset ID:   {dataset_id}")
