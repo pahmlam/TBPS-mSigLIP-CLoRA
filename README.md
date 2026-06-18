@@ -91,29 +91,6 @@ The curriculum schedule for $\alpha_5(t)$ prevents early disruption of global al
 | $5 < t \leq 20$ | $0.1 \times \frac{t - 5}{15}$ | Linear ramp |
 | $t > 20$ | $0.1$ | Stable |
 
----
-
-## Accuracy Extension: Part-Token Alignment + Attention/FFN LoRA
-
-> Status: **experimental / post-paper ablation**. This extension explores additional Rank@1 gains on top of the reported Circle Loss results. It is reported as an ablation and is **not** the deployed model — the edge pipeline targets the published 52.28% configuration because rotation/quantization artifacts are model-specific.
-
-### Motivation
-
-Two orthogonal levers are explored beyond the published attention-only LoRA + Curriculum Circle setup, both keeping Circle Loss and the curriculum schedule unchanged:
-
-1. **Part-Token Alignment** — a local supervision branch that aligns image part regions with text tokens, sharpening fine-grained discrimination (especially image-to-text).
-2. **Attention + FFN LoRA (rank 32)** — extending LoRA from the attention projections to the FFN (`fc1`, `fc2`) projections, increasing adapter capacity while staying parameter-efficient.
-
-### Results (VN3K, single seed)
-
-| Method | t2i R@1 | t2i R@5 | t2i R@10 | i2t R@1 | Notes |
-|---|---:|---:|---:|---:|---|
-| LoRA + Curriculum Circle (paper) | 52.28 | 79.55 | 88.03 | — | Reported headline (seed 2400; mean 51.52 ± 0.68) |
-| + Attention/FFN LoRA r32 | 52.83 | 79.03 | 87.58 | 52.30 | Larger adapter capacity |
-| **+ Part-Token Alignment** | **53.00** | 78.60 | 87.30 | **53.25** | Best R@1; clearest gain on i2t |
-
-The Part-Align result is single-seed and trades a small drop in t2i R@5/R@10 for a clear i2t gain; it is reported as "best R@1," not best across all metrics. CUHK-PEDES (English) and PRW-TPS-CN (Chinese) runs are in progress to complete the multilingual ablation.
-
 ### How to Run
 
 ```bash
