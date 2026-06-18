@@ -280,6 +280,7 @@ def main() -> None:
     if passed and not args.no_save:
         out_dir = args.output_dir.expanduser().resolve()
         print(f"GATE PASS -> saving learned-rotated model to {out_dir}")
+        model = model.to("cpu")  # save a CPU checkpoint (downstream may load on CPU)
         _save_rotated(model, model_dir, out_dir)
         summary["output_dir"] = str(out_dir)
 

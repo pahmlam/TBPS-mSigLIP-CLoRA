@@ -340,7 +340,7 @@ def phase_b(vision_model: nn.Module, Q: torch.Tensor) -> dict:
     fold_right_into_mha_kv(vision_model.head.attention, Qt)
 
     # Orthogonality diagnostic.
-    err = (Q @ Qt - torch.eye(Q.shape[0], dtype=torch.float64)).abs().max().item()
+    err = (Q @ Qt - torch.eye(Q.shape[0], dtype=torch.float64, device=Q.device)).abs().max().item()
     return {"orthogonality_max_err": err}
 
 

@@ -131,7 +131,7 @@ def phase_b(text_model: nn.Module, Q: torch.Tensor) -> dict:
         fold_right_into_reader(layer.mlp.fc1, Qt)
     fold_right_into_reader(text_model.head, Qt)
 
-    err = (Q @ Qt - torch.eye(Q.shape[0], dtype=torch.float64)).abs().max().item()
+    err = (Q @ Qt - torch.eye(Q.shape[0], dtype=torch.float64, device=Q.device)).abs().max().item()
     return {"orthogonality_max_err": err}
 
 
