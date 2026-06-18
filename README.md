@@ -131,18 +131,31 @@ Circle Loss is the hard-negative component:
 | Epochs 6-20 | Linear ramp to `0.1` |
 | Epochs 21-60 | Stable at `0.1` |
 
-<details>
-<summary><strong>Mathematical details</strong></summary>
+### Mathematical Formulation
 
 The baseline optimizes a multi-task objective over $L_2$-normalized image embeddings $\mathbf{v}_i$ and text embeddings $\mathbf{u}_i$:
 
-$$\mathcal{L}_{base} = \alpha_1 \mathcal{L}_{N\text{-}ITC} + \alpha_2 \mathcal{L}_{MVS} + \alpha_3 \mathcal{L}_{C\text{-}ITC} + \alpha_4 \mathcal{L}_{SS}$$
+$$\mathcal{L}_{\text{base}} = \alpha_1 \mathcal{L}_{N\text{-}ITC} + \alpha_2 \mathcal{L}_{MVS} + \alpha_3 \mathcal{L}_{C\text{-}ITC} + \alpha_4 \mathcal{L}_{SS}$$
 
 N-ITC is the sigmoid-based pairwise alignment loss:
 
 $$\mathcal{L}_{N\text{-}ITC} = -\frac{1}{N}\sum_{i=1}^{N}\sum_{j=1}^{N} \log\sigma\left(z_{ij}\left(\gamma\,\mathbf{v}_i^\top\mathbf{u}_j - c\right)\right)$$
 
 where $z_{ij} \in \{+1, -1\}$ indicates matched and unmatched image-text pairs.
+
+C-ITC enforces structured alignment through in-modality consistency and cross-modality symmetry:
+
+$$\mathcal{L}_{C^I\text{-}ITC} = \frac{1}{N^2}\sum_{i,j}\left(\operatorname{sim}(\mathbf{v}_i,\mathbf{v}_j)-\operatorname{sim}(\mathbf{u}_i,\mathbf{u}_j)\right)^2$$
+
+$$\mathcal{L}_{C^C\text{-}ITC} = \frac{1}{N^2}\sum_{i,j}\left(\operatorname{sim}(\mathbf{v}_i,\mathbf{u}_j)-\operatorname{sim}(\mathbf{v}_j,\mathbf{u}_i)\right)^2$$
+
+$$\mathcal{L}_{C\text{-}ITC} = \lambda_I \mathcal{L}_{C^I\text{-}ITC} + \lambda_C \mathcal{L}_{C^C\text{-}ITC},\qquad \lambda_I=\lambda_C=0.25$$
+
+MVS enforces consistency between original images and augmented views using the N-ITC formulation.
+
+SS is a SimCLR-style self-supervision loss over two augmented views of the same image:
+
+$$\mathcal{L}_{SS} = -\frac{1}{2N}\sum_{i=1}^{2N}\log\frac{\exp\left(\operatorname{sim}(\mathbf{v}_i,\mathbf{v}_{i^+})/\tau_s\right)}{\sum_{k\neq i}\exp\left(\operatorname{sim}(\mathbf{v}_i,\mathbf{v}_k)/\tau_s\right)}$$
 
 The auxiliary Cross-modal Circle Loss mines hard positives and hard negatives:
 
@@ -154,9 +167,11 @@ $$\alpha_p^i = [1 + m - s_p^i]_+,\qquad \alpha_n^j = [s_n^j + m]_+$$
 
 The final objective is:
 
-$$\mathcal{L} = \mathcal{L}_{base} + \alpha_5(t)\,\mathcal{L}_{circle}$$
+$$\mathcal{L} = \mathcal{L}_{\text{base}} + \alpha_5(t)\,\mathcal{L}_{circle}$$
 
-</details>
+The curriculum schedule for $\alpha_5(t)$ is:
+
+$$\alpha_5(t) = \begin{cases} 0, & t \leq 5 \\ 0.1 \times \frac{t - 5}{15}, & 5 < t \leq 20 \\ 0.1, & t > 20 \end{cases}$$
 
 ### Analysis Figures
 
