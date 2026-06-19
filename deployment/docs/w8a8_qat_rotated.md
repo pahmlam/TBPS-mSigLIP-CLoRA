@@ -3,7 +3,7 @@
 > **Scope:** this is the **theory and method** document for the vision-encoder deployment branch and the matching text-encoder finite-mask extension. It contains the mathematics of every transform and the reasoning behind every design choice. It contains **no commands, scripts, or code** — for the reproducible command sequence, AI Hub job IDs, and artifact paths, see the consolidated history in [`deployment/docs/journal/[deploy-master].md`](journal/[deploy-master].md).
 > **Source checkpoint:** LoRA + Curriculum Circle, seed 2400 (FP32 reference ≈ paper 52.28).
 > **Target device:** Qualcomm RB3 Gen2 / QCS6490 / Hexagon HTP **v68**.
-> **End-to-end result:** both-INT8 W8A8 QDQ proxy reaches **T2I Rank@1 = 50.25** and **I2T Rank@1 = 52.95**, passing the ≥50 deploy target with a `-2.03` T2I drop from the paper baseline `52.28`. Board-verified binary to date is QAT v4 (T2I R@1 ≈ 48.50, below the 50 target); v8/both-INT8 board verification is pending.
+> **End-to-end result:** both-INT8 W8A8 QDQ proxy reaches **T2I Rank@1 = 50.25** and **I2T Rank@1 = 52.95**, passing the ≥50 deploy target with a `-2.03` T2I drop from the paper baseline `52.28`. Board-verified vision binary is QAT v8 (T2I R@1 ≈ 50.85, passing the 50 target); both-INT8 board verification is pending.
 > **Vision status:** vision-only **T2I Rank@1 = 50.85** (learned rotation, QAT v8; `-1.43` vs paper baseline `52.28`) on the all-INT8 W8A8 QDQ proxy.
 > **Text status:** text-only finite-mask W8A8 QDQ passes cosine and retrieval gates: QDQ cosine mean/min **0.9949 / 0.9912**, text-isolation T2I Rank@1 **51.65**.
 
@@ -26,7 +26,7 @@ The journey from naive W8A8 (which collapses retrieval) to the deployable best:
 | QAT v5 | + per-linear fake-quant | 0.9437 / 0.9311 | 49.25 | FAIL |
 | QAT v6 | + attention-matmul fake-quant | 0.9491 / 0.9266 | 49.30 | FAIL (random-rotation ceiling) |
 | QAT v7 | v6 coverage + cosine LR + lr 2e-5 | 0.9485 / 0.9083 | 48.38 | FAIL (regress) |
-| **QAT v8** | **learned rotation + recipe v6** | **0.9606 / 0.9447** | **50.85** | **PASS** |
+| **QAT v8** | **learned rotation + recipe v6** | **0.9606 / 0.9447** | **50.85** | **PASS (board-verified)** |
 
 Two facts frame everything below:
 
@@ -352,8 +352,7 @@ QAT does not export a custom QDQ graph. It finetunes the FP32 encoder under inje
 
 Per step the student is run twice — clean (hooks off) and fake-quant — and distilled toward the teacher embedding:
 
-$$ \mathcal{L} = \underbrace{\big(1 - \cos(z_s^{q}, z_t)\big) + \lambda\,\lVert z_s^{q} - z_t\rVert^2}_{\text{fake-quant path}}
-+ \underbrace{w_c\big(1 - \cos(z_s^{c}, z_t)\big) + w_m\lVert z_s^{c} - z_t\rVert^2}_{\text{clean consistency}}, $$
+$$ \mathcal{L} = \underbrace{\big(1 - \cos(z_s^{q}, z_t)\big) + \lambda\,\lVert z_s^{q} - z_t\rVert^2}_{\text{fake-quant path}} + \underbrace{w_c\big(1 - \cos(z_s^{c}, z_t)\big) + w_m\lVert z_s^{c} - z_t\rVert^2}_{\text{clean consistency}}, $$
 
 where $z_t$ is the teacher embedding, $z_s^{q}$/$z_s^{c}$ are the fake-quant/clean student embeddings, and $\lambda = w_m = 0.05$, $w_c = 1.0$. The clean term keeps the student from drifting away from the teacher when quant noise is off.
 
@@ -422,7 +421,7 @@ The deployable graph is produced by: rewriting input shape to static $1\times3\t
 
 ### 8.3 Board run and fidelity
 
-On board, graph I/O is unsigned-fixed-point-8 and the runtime dequantizes outputs to float. **Board fidelity** (board vs PyTorch cosine) for the verified v4 binary was $0.9363$, matching its QDQ ONNX $0.9364$ to $\approx 0.0001$ — i.e. HTP runtime is faithful to the quantized graph; the remaining error is *quantization*, not hardware drift. v8 has not yet been compiled/linked on board; its 50.85 is the QDQ proxy number, which v4's board↔QDQ agreement makes a trustworthy predictor.
+On board, graph I/O is unsigned-fixed-point-8 and the runtime dequantizes outputs to float. **Board fidelity** (board vs PyTorch cosine) for the verified v8 binary is $0.9585$ (mean) / $0.9399$ (min), closely matching its QDQ ONNX $0.9606 / 0.9447$. HTP runtime is faithful to the quantized graph; the remaining error is *quantization*, not hardware drift. The runtime for v8 is $\approx 33.05$ ms / $22.77$ FPS.
 
 ### 8.4 Why the retrieval number is trustworthy
 
@@ -497,13 +496,13 @@ Cosine is a conservative proxy; retrieval R@1 is the decisive metric. The deploy
 
 ## 12. What Remains
 
-1. ✅ **Board-verified W8A8 (v4):** links on HTP v68, board fidelity $0.9363 \approx$ QDQ $0.9364$, $\approx 32.7$ ms / $22.9$ FPS / $\sim$90 MB → board T2I R@1 $\approx 48.50$.
+1. ✅ **Legacy Board-verified W8A8 (v4):** established board-to-QDQ fidelity tracking.
 2. ✅ **Vision-only v8 QDQ passes:** learned rotation, T2I R@1 $50.85$ (`-1.43` vs paper baseline $52.28$).
-3. **Board-verify v8:** compile/link the learned-rotation v8 binary and confirm the board number tracks its QDQ $50.85$ (v4's board↔QDQ agreement makes this expected).
+3. ✅ **Board-verified v8:** learned-rotation v8 binary executes on HTP v68. Board fidelity $0.9585$ tracks QDQ $0.9606$. Runtime $\approx 33.05$ ms / $22.77$ FPS.
 4. ✅ **Text encoder finite-mask QDQ passes:** learned rotation + text QAT + finite attention mask gives QDQ cosine $0.9949 / 0.9912$ and text-isolation T2I R@1 $51.65$.
 5. **Compile/link and board-verify text finite-mask binary:** confirm board fidelity tracks the text QDQ proxy.
 6. ✅ **End-to-end both-INT8 C1 passes off-board:** vision QDQ + text QDQ gives T2I R@1 $50.25$, I2T R@1 $52.95$, a `-2.03` T2I drop vs paper baseline $52.28$.
-7. **End-to-end both-INT8 board retrieval remains:** run C2 after v8 vision and finite-mask text binaries are linked and executed on RB3.
+7. **End-to-end both-INT8 board retrieval remains:** run C2 after finite-mask text binaries are linked and executed on RB3.
 
 ---
 
