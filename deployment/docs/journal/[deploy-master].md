@@ -1,6 +1,6 @@
 # [Deploy Master] Nhật ký nén vision mSigLIP lên RB3/QNN
 
-> **Cập nhật hợp nhất cuối:** 2026-06-17
+> **Cập nhật hợp nhất cuối:** 2026-06-19
 > **Phạm vi:** RB3 Gen2 / QNN / AI Hub / ONNX / nén mô hình cho deployment mSigLIP.
 > **Nguồn trạng thái chuẩn:** file này.
 > **Nhật ký deploy duy nhất:** toàn bộ lịch sử deployment/model-compression và kết quả mới nằm ở đây.
@@ -12,27 +12,32 @@ File master này hợp nhất toàn bộ lịch sử deployment/model-compressio
 
 ## 0. Trạng Thái Hiện Tại
 
-### Ứng Viên Vision Tốt Nhất Hiện Tại
+### Trạng Thái Deploy Hiện Tại
 
 | Mục | Trạng thái |
 |---|---|
 | Checkpoint nguồn | `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` |
-| Baseline FP32 dùng cho đánh giá deploy | VN3K T2I R@1 `52.40` tái lập local, khớp lịch sử `52.28` |
-| Ứng viên QDQ/retrieval tốt nhất hiện tại | **QAT v6**: `--quant-head --quant-linears --quant-attention` |
-| Job AI Hub QAT v6 | `j57krdwvp` quantize-only W8A8 |
-| Artifact QDQ QAT v6 | `artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_j57krdwvp_qdq_onnx` |
-| Cosine QDQ QAT v6 | **`0.9491 / 0.9266`** mean/min |
-| Retrieval QAT v6 | **T2I R@1 `49.30`**, I2T R@1 `53.85` |
-| Binary deploy đã verify trên board | **QAT v4** W8A8 context binary |
+| Baseline báo cáo chính | VN3K T2I R@1 `52.28` (paper/historical baseline) |
+| FP32 sanity local | VN3K T2I R@1 `52.40` tái lập local; chỉ dùng để kiểm pipeline, không làm mốc drop báo cáo |
+| Best end-to-end deploy proxy | **Both-INT8 W8A8 QDQ**: T2I R@1 `50.25`, I2T R@1 `52.95`; drop T2I `-2.03` so với `52.28`, PASS target `50` |
+| Artifact both-INT8 C1 | `artifacts/deployment/runtime/both_int8/both_int8_r1.json` |
+| Ứng viên QDQ/retrieval tốt nhất hiện tại | **QAT v8 (learned rotation)**: SpinQuant-style Q + recipe v6 `--quant-head --quant-linears --quant-attention` |
+| Job AI Hub QAT v8 | `jp24xxn65` quantize-only W8A8 |
+| Artifact QDQ QAT v8 | `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_jp24xxn65_qdq_onnx` |
+| Cosine QDQ QAT v8 | **`0.9606 / 0.9447`** mean/min |
+| Retrieval QAT v8 vision-isolation | **T2I R@1 `50.85`** (đạt deploy target 50), I2T R@1 `52.90`; drop T2I `-1.43` so với `52.28` |
+| Text finite-mask QDQ | Job `jp17y648p`; QDQ `0.9949 / 0.9912`; text-isolation T2I R@1 `51.65`, I2T R@1 `55.55` |
+| Ứng viên trước đó | QAT v6 (random rotation): T2I R@1 `49.30`, QDQ `0.9491 / 0.9266` — v8 hơn `+1.55` T2I |
+| Binary deploy đã verify trên board | **QAT v4** W8A8 context binary (v8 chưa compile/link trên board) |
 | Fidelity QAT v4 trên board | `0.9363 / 0.9068` mean/min, khớp QDQ `0.9364 / 0.9091` |
 | Runtime QAT v4 trên board | `32.70 ms/image`, `22.88 FPS`, context binary khoảng `90 MB` |
-| Hướng stretch tiếp theo | Huấn luyện dài hơn, thêm dữ liệu để pass mốc 50.0 hoặc cân nhắc Learned Rotation (như SpinQuant) |
-| Text encoder | Còn pending; chỉ quantize sau khi nhánh vision được chấp nhận hoặc stretch xong |
+| Hướng tiếp theo | Compile/link v8 vision và text finite-mask lên board; chạy both-INT8 C2 trực tiếp trên RB3 |
 
 Cách hiểu:
 
-- **v6 là ứng viên accuracy tốt nhất hiện tại**: nâng T2I R@1 lên `49.30`, cosine QDQ mean đạt `0.9491`.
-- **v4 là binary deploy đã verify trên board hiện tại**: link và chạy được trên HTP v68, fidelity trên board khớp QDQ.
+- **C1 both-INT8 là số deploy proxy chính hiện tại**: vision QDQ + text QDQ đạt T2I R@1 `50.25`, vượt target `50` và giảm `-2.03` so với paper baseline `52.28`.
+- **v8 vision là ablation accuracy quan trọng**: learned rotation nâng vision-isolation T2I R@1 lên `50.85`, cosine QDQ mean/min đều vượt v6. Delta `+1.55` so v6 là ablation sạch "learned vs random" (recipe v6 giữ nguyên).
+- **v4 là binary deploy đã verify trên board hiện tại**: link và chạy được trên HTP v68, fidelity trên board khớp QDQ. v8 vẫn cần bước compile/link để verify số board.
 
 ### Pipeline Vision Chuẩn
 
@@ -140,8 +145,7 @@ python3 deployment/scripts/qnn/compare_qnn_with_pytorch.py \
 | ONNX op sanity | `Pow=0`, fused `Gelu`, fused `LayerNormalization` | Tránh lộ internal GELU/RMSNorm |
 | QDQ ONNX vs PyTorch | target mean >= `0.95`, min >= `0.90` | Proxy fidelity trước compile/link |
 | QNN board vs PyTorch | mean >= `0.90` | Runtime trên board đủ trung thực |
-| Retrieval | T2I R@1 >= `48.0` | Ngưỡng deploy tối thiểu so với FP32 `52.28`/`52.40` |
-| Stretch retrieval | T2I R@1 >= `50.0` | Mục tiêu tối ưu hiện tại |
+| Retrieval (deploy target) | T2I R@1 >= `50.0` | Mục tiêu deploy so với paper baseline `52.28`; bất kỳ kết quả `< 50` là FAIL |
 
 Gate cosine QDQ chỉ là proxy. Retrieval R@1 mới là quyết định cuối. Ứng viên rotation-only có cosine QDQ gần `0.90` nhưng fail retrieval ở `45.42`, chứng minh cosine riêng lẻ là chưa đủ.
 
@@ -166,7 +170,7 @@ Gate cosine QDQ chỉ là proxy. Retrieval R@1 mới là quyết định cuối.
 
 ## 1. Các Mốc Lịch Sử Đã Bao Phủ
 
-File này hợp nhất công việc deployment/model-compression từ các mốc: 2026-04-15, 2026-05-06, 2026-05-27, 2026-06-02, 2026-06-04, 2026-06-05, 2026-06-06, 2026-06-07, 2026-06-09, 2026-06-10, 2026-06-11, 2026-06-13, 2026-06-14, và 2026-06-15.
+File này hợp nhất công việc deployment/model-compression từ các mốc: 2026-04-15, 2026-05-06, 2026-05-27, 2026-06-02, 2026-06-04, 2026-06-05, 2026-06-06, 2026-06-07, 2026-06-09, 2026-06-10, 2026-06-11, 2026-06-13, 2026-06-14, 2026-06-15, 2026-06-18, và 2026-06-19.
 
 Journal demo-system vẫn tách riêng vì nó theo dõi scaffold demo modular, không phải nén mô hình.
 
@@ -293,7 +297,7 @@ qai-hub submit-compile-job \
 - Static ONNX vs PyTorch: `cosine_l2_mean >= 0.999`.
 - Smoke QDQ ONNX vs PyTorch: `cosine_l2_mean >= 0.95`, min `>= 0.90`.
 - QNN vs PyTorch sau link: `cosine_l2_mean >= 0.90`.
-- Full retrieval: T2I R@1 `>= 48.0`.
+- Full retrieval (deploy target): T2I R@1 `>= 50.0` (kết quả `< 50` là FAIL).
 
 **Phase dự kiến:**
 
@@ -885,13 +889,13 @@ val_fake_quant.mean >= 0.78
 - Dataset: VN3K test full, 2000 images + 4000 captions.
 - Metric bám theo `LitTBPS._compute_metrics`: raw pooler features và dot product, `utils.metrics.rank`, không dùng `Evaluator` normalized generic.
 
-**Sanity:** baseline FP32 T2I R@1 `52.40`, gần với lịch sử `52.28`.
+**Sanity:** baseline FP32 T2I R@1 `52.40`, gần với lịch sử `52.28`. Các drop báo cáo dùng mốc paper baseline `52.28`.
 
 **Kết quả:**
 
-| Metric | FP32 baseline | Rotation W8A8 | Drop |
+| Metric | FP32 sanity | Rotation W8A8 | Drop vs `52.28`/sanity |
 |---|---:|---:|---:|
-| T2I R@1 | `52.40` | `45.42` | `-6.97` |
+| T2I R@1 | `52.40` | `45.42` | `-6.86` vs `52.28` |
 | I2T R@1 | `55.30` | `49.40` | `-5.90` |
 | T2I R@5 / R@10 | `79.38 / 87.80` | `73.38 / 83.12` | - |
 
@@ -929,13 +933,13 @@ val_fake_quant.mean >= 0.78
 |---|---|---|---:|---:|---:|---|
 | rotation-only | không QAT | `jpr9zro9p` | `0.8975 / 0.8747` | `45.42` | `49.40` | Deploy được trên board, retrieval fail |
 | QAT v1 | per-sample fake-quant, local MPS | `jgzwej1kg` | `0.9223 / 0.8917` | `46.92` | `50.45` | Có ích, nhưng sim quá dễ |
-| QAT v2 | per-tensor fake-quant, toàn bộ layers, 5 epochs | `jgomym0x5` | `0.9281 / 0.9093` | `47.80` | `51.65` | Gần gate |
-| QAT v3 | EMA observer, toàn bộ layers, 8 epochs | `jp383qmn5` | `0.9353 / 0.919` | `48.20` | `52.30` | Pass gate |
+| QAT v2 | per-tensor fake-quant, toàn bộ layers, 5 epochs | `jgomym0x5` | `0.9281 / 0.9093` | `47.80` | `51.65` | Dưới target 50 |
+| QAT v3 | EMA observer, toàn bộ layers, 8 epochs | `jp383qmn5` | `0.9353 / 0.919` | `48.20` | `52.30` | INT8 ổn định đầu tiên, vẫn < target 50 |
 | QAT v4 | + `--quant-head`, 12 epochs | `jgd09l96p` | `0.9364 / 0.9091` | `48.50` | `52.95` | Binary deploy đã verify trên board |
 | QAT v5 | + `--quant-linears`, 15 epochs | `jpxm2w0lg` | `0.9437 / 0.9311` | `49.25` | `53.40` | Đã chạm ngưỡng tác dụng của single linear |
 | QAT v6 | + `--quant-attention` | `j57krdwvp` | `0.9491 / 0.9266` | `49.30` | `53.85` | Trần coverage của random rotation |
 | QAT v7 | v6 coverage + cosine LR + lr `2e-5`, 20 epochs | `jpve62jmg` | `0.9485 / 0.9083` | `48.38` | `53.05` | **Regress** so v6: cosine+lr 2e-5 kém hơn const lr 1e-5 |
-| QAT v8 | **Learned rotation (SpinQuant-style)** + recipe **v6** (const lr 1e-5, 15 ep) | _chờ_ | _chờ_ | _chờ_ | _chờ_ | Q tối ưu theo activation; ablation learned vs random (dùng recipe v6 vì v7 thua) |
+| QAT v8 | **Learned rotation (SpinQuant-style)** + recipe **v6** (const lr 1e-5, 15 ep) | `jp24xxn65` | `0.9606 / 0.9447` | **`50.85`** | `52.90` | **WIN**: vượt v6 `+1.55` T2I, đạt deploy target `50`; learned > random |
 
 **Chi tiết QAT v1:**
 
@@ -957,7 +961,7 @@ val_fake_quant.mean >= 0.78
 - Retrieval:
   - T2I `48.20 / 75.42 / 85.10`, mAP `53.39`, mINP `46.60`.
   - I2T `52.30 / 78.90 / 86.85`, mAP `47.89`, mINP `31.03`.
-- Pass gate `48.0`.
+- Vẫn dưới deploy target `50` (`48.20`).
 
 **Chi tiết QAT v4:**
 
@@ -977,7 +981,7 @@ val_fake_quant.mean >= 0.78
 - Val sim cosine `0.978`, min `0.9453`.
 - QDQ min tăng `0.9091 -> 0.9311`, chứng minh plateau v4 là coverage gap, không phải trần cơ bản của W8A8.
 - Retrieval: T2I R@1 `49.25`, R@5 `77.28`, R@10 `85.80`, mAP `54.55`, mINP `47.86`; I2T R@1 `53.40`.
-- Khoảng cách còn lại tới stretch target 50: `0.75`.
+- Khoảng cách còn lại tới deploy target 50: `0.75`.
 
 **Chi tiết QAT v6:**
 
@@ -997,7 +1001,20 @@ val_fake_quant.mean >= 0.78
 - **Kết luận:** thay đổi 3 thứ cùng lúc (cosine + lr×2 + epochs) → regress `-0.93` R@1. Nghi can chính là **lr 2e-5 overshoot** quanh điểm minimum lượng tử hóa; cosine floor (`4e-7`) không cứu lại được hỏng ở epoch đầu.
 - **Hệ quả cho v8:** recipe tốt nhất vẫn là **v6** (const lr `1e-5`, 15 epochs). v8 (learned rotation) nên dùng recipe v6 để delta R@1 cô lập đúng phần *rotation* (learned vs random), không lẫn schedule đã thua.
 
-**Chi tiết QAT v8 — Learned Rotation (SpinQuant-style):** _(chờ chạy, kết quả sẽ điền sau)_
+**Chi tiết QAT v8 — Learned Rotation (SpinQuant-style):** _(WIN — learned > random, đạt deploy target 50)_
+
+- **Kết quả thực tế (đã chạy 2026-06-18):**
+  - Learned rotation gate PASS: objective `46281 → 861` (−98.1%), max|a| `123.8 → 14.56` (−88.2%), cosine min `0.99999988`, orth_err `3.1e-15`, mean_err `4.0e-15` (256 calib, 32 tok/ảnh, 3000 step, lr `2e-3`).
+  - Export static-vs-pytorch sanity: cosine mean `1.0000`, L2 `1.4e-6` (rotation output-invariant, xác nhận fold đúng).
+  - QDQ job AI Hub `jp24xxn65`, QDQ-vs-pytorch fidelity: cosine mean **`0.9606`**, min **`0.9447`** (cả hai **tốt hơn** v6 `0.9491 / 0.9266`).
+  - Retrieval (full 2000 gallery / 4000 query): baseline FP32 sanity T2I `52.40` PASS; **vision-INT8 T2I R@1 `50.85`** (R@5 `77.48`, R@10 `86.98`, mAP `55.79`, mINP `49.24`), I2T R@1 `52.90`. Drop T2I báo cáo là `−1.43` so với paper baseline `52.28`.
+  - Vision ONNX latency CPU `81.9 ms/ảnh`.
+- **Kết luận ablation (learned vs random, recipe v6 giữ nguyên):**
+  - T2I R@1: **`50.85` (learned) vs `49.30` (random v6) → +1.55**. Đây là delta sạch chỉ do `Q`, vì mọi thứ khác (coverage, lr, epochs, base FP32) giống hệt.
+  - QDQ fidelity cũng nhích lên cả mean lẫn min ⇒ tối ưu max-abs² thật sự thắt được scale INT8 như lý thuyết.
+  - **Đạt deploy target `50`** lần đầu cho vision-INT8 W8A8 trên QDQ proxy.
+  - Đánh đổi nhỏ: I2T R@1 `52.90 < 53.85` (v6). Vì metric chính của đề tài là **T2I R@1**, learned rotation là lựa chọn deploy.
+- **Hệ quả cho text:** chốt dùng **learned rotation** cho text (`learn_rotation_text.py`), không dùng random nữa.
 
 - **Điểm mới về phương pháp:** thay vì dùng ma trận quay ngẫu nhiên bảo toàn mean (v1–v7), v8 *học* ma trận quay `Q` bằng cách tối ưu trực tiếp đại lượng quyết định scale INT8.
 - **Công thức.** Gọi `a` là activation tại các "rotation site" của residual stream (output của `layer_norm1/2`, `out_proj`, `fc2`, `post_layernorm`). Per-tensor INT8 scale là `s = max|a| / 127`. Ta tối thiểu hóa tổng bình phương biên độ cực đại sau khi quay:
@@ -1029,7 +1046,7 @@ Breakdown đã khử trùng lặp của `exported_model/model_fp32.pt` theo para
 
 Text chiếm 75% parameter của model. Riêng token embedding là `250000 x 768 = 192M params = 768 MB FP32`.
 
-**Quyết định:** text INT8 quan trọng cho memory cuối cùng, nhưng nên làm sau khi nhánh vision được accept/stretch xong.
+**Quyết định:** text INT8 quan trọng cho memory cuối cùng, nhưng nên làm sau khi nhánh vision đạt target xong.
 
 #### 13. Kế Hoạch Tiếp Theo Sau v6
 
@@ -1225,3 +1242,38 @@ Drive `encode_text`, distill sentence embedding, xử lý 2 int input + attentio
 - Verify: staticize `input_ids`/`attention_mask` → `(1,64)`, giữ INT64 (elem_type 7).
 - **Rủi ro còn lại (canh ở T2 QDQ-fidelity gate):** hằng mask `3.4e38` trong `scores+mask`; nếu per-tensor INT8 collapse sẽ lộ ở cosine gate (local, rẻ).
 - **Prerequisite:** cần upload **text** calibration dataset (int input_ids+attention_mask) lên AI Hub; dataset vision `d7jzjy1m2` KHÔNG dùng được.
+
+## 7. 2026-06-19 - C1 Off-board both-INT8 retrieval PASS
+
+**Mục tiêu:** đo số deploy proxy end-to-end khi cả vision encoder và text encoder đều dùng W8A8 QDQ.
+
+**Command:**
+
+```bash
+python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py \
+  --qdq-onnx artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_jp24xxn65_qdq_onnx \
+  --text-qdq-onnx artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/job_jp17y648p_qdq_onnx \
+  --model-dir artifacts/deployment/exports/exported_model \
+  --json artifacts/deployment/runtime/both_int8/both_int8_r1.json
+```
+
+**Artifacts:**
+
+| Artifact | Ý nghĩa |
+|---|---|
+| `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_jp24xxn65_qdq_onnx` | Vision QDQ v8 learned rotation |
+| `artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/job_jp17y648p_qdq_onnx` | Text QDQ v8 learned rotation + finite mask |
+| `artifacts/deployment/runtime/both_int8/both_int8_r1.json` | Kết quả C1 both-INT8 full VN3K test |
+
+**Kết quả retrieval full VN3K test:**
+
+| Combo | T2I R@1 | I2T R@1 | Ghi chú |
+|---|---:|---:|---|
+| `baseline_fp32` | `52.40` | `55.30` | local sanity reproduction; baseline báo cáo chính vẫn là `52.28` |
+| `vision_int8` | `50.85` | `52.90` | vision v8 learned rotation |
+| `text_int8` | `51.65` | `55.55` | text v8 learned rotation + finite mask |
+| **`both_int8`** | **`50.25`** | **`52.95`** | **PASS** |
+
+**Kết luận:** C1 both-INT8 đạt T2I R@1 **`50.25`**, vượt deploy target `50.0` với margin `+0.25`. Khi báo cáo drop, dùng paper baseline `52.28`: both-INT8 giảm **`-2.03`** T2I R@1 (`52.28 → 50.25`). Số `52.40` chỉ là sanity reproduction của pipeline local, không dùng làm mốc drop chính.
+
+**Bước tiếp theo:** compile/link v8 vision và text finite-mask thành `.bin`, chạy board fidelity/runtime, rồi chạy C2 both-INT8 trực tiếp trên RB3.

@@ -42,8 +42,8 @@
     </td>
     <td width="33%" align="center">
       <strong>RB3 Gen2 / HTP v68</strong><br>
-      <span style="font-size:24px"><strong>49.30</strong></span><br>
-      Vision-only INT8 QAT v6 T2I Rank@1
+      <span style="font-size:24px"><strong>50.25</strong></span><br>
+      Both-INT8 W8A8 QDQ proxy T2I Rank@1
     </td>
   </tr>
 </table>
@@ -52,7 +52,7 @@
 |---|---|---|
 | **Training** | LoRA + Curriculum Circle Loss is the main reported method. It trains **5.9M parameters, about 1.57% of the 376M-parameter base model**. | Keep the paper recipe as the clean deployment baseline. |
 | **Multilingual evaluation** | VN3K, 10% CUHK-PEDES, and PRW-TPS-CN results are reported below. | Extend full multilingual ablations only when needed. |
-| **Edge deployment** | Vision encoder W8A8 path works on RB3 Gen2 HTP v68. QAT v6 is the best QDQ/retrieval candidate; QAT v4 is board-verified. | Quantize text encoder, then validate both-INT8 retrieval on board. |
+| **Edge deployment** | Both encoders now pass the W8A8 QDQ retrieval gate off-board: both-INT8 reaches **50.25** T2I R@1, a `-2.03` drop from the paper baseline `52.28`. QAT v4 remains the board-verified binary. | Board-verify v8 vision, finite-mask text, and both-INT8 retrieval on RB3. |
 
 ## What This Repository Contains
 
@@ -242,16 +242,19 @@ uv run test.py --ckpt_path artifacts/models/checkpoints/epoch=56-val_score=52.28
 
 ## Deployment
 
-The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN context binaries. The current vision encoder path is all-INT8 W8A8.
+The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN context binaries. The current deploy path is all-INT8 W8A8 for both the vision and text encoders.
 
 | Deployment item | Current state |
 |---|---|
 | Source checkpoint | `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` |
-| Best QDQ/retrieval candidate | QAT v6, `49.30` T2I R@1, `53.85` I2T R@1 |
-| Board-verified binary | QAT v4 W8A8 context binary |
+| Paper baseline | VN3K T2I R@1 `52.28`; local FP32 sanity reproduction is `52.40` |
+| Best end-to-end deploy proxy | Both-INT8 W8A8 QDQ, `50.25` T2I R@1, `52.95` I2T R@1 — `-2.03` T2I vs `52.28`, meets the `50` deploy target |
+| Vision-only isolation | QAT v8 learned rotation, `50.85` T2I R@1, `52.90` I2T R@1 |
+| Text-only isolation | Learned rotation + finite mask, `51.65` T2I R@1, `55.55` I2T R@1 |
+| Board-verified binary | QAT v4 W8A8 context binary (`48.50`, below the `50` target; v8/both-INT8 board-verify pending) |
 | Board runtime | `32.70 ms/img`, `22.88 FPS` |
 | Context size | about `90 MB` for vision encoder |
-| Text encoder | Pending |
+| Text encoder | W8A8 QDQ passes off-board; compile/link and board verification pending |
 
 Canonical references:
 
@@ -269,8 +272,7 @@ Canonical references:
 | ONNX op sanity | `Pow=0`, fused `Gelu`, fused `LayerNormalization` | Avoid exposed GELU/RMSNorm internals |
 | QDQ ONNX vs PyTorch | mean `>= 0.95`, min `>= 0.90` | Candidate worth compile/link |
 | QNN board vs PyTorch | mean `>= 0.90` | Runtime on board is faithful enough |
-| Full retrieval | T2I R@1 `>= 48.0` | Minimum deploy target vs FP32 baseline |
-| Stretch retrieval | T2I R@1 `>= 50.0` | Current optimization target |
+| Full retrieval (deploy target) | T2I R@1 `>= 50.0` | Deploy target vs FP32 baseline; any result `< 50` is a FAIL |
 
 ### Model Footprint
 
@@ -281,176 +283,30 @@ Canonical references:
 | projection + other | 1.2M | 5 MB | 2 MB | 1 MB |
 | **Total** | **371.8M** | **1487 MB** | **744 MB** | **372 MB** |
 
-Text is 75% of parameters because the multilingual token embedding has `250000 x 768` entries. This is why text INT8 is the next major memory lever for 4 GB RB3 deployment.
+Text is 75% of parameters because the multilingual token embedding has `250000 x 768` entries. This is why text INT8 is required for the final 4 GB RB3 deployment path.
 
-<details>
-<summary><strong>Vision W8A8 pipeline and QAT commands</strong></summary>
-
-```text
-epoch=56-val_score=52.28.ckpt
-  -> [1] lora_fp16/export.py
-         exported_model/{model_fp32.pt, model_fp16.pt, config.yaml}
-  -> [2] qnn/rotate_vision_encoder.py
-         exported_model_rotated/{model_fp32.pt, config.yaml}
-  -> [3] qnn/train_vision_quant_robust.py
-         exported_model_rotated_qat_v6/{model_fp32.pt, config.yaml}
-  -> [4] qnn/export_rotated_vision_onnx.py --opset 20
-         exported_model_rotated_qat_v6/vision_onnx/{vision_encoder.onnx,.data}
-  -> [5] qnn/submit_qaihub_quantize_compile.py
-         W8A8 QDQ / context binary with quantized I/O
-  -> [6] qnn-net-run on RB3 HTP
-         compare_qnn_with_pytorch -> retrieval R@1
-```
-
-One-time prep:
-
-```bash
-python deployment/scripts/lora_fp16/export.py \
-  --ckpt artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt \
-  --output-dir artifacts/deployment/exports/exported_model
-
-python deployment/scripts/qnn/rotate_vision_encoder.py \
-  --model-dir artifacts/deployment/exports/exported_model \
-  --output-dir artifacts/deployment/exports/exported_model_rotated \
-  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --seed 2400 --skip-r2
-
-python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
-  --dataset-root VN3K --split train --selection random --seed 2400 \
-  --num-samples 4302 --output-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 \
-  --path-mode relative
-```
-
-QAT v6:
-
-```bash
-python deployment/scripts/qnn/train_vision_quant_robust.py \
-  --model-dir artifacts/deployment/exports/exported_model_rotated \
-  --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 \
-  --val-input-dir artifacts/deployment/qnn_inputs/vn3k_test_100 \
-  --output-dir artifacts/deployment/exports/exported_model_rotated_qat_v6 \
-  --device cuda --batch-size 16 --epochs 15 --lr 1e-5 \
-  --start-layer 0 --end-layer 11 --num-workers 4 \
-  --fake-quant-observer ema \
-  --quant-head --quant-linears --quant-attention
-
-python deployment/scripts/qnn/export_rotated_vision_onnx.py \
-  --model-dir artifacts/deployment/exports/exported_model_rotated_qat_v6 \
-  --opset 20
-
-python deployment/scripts/qnn/compare_onnx_with_pytorch.py \
-  --onnx-model artifacts/deployment/exports/exported_model_rotated_qat_v6/vision_onnx \
-  --model-dir artifacts/deployment/exports/exported_model_rotated_qat_v6 \
-  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
-  --precision fp32 \
-  --json artifacts/deployment/exports/exported_model_rotated_qat_v6/static_vs_pytorch_summary.json \
-  --csv artifacts/deployment/exports/exported_model_rotated_qat_v6/static_vs_pytorch.csv
-```
-
-AI Hub QDQ diagnostic and local retrieval gate:
-
-```bash
-python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
-  --model artifacts/deployment/exports/exported_model_rotated_qat_v6/vision_onnx \
-  --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 \
-  --quantize-only --wait \
-  --download-quantized artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_qdq_onnx
-
-python deployment/scripts/qnn/compare_onnx_with_pytorch.py \
-  --onnx-model artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_qdq_onnx \
-  --model-dir artifacts/deployment/exports/exported_model \
-  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
-  --precision fp32 \
-  --json artifacts/deployment/runtime/rotated_w8a8_qat_v6/qdq_vs_pytorch_summary.json \
-  --csv artifacts/deployment/runtime/rotated_w8a8_qat_v6/qdq_vs_pytorch.csv
-
-python deployment/scripts/qnn/eval_retrieval_quantized_vision.py \
-  --qdq-onnx artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_qdq_onnx \
-  --model-dir artifacts/deployment/exports/exported_model \
-  --json artifacts/deployment/runtime/rotated_w8a8_qat_v6/retrieval_r1.json
-```
-
-</details>
-
-<details>
-<summary><strong>RB3/QNN quick commands</strong></summary>
-
-Prepare smoke/calibration inputs:
-
-```bash
-python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
-  --dataset-root VN3K \
-  --split test \
-  --selection first \
-  --num-samples 10 \
-  --output-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
-  --path-mode relative
-
-python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
-  --dataset-root VN3K \
-  --split train \
-  --selection random \
-  --seed 2400 \
-  --num-samples 2000 \
-  --output-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_2000 \
-  --path-mode relative
-```
-
-Known vision calibration dataset:
-
-```text
-d7jzjy1m2 / msiglip-vision-vn3k-train-calib-2000
-```
-
-Compile/link a full context binary:
-
-```bash
-python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
-  --model artifacts/deployment/exports/exported_model_rotated_qat_v6/vision_onnx \
-  --calibration-data d7jzjy1m2 \
-  --weights-dtype int8 --activations-dtype int8 \
-  --wait \
-  --download artifacts/deployment/runtime/rotated_w8a8_qat_v6/vision_encoder.bin
-```
-
-Run on RB3:
-
-```bash
-qnn-net-run \
-  --backend "$QNN_LIB/libQnnHtp.so" \
-  --retrieve_context artifacts/deployment/runtime/rotated_w8a8_qat_v6/vision_encoder.bin \
-  --config_file deployment/config/qnn/htp_config_245.json \
-  --input_list artifacts/deployment/qnn_inputs/vn3k_test_10/input_list.txt \
-  --output_dir artifacts/deployment/qnn_runs/rotated_w8a8_qat_v6 \
-  --profiling_level basic \
-  --perf_profile high_performance
-```
-
-Compare board outputs against PyTorch:
-
-```bash
-python deployment/scripts/qnn/compare_qnn_with_pytorch.py \
-  --qnn-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_qat_v6 \
-  --model-dir artifacts/deployment/exports/exported_model \
-  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
-  --precision fp32 \
-  --json artifacts/deployment/qnn_runs/rotated_w8a8_qat_v6/qnn_vs_pytorch_summary.json \
-  --csv artifacts/deployment/qnn_runs/rotated_w8a8_qat_v6/qnn_vs_pytorch.csv
-```
-
-</details>
+> **All deployment commands live in one place.** The full reproducible v8 pipeline —
+> LoRA merge → learned rotation → QAT v8 → opset-20 ONNX export → AI Hub W8A8
+> quantize/compile/link → on-board `qnn-net-run` → and direct **INT8×INT8 retrieval on
+> the board** (vision + text) — is documented end-to-end in the runbook:
+>
+> ➡️ **[deployment/docs/runbook-w8a8-v8-both-int8.md](deployment/docs/runbook-w8a8-v8-both-int8.md)**
+>
+> For the mathematics and method behind it (no commands), see
+> **[deployment/docs/w8a8_qat_rotated.md](deployment/docs/w8a8_qat_rotated.md)**.
 
 <details>
 <summary><strong>QAT iteration history</strong></summary>
 
 | Candidate | Result | Decision |
 |---|---:|---|
-| Rotation-only W8A8 | QDQ `0.8975 / 0.8747`, T2I R@1 `45.42`, I2T R@1 `49.40` | Links/runs, retrieval gate FAIL |
-| QAT v3 | QDQ `0.9353 / 0.919`, T2I R@1 `48.20`, I2T R@1 `52.30` | First retrieval gate PASS |
-| QAT v4 | QDQ `0.9364 / 0.9091`, T2I R@1 `48.50`, I2T R@1 `52.95`; board `0.9363 / 0.9068` | Current board-verified deploy binary |
-| QAT v5 | QDQ `0.9437 / 0.9311`, T2I R@1 `49.25`, I2T R@1 `53.40` | Strong accuracy candidate |
-| **QAT v6** | QDQ `0.9491 / 0.9266`, T2I R@1 `49.30`, I2T R@1 `53.85` | Current best QDQ/retrieval candidate |
+| Rotation-only W8A8 | QDQ `0.8975 / 0.8747`, T2I R@1 `45.42`, I2T R@1 `49.40` | Links/runs, below `50` target (FAIL) |
+| QAT v3 | QDQ `0.9353 / 0.919`, T2I R@1 `48.20`, I2T R@1 `52.30` | First stable INT8, still below `50` target |
+| QAT v4 | QDQ `0.9364 / 0.9091`, T2I R@1 `48.50`, I2T R@1 `52.95`; board `0.9363 / 0.9068` | Board-verified binary, below `50` target |
+| QAT v5 | QDQ `0.9437 / 0.9311`, T2I R@1 `49.25`, I2T R@1 `53.40` | Below `50` target |
+| QAT v6 | QDQ `0.9491 / 0.9266`, T2I R@1 `49.30`, I2T R@1 `53.85` | Random-rotation ceiling, below `50` target |
 | QAT v7 | QDQ `0.9485 / 0.9083`, T2I R@1 `48.38`, I2T R@1 `53.05` | Regressed vs v6 |
-| QAT v8 planned | learned rotation + recipe v6 | Next ablation toward stretch target |
+| **QAT v8** | QDQ `0.9606 / 0.9447`, T2I R@1 `50.85`, I2T R@1 `52.90` | **Learned rotation — first to meet `50` target** |
 
 </details>
 

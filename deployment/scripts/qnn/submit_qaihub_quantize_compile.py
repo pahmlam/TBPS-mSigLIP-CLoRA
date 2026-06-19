@@ -108,13 +108,19 @@ def _prepare_static_onnx(
 
     src_onnx = _find_single_onnx(model_path)
     src_dir = src_onnx.parent
+    allowed_suffixes = {".onnx", ".data", ".encodings", ".bin"}
     if static_model_dir is None:
         static_model_dir = src_dir.with_name(f"{src_dir.name}_static")
     static_model_dir = static_model_dir.expanduser().resolve()
     static_model_dir.mkdir(parents=True, exist_ok=True)
 
+    # QAI Hub rejects model directories with helper metadata such as JSON/CSV.
+    # Keep the static copy to model payload files only.
+    for existing in static_model_dir.iterdir():
+        if existing.is_file() and existing.suffix not in allowed_suffixes:
+            existing.unlink()
     for source in src_dir.iterdir():
-        if source.is_file():
+        if source.is_file() and source.suffix in allowed_suffixes:
             shutil.copy2(source, static_model_dir / source.name)
 
     dst_onnx = static_model_dir / src_onnx.name

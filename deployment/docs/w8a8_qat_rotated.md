@@ -1,40 +1,54 @@
-# Rotated W8A8 + QAT: Deploying the mSigLIP Vision Encoder on RB3 Gen2 (HTP v68)
+# Rotated W8A8 + QAT: Mathematics & Method for the mSigLIP Vision + Text Encoders on RB3 Gen2 (HTP v68)
 
-> **Scope:** vision encoder deployment branch (best current result).
-> **Source checkpoint:** `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` (LoRA + Curriculum Circle, seed 2400).
+> **Scope:** this is the **theory and method** document for the vision-encoder deployment branch and the matching text-encoder finite-mask extension. It contains the mathematics of every transform and the reasoning behind every design choice. It contains **no commands, scripts, or code** — for the reproducible command sequence, AI Hub job IDs, and artifact paths, see the consolidated history in [`deployment/docs/journal/[deploy-master].md`](journal/[deploy-master].md).
+> **Source checkpoint:** LoRA + Curriculum Circle, seed 2400 (FP32 reference ≈ paper 52.28).
 > **Target device:** Qualcomm RB3 Gen2 / QCS6490 / Hexagon HTP **v68**.
-> **Best result:** vision-only **T2I Rank@1 = 48.20** (deploy gate ≥ 48 PASS), all-INT8 W8A8 context binary that links and runs on HTP v68.
-> **Canonical recipe:** `LoRA merge → mean-preserving rotation → opset-20 fused GELU/LayerNorm → quantization-aware finetune (EMA observer) → W8A8 quantize + compile/link → board run`.
-> **Cross-references:** consolidated deployment history in [`deployment/docs/journal/[deploy-master].md`](journal/[deploy-master].md); core scripts in `deployment/scripts/qnn/` and `deployment/scripts/lora_fp16/`.
+> **End-to-end result:** both-INT8 W8A8 QDQ proxy reaches **T2I Rank@1 = 50.25** and **I2T Rank@1 = 52.95**, passing the ≥50 deploy target with a `-2.03` T2I drop from the paper baseline `52.28`. Board-verified binary to date is QAT v4 (T2I R@1 ≈ 48.50, below the 50 target); v8/both-INT8 board verification is pending.
+> **Vision status:** vision-only **T2I Rank@1 = 50.85** (learned rotation, QAT v8; `-1.43` vs paper baseline `52.28`) on the all-INT8 W8A8 QDQ proxy.
+> **Text status:** text-only finite-mask W8A8 QDQ passes cosine and retrieval gates: QDQ cosine mean/min **0.9949 / 0.9912**, text-isolation T2I Rank@1 **51.65**.
 
-This is the canonical engineering document for the best deployment pipeline. It explains the hardware constraints that shape it, the mathematics of every transform, why earlier candidates failed, how to reproduce each stage, and the acceptance gates.
+This document explains the hardware constraints that *force* the pipeline, the mathematics of each transform (rotation, learned rotation, quantization-aware training, finite attention masking), why earlier candidates failed, and the acceptance gates that define success. The decisive acceptance metric throughout is **retrieval Rank@1**, not cosine — cosine is only a fidelity proxy (§8).
 
 ---
 
 ## 0. Result Summary
 
-| Stage of the journey | Configuration | QDQ cosine (mean/min) | Vision-only T2I R@1 | Gate (≥ 48) |
+The journey from naive W8A8 (which collapses retrieval) to the deployable best:
+
+| Stage | Method change | QDQ cosine (mean/min) | Vision-only T2I R@1 | Target (≥50) |
 |---|---|---:|---:|:--:|
-| FP32 reference | merged baseline | 1.000 | **52.40** (≈ paper 52.28) | — |
+| FP32 reference | merged baseline | 1.000 | **52.40** | — |
 | Rotation only | mean-preserving rotation + W8A8 | 0.8975 / 0.8747 | 45.42 | FAIL |
 | QAT v1 | + fake-quant distill (per-sample) | 0.9223 / 0.8917 | 46.92 | FAIL |
 | QAT v2 | + per-tensor fake-quant | 0.9281 / 0.9093 | 47.80 | FAIL |
-| **QAT v3** | **+ EMA observer (deploy-faithful)** | **0.9353 / 0.919** | **48.20** | **PASS** |
+| QAT v3 | + EMA observer (deploy-faithful) | 0.9353 / 0.919 | 48.20 | FAIL |
+| QAT v4 | + pooling-head fake-quant | 0.9364 / 0.9091 | 48.50 | FAIL (board-verified) |
+| QAT v5 | + per-linear fake-quant | 0.9437 / 0.9311 | 49.25 | FAIL |
+| QAT v6 | + attention-matmul fake-quant | 0.9491 / 0.9266 | 49.30 | FAIL (random-rotation ceiling) |
+| QAT v7 | v6 coverage + cosine LR + lr 2e-5 | 0.9485 / 0.9083 | 48.38 | FAIL (regress) |
+| **QAT v8** | **learned rotation + recipe v6** | **0.9606 / 0.9447** | **50.85** | **PASS** |
 
-On-device verification of the linked **QAT v4** W8A8 binary (HTP v68, `qnn-net-run`):
+Two facts frame everything below:
 
-| Metric | Value |
-|---|---:|
-| QNN(board) vs PyTorch cosine, mean / min | `0.9363` / `0.9068` (matches QDQ ONNX `0.9364` / `0.9091`, drift ≈ `0.0001`) |
-| NetRun latency (avg / min / max) | `32.70` / `31.6` / `34.2` ms / image |
-| HTP accelerator execute | `31.2 ms / image` (4 HVX threads) |
-| Throughput | `22.88 FPS` |
-| Context-binary load (one-time) | `53.3 ms` |
-| Context-binary size | `~90 MB` (INT8) |
+- **v6 is the ceiling of *random* rotation.** Widening fake-quant coverage (v3→v6) climbs from 48.20 to 49.30, then saturates — diminishing returns once every activation tensor is covered.
+- **v8 breaks that ceiling by changing the rotation itself**, not the QAT. Replacing the random mean-preserving `Q` with a *learned* one (same QAT recipe as v6) lifts T2I R@1 by **+1.55** to 50.85 and improves QDQ fidelity on both mean and min. Because only `Q` differs between v6 and v8, this is a clean ablation isolating "learned vs random rotation." (v7 is recorded as a cautionary regression: changing the LR schedule and doubling LR overshot the quantization minimum.)
 
-> The QAT v4 binary (`bin/w8a8_rotated_qat_v4/vision_encoder.bin`) is physically benchmarked on the board: links on v68, board fidelity `0.9363` matches its QDQ `0.9364` to ≈ `0.0001`, so its board T2I R@1 ≈ the QDQ **48.50**. The earlier rotation-only `rotated_w8a8_v2` binary (R@1 45.42, fidelity 0.898) has the same graph shape and latency/size — QAT raises R@1 by ~3 points at identical runtime cost (same all-INT8 graph; QAT only changes weight *values*).
+Text follows the same v8 recipe but needs one extra graph-level fix:
 
-The decisive acceptance metric is **retrieval Rank@1**, not cosine. Cosine is only a fidelity proxy; §9 explains why a `0.90` cosine still failed the gate while `0.9353` passes.
+| Text branch | Mask handling | Attention QDQ scale | QDQ cosine (mean/min) | Text-isolation T2I R@1 | Target |
+|---|---|---:|---:|---:|:--:|
+| v8 text, original ONNX | `-FLT_MAX` mask in `scores+mask` | ~`1e32` | collapse | collapse | FAIL |
+| **v8 text, finite mask** | **replace mask with `-32.0` before AI Hub quantize** | **0.3523 max** | **0.9949 / 0.9912** | **51.65** | **PASS** |
+
+The current end-to-end C1 deploy proxy uses both QDQ graphs together:
+
+| Combo | T2I R@1 | I2T R@1 | Interpretation |
+|---|---:|---:|---|
+| Paper baseline | **52.28** | — | main reporting baseline |
+| Local FP32 sanity | 52.40 | 55.30 | pipeline reproduction only, not the reporting baseline |
+| Vision INT8 only | 50.85 | 52.90 | `-1.43` T2I vs paper baseline |
+| Text INT8 only | 51.65 | 55.55 | `-0.63` T2I vs paper baseline |
+| **Both INT8** | **50.25** | **52.95** | **PASS**, `-2.03` T2I vs paper baseline |
 
 ---
 
@@ -42,108 +56,123 @@ The decisive acceptance metric is **retrieval Rank@1**, not cosine. Cosine is on
 
 RB3 Gen2 runs the Hexagon **HTP v68**. The QNN context-binary linker on v68 imposes hard constraints that eliminate most "easy" quantization paths:
 
-1. **Floating-point graph I/O is rejected.** Context binaries require integer (quantized) I/O. We therefore compile with `--quantize_io`.
-2. **Internal floating-point fallback fails to link.** Leaving sensitive layers in float (the "`_float` surgery" approach) passes local ONNX fidelity but the linker rejects internal float tensors (repeated `exit code 14`).
-3. **16-bit activations (A16) are only partially supported on v68.** Activation×activation matmuls (attention) and LayerNorm in A16 require a newer arch (`expected >= 73`). W8A16 reaches QDQ fidelity `0.9997` but the link **fails** on v68 at `node_MatMul_774` / `node_layer_norm`.
+1. **Floating-point graph I/O is rejected.** Context binaries require integer (quantized) I/O.
+2. **Internal floating-point fallback fails to link.** Leaving sensitive layers in float (the "`_float` surgery" approach) passes local ONNX fidelity but the linker rejects internal float tensors.
+3. **16-bit activations (A16) are only partially supported on v68.** Activation×activation matmuls (attention) and LayerNorm in A16 require a newer arch (≥ v73). W8A16 reaches QDQ fidelity ≈ 0.9997 but the **link fails** on v68 at the attention matmul / LayerNorm nodes.
 4. **All-INT8 (W8A8) is the path v68 supports broadly.**
 
-The conflict: the model *needs* high precision exactly where v68 *refuses* high precision (residual + LayerNorm). So the only deployable path is all-W8A8 — and we must make the network tolerate W8A8 instead of asking the hardware for more bits.
+The conflict: the model *needs* high precision exactly where v68 *refuses* it (residual stream + LayerNorm). So the only deployable path is all-W8A8 — and we must make the network **tolerate** W8A8 instead of asking the hardware for more bits.
 
-Naive per-tensor W8A8 collapses retrieval (cosine `0.14–0.17`). This is **not** an export or preprocessing bug — static ONNX vs PyTorch is `≈ 1.0`. The failure is in **activation quantization** inside the vision encoder. Two root causes, fixed by two transforms:
+Naive per-tensor W8A8 collapses retrieval (cosine ≈ 0.14–0.17). This is **not** an export or preprocessing bug — static ONNX vs PyTorch is ≈ 1.0. The failure is in **activation quantization** inside the encoder, with two root causes, fixed by two transforms:
 
-- **Decomposed cubic GELU** (export artifact) → fixed by **opset-20 GELU fusion** (§3).
-- **Massive activations / channel outliers** in the residual stream → fixed by **mean-preserving rotation** (§4), then the residual per-tensor error is recovered by **QAT** (§7).
+- **Decomposed cubic GELU** (an export artifact) → fixed by **opset-20 GELU fusion** (§4).
+- **Massive activations / channel outliers** in the residual stream → fixed by **rotation** (§5–§6), then residual per-tensor error is recovered by **QAT** (§7).
 
 Clipping the outliers was tried and failed: the outlier channels carry real signal, so clipping destroys information. The correct operation is to *redistribute* the energy (rotation), not remove it.
 
 ---
 
-## 2. Pipeline Overview
+## 2. Pipeline Overview (conceptual)
+
+The deployable path is a fixed sequence of mathematically motivated transforms. Each block lists *what it does* and *the invariant it preserves*:
 
 ```text
-[0] LoRA checkpoint  (epoch=56-val_score=52.28.ckpt)
-     │
-     ▼
-[1] MERGE LoRA            deployment/scripts/lora_fp16/export.py
-     │                    W_merged = W_base + (α/r)·B·A ; strip optimizer
-     ▼                    → exported_model/{model_fp32.pt, model_fp16.pt, config.yaml}
-[2] PREP INPUTS           deployment/scripts/qnn/prepare_vn3k_vision_inputs.py
-     │                    NCHW float32 .raw in [-1,1]; calib set d7jzjy1m2
-     ▼
-[3] ROTATE                deployment/scripts/qnn/rotate_vision_encoder.py
-     │                    mean-preserving orthogonal Q (Q·1=1); fold into weights
-     ▼                    residual concentration 252x → 5.3x ; FP32 output-invariant
-     │                    → exported_model_rotated/{model_fp32.pt, config.yaml}
-[4] QAT DISTILL           deployment/scripts/qnn/train_vision_quant_robust.py
-     │                    teacher=rotated FP32 (frozen); student=rotated + fake-quant
-     ▼                    per-tensor STE, EMA observer, layers 0–11, 8 epochs
-     │                    → exported_model_rotated_qat_v3/{model_fp32.pt, config.yaml}
-[5] EXPORT ONNX           deployment/scripts/qnn/export_rotated_vision_onnx.py
-     │                    opset 20: Gelu=13, LayerNormalization=26, Pow=0
-     ▼                    → .../vision_onnx/{vision_encoder.onnx, .onnx.data}
-[6] QUANTIZE + LINK       deployment/scripts/qnn/submit_qaihub_quantize_compile.py
-     │                    AI Hub W8A8 + compile DLC + link context binary
-     ▼                    --quantize_io ; device "RB3 Gen 2 Vision Kit"
-     │                    → runtime/<run>/vision_encoder.bin (89.7 MB)
-[7] BOARD RUN             qnn-net-run on HTP v68
-     │                    → qnn_runs/<run>/  (Output_*.raw, dequantized to float)
-     ▼
-[8] EVALUATE              compare_qnn_with_pytorch.py  (board fidelity, cosine)
-                          eval_retrieval_quantized_vision.py  (T2I R@1 — the gate)
+            ┌─────────────────────────────────────────────┐
+            │  FP32 reference model  (T2I R@1 = 52.40)   │
+            └─────────────────────┬───────────────────────┘
+                                  │
+            ┌─────────────────────▼───────────────────────┐
+   [1]      │  MERGE LoRA                                │
+            │  W ← W_base + (α/r)·B·A                    │   exact identity
+            └─────────────────────┬───────────────────────┘   (no behavior change)
+                                  │
+            ┌─────────────────────▼───────────────────────┐
+   [2]      │  FUSE GELU / LayerNorm  (opset-20)         │   cubic x³ & norm
+            │  hide tanh-GELU cubic + norm internals     │   internals never
+            └─────────────────────┬───────────────────────┘   exposed to quantizer
+                                  │
+            ┌─────────────────────▼─────────────────────--──┐
+   [3]      │  ROTATE residual stream                      │   ‖Qx‖₂ = ‖x‖₂
+            │  x → Qx,  Q orthogonal,  Q·1 = 1             │   LN(Qx) = Q·LN(x)
+            │  folded offline into weights (no runtime op) │   ⇒ FP32-invariant
+            │   |                                          │   μ ↓ to ≈√(2 ln d)
+            │   └── learned Q  ◀ v8   (min Σ max|aQᵀ|²)    │   max|a|: 124 → 14.6
+            └─────────────────────┬─────────────────────--──┘
+                                  │   (steps 1–3 change representation, not function)
+            ┌─────────────────────▼───────────────────--────┐
+   [4]      │  QAT  (teacher–student distillation)         │   trains weight VALUES
+            │  per-tensor STE fake-quant + EMA observer    │   to tolerate INT8;
+            │  teacher = rotated FP32 (frozen)             │   INT8 emb ≈ FP32 emb
+            └─────────────────────┬───────────────────--────┘
+                                  │
+            ┌─────────────────────▼───────────────────--────┐
+   [5]      │  W8A8 QUANTIZE → COMPILE → LINK              │   integer I/O,
+            │  all-INT8 context binary for HTP v68         │   links on v68
+            └─────────────────────┬────────────────────--───┘
+                                  │
+            ┌─────────────────────▼───────────────────--────┐
+   [6]      │  BOARD RUN + EVALUATE                        │   decisive metric:
+            │  retrieval Rank@1  (text kept FP32)          │   T2I R@1 ≥ 50 target
+            └──────────────────────────────────────────--───┘
+                  v8 (learned rotation): T2I R@1 = 50.85
 ```
 
-All generated artifacts live under `artifacts/deployment/`.
+In words:
+
+1. **Merge LoRA** into the base weights so the exported model is an ordinary inference network (§3).
+2. **Fuse GELU/LayerNorm via opset-20 export** so the tanh-GELU cubic and the normalization internals are never exposed as quantized tensors (§4).
+3. **Rotate the residual stream** by a mean-preserving orthogonal `Q`, folded offline into the weights, to remove channel outliers while keeping fused LayerNorm (§5–§6). The rotation is either *random* (v1–v7) or **learned** (v8, §6A).
+4. **Quantization-aware finetune** (teacher–student distillation, per-tensor straight-through fake-quant, EMA observer) to train the weights to tolerate the deploy-faithful INT8 quantizer (§7).
+5. **Quantize to W8A8, compile, and link** a context binary with integer I/O for HTP v68 (§8).
+6. **Run on board and evaluate** by retrieval Rank@1 — the decisive metric, target ≥ 50 (§8).
+
+Every transform in steps 1–3 is **output-invariant in FP32**: it changes the *representation*, not the function. Steps 4 is the only one that changes weight *values*. This invariance is what makes each stage independently checkable (§9).
 
 ---
 
 ## 2A. Theoretical Foundations & Related Work (the *why* behind each choice)
 
-This pipeline is an engineering composition of three research lines — **outlier-aware quantization**, **rotation / incoherence processing**, and **quantization-aware training** — adapted to a constraint most of that literature never faces: an INT8-only NPU (HTP v68) that rejects 16-bit activations *and* internal float. This section gives the reasoning and the mathematics that motivate the design, with references.
+This pipeline is an engineering composition of three research lines — **outlier-aware quantization**, **rotation / incoherence processing**, and **quantization-aware training** — adapted to a constraint most of that literature never faces: an INT8-only NPU (HTP v68) that rejects 16-bit activations *and* internal float.
 
 ### 2A.1 The problem: transformer activations have outliers that defeat per-tensor INT8
 
-Transformers develop a few *outlier* / *massive* activation channels whose magnitude is orders larger than the rest, concentrated in the residual stream; the effect grows with scale and is now well documented — **LLM.int8()** [4], **SmoothQuant** [5], **Massive Activations** [6]. Per-tensor symmetric INT8 uses a single scale
+Transformers develop a few *outlier* / *massive* activation channels whose magnitude is orders larger than the rest, concentrated in the residual stream; the effect grows with scale and is well documented — **LLM.int8()** [4], **SmoothQuant** [5], **Massive Activations** [6]. Per-tensor symmetric INT8 uses a single scale
 
-$$s=\max_i|x_i|/(2^{b-1}-1)$$,
+$$s=\max_i|x_i|/(2^{b-1}-1),$$
 
-so one outlier inflates $s$ and the remaining channels — which carry the *direction* that L2-normalized retrieval depends on — collapse onto a few levels. Our measured residual concentration of $252\times$ and the plain-W8A8 collapse to cosine $0.14$ (§6.1, §1) are the vision-encoder instance of exactly this phenomenon.
+so one outlier inflates $s$ and the remaining channels — which carry the *direction* that L2-normalized retrieval depends on — collapse onto a few levels. The measured residual concentration of $252\times$ and the plain-W8A8 collapse to cosine $0.14$ (§1, §6.1) are the vision-encoder instance of exactly this phenomenon.
 
-The literature offers two cures: **(i)** keep/migrate the outliers in higher precision — mixed-precision (LLM.int8() [4]), activation→weight scale migration (SmoothQuant [5]), activation-aware weight quant (AWQ [7]); or **(ii)** make the representation *incoherent* by an orthogonal transform so no coordinate is special. **HTP v68's broad ban on A16 eliminates family (i)** (16-bit activations / mixed precision fail to link,§1), which is precisely why we are pushed onto family (ii).
+The literature offers two cures: **(i)** keep/migrate the outliers in higher precision — mixed-precision (LLM.int8() [4]), activation→weight scale migration (SmoothQuant [5]), activation-aware weight quant (AWQ [7]); or **(ii)** make the representation *incoherent* by an orthogonal transform so no coordinate is special. **HTP v68's broad ban on A16 eliminates family (i)** (16-bit / mixed precision fail to link, §1), which is precisely why we are pushed onto family (ii).
 
 ### 2A.2 Rotation as computational invariance folded into weights
 
-- **SliceGPT** [8] established *computational invariance*: inserting $QQ^\top$ ($Q$ orthogonal) on the residual stream and folding $Q$ into adjacent weights leaves the network's function unchanged. Our offline weight folding (§6.5) is exactly this.
-- **QuaRot** [9] uses randomized Hadamard rotations to remove outliers before 4-bit inference, folding some rotations offline and doing others online via fast Hadamard. Our residual rotation is the **offline, fully-fused** variant (no runtime op — a hard requirement on v68); our rejected R2 (§6, §10) was a head-dim Hadamard in the same spirit.
-- **QuIP / QuIP#** [10, 11] formalize *incoherence processing*: random-orthogonal or Hadamard transforms make weights/Hessians incoherent, with provable error bounds. This supplies the mathematical "why" below.
-- **SpinQuant** [12] *learns* the rotation instead of using a fixed random/Hadamard one — the natural next lever if the stretch gate (R@1 ≥ 50) needs more than QAT.
+- **SliceGPT** [8] established *computational invariance*: inserting $QQ^\top$ ($Q$ orthogonal) on the residual stream and folding $Q$ into adjacent weights leaves the network's function unchanged. Our offline weight folding (§6.4–§6.5) is exactly this.
+- **QuaRot** [9] uses randomized Hadamard rotations to remove outliers before low-bit inference, folding some rotations offline and others online via fast Hadamard. Our residual rotation is the **offline, fully-fused** variant (no runtime op — a hard requirement on v68).
+- **QuIP / QuIP#** [10, 11] formalize *incoherence processing*: random-orthogonal or Hadamard transforms make weights/Hessians incoherent, with provable error bounds. This supplies the mathematical "why" in §2A.3.
+- **SpinQuant** [12] *learns* the rotation instead of using a fixed random/Hadamard one. We **adopt this** for v8 (§6A): learning $Q$ against the encoder's own activation statistics is what broke the random-rotation ceiling and met the 50 target.
 
 ### 2A.3 Mathematical motivation — why a rotation lowers per-tensor error
 
-Uniform quantization error per coordinate has variance $\approx s^2/12$ with
-
-$$s \propto \max_i|x_i|$$
-
-So **per-tensor error scales with the dynamic range $\max_i|x_i|$, not the energy $\lVert x\rVert_2$.** Define the *incoherence*
+Uniform quantization error per coordinate has variance $\approx s^2/12$ with $s \propto \max_i|x_i|$. So **per-tensor error scales with the dynamic range $\max_i|x_i|$, not the energy $\lVert x\rVert_2$.** Define the *incoherence*
 
 $$ \mu(x) \;=\; \frac{\sqrt{d}\,\max_i |x_i|}{\lVert x\rVert_2} \;\in\; [\,1,\ \sqrt{d}\,]. $$
 
-An outlier-dominated vector has $\mu\approx\sqrt{d}$ (worst case, $x=\lVert x\rVert e_k$); a perfectly spread vector has $\mu\approx 1$ (best case). Quantization error for fixed energy is monotone in $\mu$, so the goal is to **minimize $\mu$** — the QuIP incoherence objective [10]. An orthogonal $Q$ preserves energy ($\lVert Qx\rVert_2 = \lVert x\rVert_2$) but changes $\mu$: for a random orthogonal $Q$ the coordinates of $Qx$ behave like $\mathcal N(0,\lVert x\rVert_2^2/d)$, so
+An outlier-dominated vector has $\mu\approx\sqrt{d}$ (worst case, $x=\lVert x\rVert e_k$); a perfectly spread vector has $\mu\approx 1$. Quantization error for fixed energy is monotone in $\mu$, so the goal is to **minimize $\mu$** — the QuIP incoherence objective [10]. An orthogonal $Q$ preserves energy ($\lVert Qx\rVert_2 = \lVert x\rVert_2$) but changes $\mu$: for a random orthogonal $Q$ the coordinates of $Qx$ behave like $\mathcal N(0,\lVert x\rVert_2^2/d)$, so
 
 $$ \max_i |(Qx)_i| \;\approx\; \frac{\lVert x\rVert_2}{\sqrt{d}}\sqrt{2\ln d}
 \quad\Longrightarrow\quad \mu(Qx)\approx \sqrt{2\ln d}, $$
 
-versus $\mu(x)$ up to $\sqrt{d}$ for an outlier vector. 
+versus $\mu(x)$ up to $\sqrt{d}$ for an outlier vector. For $d=768$ that is $\sqrt{2\ln d}\approx 3.6$ against $\sqrt d\approx 27.7$ — a dynamic-range (hence scale, hence error) reduction of up to $\sim 8\times$ from a *random* rotation alone; combined with the specific outlier structure of this encoder it produces the observed $252\times \to 5.3\times$ concentration drop (§6.6).
 
-For $d=768$ that is $\sqrt{2\ln d}\approx 3.6$ against $\sqrt d\approx 27.7$ — a dynamic-range (hence scale, hence error) reduction of up to $\sim 8\times$ from the rotation alone; combined
-with the specific outlier structure of this encoder it produces the observed $252\times \to 5.3\times$ concentration drop (§6.6). A **Hadamard** matrix (entries $\pm 1/\sqrt d$) is the deterministic optimum ($\mu=1$ on its worst input), which is why R2 used a Sylvester–Hadamard on the head-dim; the residual uses a random *mean-preserving* orthogonal (next).
+A **Hadamard** matrix (entries $\pm 1/\sqrt d$) is the deterministic optimum ($\mu=1$ on its worst input). A **learned** rotation (§6A) goes one step further than both random and Hadamard: rather than minimizing a *worst-case* bound, it minimizes the *actual* dynamic range averaged over this network's calibration activations — which is why v8 beats every random-rotation round.
 
 ### 2A.4 Our adaptation: the mean-preserving constraint (the non-obvious twist)
 
-QuaRot/SliceGPT target LLaMA-style models whose norm is **RMSNorm** (no mean subtraction), so *any* orthogonal $Q$ commutes through the norm for free. mSigLIP's vision encoder uses **LayerNorm** (with mean subtraction). Converting LN→RMSNorm to admit an arbitrary $Q$ — the textbook move — *backfired on HTP*: RMSNorm decomposes to $\mathrm{Pow}(x^2)/\mathrm{ReduceMean}/\mathrm{Div}$ and re-exposes the normalization internals to the per-tensor quantizer (collapse to cosine $0.16$, §10). Our resolution is to **keep fused LayerNorm and instead constrain the rotation** to fix the mean axis, $Q\mathbf 1=\mathbf 1$, so $\mathrm{LN}(Qx)=Q\,\mathrm{LN}(x)$ holds (§6.3). This confines the rotation to the $(d{-}1)$-dim subspace orthogonal to $\mathbf 1$ — the same subspace where the outliers live — and is, as far as we know, the practical adaptation that makes QuaRot-style equalization compatible with a **fused-LayerNorm vision encoder on an INT8-only NPU**.
+QuaRot/SliceGPT target LLaMA-style models whose norm is **RMSNorm** (no mean subtraction), so *any* orthogonal $Q$ commutes through the norm for free. mSigLIP's vision encoder uses **LayerNorm** (with mean subtraction). Converting LN→RMSNorm to admit an arbitrary $Q$ — the textbook move — *backfired on HTP*: RMSNorm decomposes to $\mathrm{Pow}(x^2)/\mathrm{ReduceMean}/\mathrm{Div}$ and re-exposes the normalization internals to the per-tensor quantizer (collapse to cosine $0.16$, §10). Our resolution is to **keep fused LayerNorm and instead constrain the rotation** to fix the mean axis, $Q\mathbf 1=\mathbf 1$, so $\mathrm{LN}(Qx)=Q\,\mathrm{LN}(x)$ holds (§6.3). This confines the rotation to the $(d{-}1)$-dim subspace orthogonal to $\mathbf 1$ — the same subspace where the outliers live — and is, as far as we know, the practical adaptation that makes QuaRot-style equalization (and SpinQuant-style learned rotation) compatible with a **fused-LayerNorm vision encoder on an INT8-only NPU**.
 
 ### 2A.5 QAT: training the weights to tolerate the *deploy-faithful* quantizer
 
-Rotation removes concentration but leaves ordinary per-tensor INT8 error accumulating over 12 blocks (§10). Quantization-aware training closes the gap: forward through fake-quant, backward through the **straight-through estimator** [13]; per-tensor fake-quant with **moving-average (EMA) min-max observers** is the standard integer-inference recipe [14, 15]; learnable step sizes (LSQ [16]) are a refinement we did not need. We distill rather than retrain on the task loss: a **teacher–student** [17] setup with the FP32 (rotated) model as frozen teacher and the fake-quant model as student, matching embeddings (cosine + MSE). This is vision-only and label-free, and it directly optimizes the deployment contract — *INT8 embedding ≈ FP32 embedding* — which is what retrieval R@1 depends on. The decisive lesson (§7.3) is **observer faithfulness**: a per-sample/dynamic simulated scale inflates training cosine but does not transfer; matching AI Hub's *calibrate-once, per-tensor* scheme with a per-tensor EMA observer is what crossed the gate ($0.9281\to0.9353$, R@1 $47.80\to48.20$).
+Rotation removes concentration but leaves ordinary per-tensor INT8 error accumulating over 12 blocks (§10). Quantization-aware training closes the gap: forward through fake-quant, backward through the **straight-through estimator** [13]; per-tensor fake-quant with **moving-average (EMA) min-max observers** is the standard integer-inference recipe [14, 15]; learnable step sizes (LSQ [16]) are a refinement we did not need. We distill rather than retrain on the task loss: a **teacher–student** [17] setup with the FP32 (rotated) model as frozen teacher and the fake-quant model as student, matching embeddings (cosine + MSE). This is vision-only and label-free, and it directly optimizes the deployment contract — *INT8 embedding ≈ FP32 embedding* — which is what retrieval R@1 depends on. The decisive lesson (§7.3) is **observer faithfulness**: a per-sample/dynamic simulated scale inflates training cosine but does not transfer; matching AI Hub's *calibrate-once, per-tensor* scheme with a per-tensor EMA observer is what crossed the gate.
 
 ### 2A.6 Backbone & training context
 
@@ -153,101 +182,53 @@ The backbone is **SigLIP** [2] (sigmoid image–text contrastive pretraining), m
 
 ## 3. Stage [1] — Merge LoRA Into the Base Model
 
-**Script:** `deployment/scripts/lora_fp16/export.py`
-
-```bash
-python deployment/scripts/lora_fp16/export.py \
-  --ckpt artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt \
-  --output-dir artifacts/deployment/exports/exported_model
-```
-
-The training checkpoint is a PyTorch Lightning checkpoint with PEFT LoRA adapters. Qualcomm tooling only sees exported weights; it has no notion of LoRA. LoRA modifies a dense weight matrix as
+The training checkpoint carries PEFT LoRA adapters; Qualcomm tooling has no notion of LoRA. LoRA modifies a dense weight matrix as
 
 $$ W_{\text{merged}} = W_{\text{base}} + \frac{\alpha}{r}\, B A, $$
 
-where $W_{\text{base}}$ is the frozen pretrained weight, $A \in \mathbb{R}^{r\times d}$ and $B \in \mathbb{R}^{d\times r}$ are the low-rank factors, $r$ the rank, and $\alpha$ the LoRA scale. The script rebuilds `LitTBPS`, applies the configured LoRA setup, loads the checkpoint, then calls PEFT `merge_and_unload()` so the backbone becomes an ordinary inference model.
+where $W_{\text{base}}$ is the frozen pretrained weight, $A \in \mathbb{R}^{r\times d}$ and $B \in \mathbb{R}^{d\times r}$ are the low-rank factors, $r$ the rank, $\alpha$ the LoRA scale. Merging produces an ordinary inference model with **no** adapter / base-layer keys. This merged FP32 model is the reference for all subsequent ONNX export and fidelity comparisons.
 
-**Verification (must pass):** `model_fp32.pt` contains **0 keys** matching `lora` / `adapter` / `base_layer`. Keys look like `backbone.vision_model...k_proj.weight`.
-
-`model_fp32.pt` is the reference for ONNX export and all fidelity comparisons; `model_fp16.pt` is for size/fallback experiments. **Rule:** when switching to a different checkpoint (e.g. a future 53.00 model with Part-Align + Attn/FFN LoRA), rerun from this stage — rotation/quantization artifacts are model-specific and must be regenerated.
+**Method rule:** rotation/quantization artifacts are *model-specific*. Switching to a different checkpoint requires regenerating every downstream stage from the merge.
 
 ---
 
-## 4. Stage [2] — Calibration & Smoke Inputs
-
-**Script:** `deployment/scripts/qnn/prepare_vn3k_vision_inputs.py`
-
-```bash
-# 10-image smoke set (fidelity comparisons)
-python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
-  --dataset-root VN3K --split test --selection first --num-samples 10 \
-  --output-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --path-mode relative
-
-# 2000-image calibration set (AI Hub quantizer)
-python deployment/scripts/qnn/prepare_vn3k_vision_inputs.py \
-  --dataset-root VN3K --split train --selection random --seed 2400 --num-samples 2000 \
-  --output-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_2000 --path-mode relative
-```
-
-Known AI Hub calibration dataset: `d7jzjy1m2` (`msiglip-vision-vn3k-train-calib-2000`).
-
-**Preprocessing** (must match training exactly): RGB → resize `256×256` bicubic → `ToTensor` (NCHW) → `Normalize(mean=0.5, std=0.5)` → float32 in `[-1, 1]`. Each raw input is `1×3×256×256` float32 = `786432` bytes. Using identical `.raw` tensors for `qnn-net-run` and the local PyTorch/ONNX comparisons isolates quantization/runtime error from any image-decoding drift.
-
----
-
-## 5. Stage [3] — Opset-20 Fused GELU (and Fused LayerNorm)
+## 4. Stage [2] — Opset-20 Fused GELU (and Fused LayerNorm)
 
 The mSigLIP MLP uses the tanh GELU approximation:
 
 $$ \mathrm{GELU}(x) = 0.5\,x\left[1 + \tanh\!\left(\sqrt{\tfrac{2}{\pi}}\,(x + 0.044715\,x^3)\right)\right]. $$
 
-When exported at **opset 18**, ONNX has no `Gelu` op, so this decomposes into primitives including `Pow(x, 3)`. The internal $x^3$ term reaches activation magnitudes around `119k`, which completely dominates any per-tensor quantization scale. This single artifact explains a whole family of historical failures: W8A16 link failures clustered around `gelu_*` tensors, and "SmoothQuant is neutral" observations.
+At low opset, ONNX has no `Gelu` op, so this **decomposes** into primitives including $\mathrm{Pow}(x,3)$. The internal $x^3$ term reaches activation magnitudes around $10^5$, which completely dominates any per-tensor quantization scale. This single artifact explains a whole family of historical failures (W8A16 link failures clustered around GELU tensors; "SmoothQuant is neutral" observations).
 
-**Fix:** export at **opset 20**, where `Gelu` is a fused operator. The cubic stays *inside* the runtime/HTP operator and is never exposed as a quantized tensor. The successful ONNX op signature is:
+**Method fix:** export at **opset 20**, where `Gelu` is a *fused* operator and HTP executes the cubic *inside* the runtime op — it is never exposed as a quantized tensor. The same applies to fused `LayerNormalization`. Every successful branch keeps opset-20 fused GELU + fused LayerNorm; any export that re-exposes `Pow`/`ReduceMean` clusters is not the successful pipeline.
 
-```text
-Gelu = 13     Pow = 0     Tanh = 0     LayerNormalization = 26     ReduceMean = 0
-```
-
-Every successful branch after this breakthrough keeps **opset 20 + fused Gelu + fused LayerNormalization**. (HTP has native GELU and LayerNorm, so these fused ops link safely.)
+Calibration/smoke inputs must use **exactly** the training preprocessing (RGB → resize 256×256 bicubic → normalize to $[-1,1]$, NCHW float32). Using identical input tensors for board runs and local comparisons isolates quantization/runtime error from any image-decoding drift.
 
 ---
 
-## 6. Stage [3 cont.] — Mean-Preserving Rotation Equalization
+## 5. Stage [3] — Mean-Preserving Rotation Equalization
 
-**Script:** `deployment/scripts/qnn/rotate_vision_encoder.py`
-
-```bash
-python deployment/scripts/qnn/rotate_vision_encoder.py \
-  --model-dir artifacts/deployment/exports/exported_model \
-  --output-dir artifacts/deployment/exports/exported_model_rotated \
-  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 \
-  --seed 2400 --skip-r2
-```
-
-> `--skip-r2` reproduces the canonical pre-R2 rotated model. Phase C (R2, a head-dim Hadamard on the attention value/output path) is implemented but was **rejected** — it aimed at the value path while the residual error is in the MLP activations (§10), so it did not help and slightly hurt.
-
-### 6.1 The per-tensor quantization problem
+### 5.1 The per-tensor quantization problem
 
 Per-tensor symmetric INT8 uses one scale $s$ for the whole tensor:
 
 $$ x_{\text{int}} = \mathrm{round}(x/s), \qquad \hat{x} = s\cdot x_{\text{int}}, \qquad s = \frac{\max_i |x_i|}{2^{b-1}-1}. $$
 
-If one channel is much larger than the rest, $s$ is set by that outlier and ordinary channels (e.g. magnitude ~6) collapse to a handful of quantization levels. For retrieval this is fatal: the metric depends on the embedding **direction** after L2 normalization, not on raw scale. Measured residual-stream concentration before rotation is ≈ `252×` (worst-channel abs-max over median), with absolute peaks in the thousands.
+If one channel is much larger than the rest, $s$ is set by that outlier and ordinary channels collapse to a handful of levels. For retrieval this is fatal: the metric depends on embedding **direction** after L2 normalization, not raw scale. Measured residual-stream concentration before rotation is $\approx 252\times$ (worst-channel abs-max over median).
 
-### 6.2 Rotation idea: redistribute, don't clip
+### 5.2 Rotation idea: redistribute, don't clip
 
-Let $x \in \mathbb{R}^{d}$ ($d=768$) be a residual vector and $Q$ an orthogonal matrix. Represent the residual stream as $x_{\text{rot}} = Qx$. Because $Q$ is orthogonal,
+Let $x \in \mathbb{R}^{d}$ ($d=768$) be a residual vector and $Q$ orthogonal. Represent the residual stream as $x_{\text{rot}} = Qx$. Because $Q$ is orthogonal,
 
 $$ \lVert Qx \rVert_2 = \lVert x \rVert_2 . $$
 
-The semantic content (norms, inner products, hence cosine similarity) is preserved exactly, but a spiky channel's energy is spread across many coordinates, so per-tensor INT8 is no longer dominated by one coordinate. $Q$ is **folded offline** into existing weights — no new runtime `MatMul`. This is the computational invariance of SliceGPT [8] combined with the incoherence rationale of QuIP [10] / QuaRot [9]; see §2A.3 for the error bound.
+Norms, inner products, and cosine similarity are preserved exactly, but a spiky channel's energy is spread across many coordinates, so per-tensor INT8 is no longer dominated by one coordinate. $Q$ is **folded offline** into existing weights — no new runtime `MatMul`. This is SliceGPT computational invariance [8] combined with the QuIP/QuaRot incoherence rationale [9, 10]; see §2A.3 for the error bound.
 
-### 6.3 Why $Q$ must preserve the mean
+### 5.3 Why $Q$ must preserve the mean
 
-An earlier version converted LayerNorm → RMSNorm so an arbitrary orthogonal $Q$ would commute through normalization. It failed: RMSNorm exports as `Pow(x,2)` + `ReduceMean` + division, re-exposing normalization internals to the quantizer and collapsing W8A8 again (cosine `0.16`, §10).
+An earlier version converted LayerNorm → RMSNorm so an arbitrary orthogonal $Q$ would commute through normalization. It failed: RMSNorm exports as $\mathrm{Pow}(x,2)$ + $\mathrm{ReduceMean}$ + division, re-exposing normalization internals to the quantizer and collapsing W8A8 again (cosine $0.16$, §10).
 
-The successful version keeps **fused LayerNorm**, so $Q$ must commute with LayerNorm. For identity-affine LayerNorm,
+The successful version keeps **fused LayerNorm**, so $Q$ must commute with it. For identity-affine LayerNorm,
 
 $$ \mathrm{LN}(x) = \frac{x - \mathrm{mean}(x)\,\mathbf{1}}{\mathrm{std}(x)} . $$
 
@@ -259,21 +240,21 @@ Then $\mathrm{mean}(Qx) = \tfrac{1}{d}\mathbf{1}^{\top}Qx = \tfrac{1}{d}\mathbf{
 
 $$ \mathrm{LN}(Qx) = Q\,\mathrm{LN}(x). $$
 
-So we can rotate the residual stream and keep `LayerNormalization` fused. The construction (`_mean_preserving_orthogonal`):
+So we can rotate the residual stream and keep `LayerNormalization` fused. The **random** construction is
 
 $$ Q = U\, \mathrm{blockdiag}(1, R_c)\, U^{\top}, \qquad U[:,0] = \mathbf{1}/\sqrt{d}, $$
 
-where $R_c$ is a random orthogonal matrix on the $(d-1)$-dimensional complement of the mean axis. $Q$ is identity on the mean direction and a random rotation on the complement — exactly where channel outliers live.
+where $R_c$ is a random orthogonal matrix on the $(d-1)$-dimensional complement of the mean axis. $Q$ is identity on the mean direction and a rotation on the complement — exactly where channel outliers live. The same parametrization, with $R_c$ **learned** instead of random, gives the v8 rotation (§6A).
 
-### 6.4 Folding affine into the reader
+### 5.4 Folding affine into the reader
 
 LayerNorm has affine params $\mathrm{LN}_{\text{affine}}(x) = \gamma \odot \mathrm{LN}_{\text{id}}(x) + \beta$. For a linear consumer $y = W(\gamma \odot h + \beta) + b$, fold the affine into the reader:
 
 $$ W' = W\,\mathrm{diag}(\gamma), \qquad b' = b + W\beta, $$
 
-then set LN affine to identity ($\gamma=1, \beta=0$). Same FP32 function, now rotation-compatible. Folded readers: `q/k/v_proj` after `layer_norm1`; `mlp.fc1` after `layer_norm2`; K/V slices of `head.attention` after `post_layernorm`.
+then set LN affine to identity ($\gamma=1, \beta=0$). Same FP32 function, now rotation-compatible. Folded readers: $q/k/v$ projections after `layer_norm1`; `mlp.fc1` after `layer_norm2`; K/V slices of the pooling head after `post_layernorm`.
 
-### 6.5 Folding $Q$ into writers and $Q^{\top}$ into readers
+### 5.5 Folding $Q$ into writers and $Q^{\top}$ into readers
 
 A residual **writer** $y = Wx + b$ must now emit $Qy$:
 
@@ -285,56 +266,96 @@ A residual **reader** sees $x_{\text{rot}} = Qx$ and must recover the original b
 
 $$ W' = W Q^{\top}. $$
 
-Readers: every `q/k/v_proj`, every `mlp.fc1`, and the K/V slices of the pooling-head attention. The learned head query/probe is *not* rotated — rotation is localized in the encoder residual stream and undone at the head K/V boundary.
+Readers: every $q/k/v$ projection, every `mlp.fc1`, and the K/V slices of the pooling-head attention. The learned head query/probe is *not* rotated — rotation is localized in the encoder residual stream and undone at the head K/V boundary.
 
-### 6.6 Acceptance gates (rotation is accepted only if FP32 is invariant)
+### 5.6 Acceptance gates (rotation is accepted only if FP32 is invariant)
 
-```text
-Phase A invariance cosine mean/min ≈ 1.0
-Phase B invariance cosine mean/min ≈ 1.0
-Q orthogonality max error ≈ 3e-15
-Q·1 = 1 max error ≈ 1e-14
-reload cosine ≈ 1.0   (min 0.99999988)
-residual concentration: 252x → 5.3x
-```
+Because rotation is an orthogonal, mean-preserving change of basis, the FP32 embedding must be **exactly** invariant. The rotation is accepted only if:
 
-The drop `252× → 5.3×` is the quantization payoff: the signal is still present, just no longer concentrated in one dominant channel.
+- Phase A (affine fold) and Phase B (Q fold) invariance cosine mean/min $\approx 1.0$;
+- $Q$ orthogonality error $\lVert Q^\top Q - I\rVert_{\max} \approx 3\times10^{-15}$;
+- mean-preservation error $\lVert Q\mathbf 1 - \mathbf 1\rVert_{\max} \approx 10^{-14}$;
+- reload cosine $\approx 1.0$ (min $\geq 0.9999$);
+- residual concentration drops $252\times \to 5.3\times$ (random rotation).
+
+The concentration drop is the quantization payoff: the signal is still present, just no longer concentrated in one dominant channel.
+
+---
+
+## 6A. Stage [3, learned variant] — Learned Rotation (SpinQuant-style, the v8 method)
+
+A random orthogonal $R_c$ achieves the *expected* incoherence $\mu \approx \sqrt{2\ln d}$ (§2A.3), but it is blind to **this** encoder's actual activation distribution. SpinQuant [12] shows that *learning* the rotation against calibration statistics beats random/Hadamard. v8 adapts this to the mean-preserving constraint, and it is what broke the random-rotation ceiling (49.30 → 50.85).
+
+### 6A.1 Objective: directly minimize the quantity that sets the INT8 scale
+
+At each residual **rotation site** (the outputs of `layer_norm1`, `layer_norm2`, `out_proj`, `fc2`, `post_layernorm`), the per-tensor INT8 scale is $s = \max|a| / 127$. The quantity that *sets the error budget* is therefore the post-rotation dynamic range $\max|aQ^\top|$. We minimize, over the calibration set, the sum of squared max-abs across all rotation sites:
+
+$$ \min_{Q}\ \sum_{\text{sites}} \mathbb{E}_{a\sim\text{calib}}\Big[\big(\max_{ij} |(a\,Q^{\top})_{ij}|\big)^2\Big]
+\qquad \text{s.t.}\quad QQ^\top = I,\ \ Q\mathbf 1 = \mathbf 1. $$
+
+### 6A.2 Why max-abs², not quantization-MSE
+
+The intuitive objective — minimize $\lVert q(aQ^\top) - aQ^\top\rVert^2$ — has **zero gradient** with respect to $Q$. Under the straight-through estimator (§7.2), $q(x)-x$ is detached on the backward pass, so $\partial/\partial Q$ of the quant-MSE vanishes. By contrast, $\big(\max|aQ^\top|\big)^2$ is differentiable in $Q$ (the $\max$ is subdifferentiable, selecting the argmax coordinate; abs is subdifferentiable) **and is exactly the quantity that determines the per-tensor scale**. Minimizing it directly shrinks $s$, which shrinks the clipping + rounding error budget — the lever that quant-MSE cannot reach through STE.
+
+### 6A.3 Cayley parametrization (orthogonal *and* mean-preserving at every step)
+
+To keep $Q$ on the constraint manifold throughout Adam, we parametrize
+
+$$ Q = U \,\mathrm{blockdiag}\big(1,\ \mathrm{Cayley}(S)\big)\, U^{\top},
+\qquad U[:,0] = \mathbf 1/\sqrt d, $$
+
+where $S \in \mathbb{R}^{(d-1)\times(d-1)}$ is a **learnable skew-symmetric** matrix ($S = -S^\top$) and
+
+$$ \mathrm{Cayley}(S) = (I - S)(I + S)^{-1} $$
+
+is orthogonal for *any* skew $S$ (the Cayley transform maps skew-symmetric matrices to special-orthogonal ones). Pinning the first column of $U$ to $\mathbf 1/\sqrt d$ makes $\mathbf 1$ a fixed eigenvector with eigenvalue $1$, so $Q\mathbf 1 = \mathbf 1$ holds **exactly**, and the block structure guarantees $QQ^\top = I$ **exactly** — at every optimization step, not just at convergence. This is the same constraint subspace as the random construction (§5.3); only $R_c = \mathrm{Cayley}(S)$ is now learned.
+
+### 6A.4 Method (offline, calibration-only)
+
+1. **Phase A:** fold LayerNorm affine into the reader and set LN to identity (§5.4), so the rotation sites are clean.
+2. **Collect activations** at the rotation sites on a calibration subset of images.
+3. **Optimize $S$** with Adam against the objective in §6A.1. Numerical detail: optimize in float32 (float64 matmuls are throttled to $\sim\!1/32$–$1/64$ of float32 on consumer GPUs), then fold the *final* $Q$ in float64 for precision.
+4. **Phase B:** fold the learned $Q$ into writers and $Q^\top$ into readers (§5.5). The output is a drop-in replacement for the randomly-rotated model — identical shapes, identical FP32 function — that flows through the same export/QAT/quantize/eval stages.
+
+### 6A.5 Result and ablation
+
+Measured on the vision encoder (256 calib images, 32 tokens/image, 3000 steps):
+
+- **Objective:** $46281 \to 861$ (−98.1%).
+- **Dynamic range** $\max|a|$: $123.8 \to 14.56$ (−88.2%) — far tighter than what random rotation achieves on the same sites.
+- **FP32 invariance gate:** output cosine min $0.99999988$, orthogonality error $3.1\times10^{-15}$, mean-preservation error $4.0\times10^{-15}$ — PASS.
+
+Under the **identical** QAT recipe v6 (so the only difference from v6 is $Q$):
+
+| Metric | v6 (random) | **v8 (learned)** | Δ |
+|---|---:|---:|---:|
+| T2I R@1 | 49.30 | **50.85** | **+1.55** |
+| I2T R@1 | 53.85 | 52.90 | −0.95 |
+| QDQ cosine mean | 0.9491 | **0.9606** | +0.0115 |
+| QDQ cosine min | 0.9266 | **0.9447** | +0.0181 |
+
+This is a clean ablation: coverage, learning rate, epochs, and base FP32 model are all held fixed, so the **+1.55** T2I gain is attributable purely to learning $Q$. The QDQ fidelity rising on both mean and min confirms the max-abs² objective genuinely tightened the INT8 scale, as the theory predicts. The small I2T trade-off is acceptable because the primary deployment metric is **T2I R@1**; v8 is the deploy candidate, and the text encoder adopts the same learned-rotation method.
 
 ---
 
 ## 7. Stage [4] — Quantization-Aware Finetune (the gate-passing step)
 
-Rotation alone reaches QDQ cosine `0.8975` but only **R@1 = 45.42** (gate FAIL). The residual error is no longer one outlier; it is ordinary per-tensor INT8 error **accumulated across 12 blocks** (§10). The fix is to train the FP32 weights to tolerate that INT8 noise.
-
-**Script:** `deployment/scripts/qnn/train_vision_quant_robust.py`
-
-```bash
-python deployment/scripts/qnn/train_vision_quant_robust.py \
-  --model-dir artifacts/deployment/exports/exported_model_rotated \
-  --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_4302 \
-  --val-input-dir   artifacts/deployment/qnn_inputs/vn3k_test_100 \
-  --output-dir      artifacts/deployment/exports/exported_model_rotated_qat_v3 \
-  --start-layer 0 --end-layer 11 \
-  --fake-quant-granularity per_tensor \
-  --fake-quant-observer ema --ema-momentum 0.99 \
-  --batch-size 24 --epochs 8 --lr 1e-5
-```
-
-> v3 trained all 12 layers (0–11) on the full VN3K train split (4302 images), batch 24, 8 epochs (1440 steps). Point `--train-input-dir` at raw inputs prepared the same way as the calibration set but for the full train split.
+Rotation alone reaches QDQ cosine $0.8975$ but only **R@1 = 45.42** (gate FAIL). The residual error is no longer one outlier; it is ordinary per-tensor INT8 error **accumulated across 12 blocks** (§10). QAT trains the FP32 weights to tolerate that INT8 noise.
 
 ### 7.1 Teacher–student distillation
 
-The script does **not** export a custom QDQ graph. It finetunes the FP32 vision encoder under injected fake-quant noise, then saves a normal FP32 export directory which the existing ONNX + AI Hub quantizer then process. Setup:
+QAT does not export a custom QDQ graph. It finetunes the FP32 encoder under injected fake-quant noise, then saves a normal FP32 export that the existing ONNX + AI Hub quantizer processes. Setup:
 
-- **Teacher:** the rotated FP32 model, frozen (`requires_grad=False`).
-- **Student:** a deep copy of the rotated model, with fake-quant forward hooks on the GELU output and the residual output of each selected block (and optionally the pooling head via `--quant-head`).
-- **Trainable:** only the selected encoder layers + `visual_projection`; everything else frozen.
+- **Teacher:** the rotated FP32 model, frozen.
+- **Student:** a copy of the rotated model with fake-quant forward hooks on selected activations.
+- **Trainable:** only the selected encoder layers + visual projection; everything else frozen.
 
-Per step, the student is run twice — clean (hooks disabled) and fake-quant — and distilled toward the teacher embedding:
+Per step the student is run twice — clean (hooks off) and fake-quant — and distilled toward the teacher embedding:
 
-$$ \mathcal{L} = \underbrace{\big(1 - \cos(z_s^{q}, z_t)\big) + \lambda\,\lVert z_s^{q} - z_t\rVert^2}_{\text{fake-quant path}} + \underbrace{w_c\big(1 - \cos(z_s^{c}, z_t)\big) + w_m\lVert z_s^{c} - z_t\rVert^2}_{\text{clean consistency}}, $$
+$$ \mathcal{L} = \underbrace{\big(1 - \cos(z_s^{q}, z_t)\big) + \lambda\,\lVert z_s^{q} - z_t\rVert^2}_{\text{fake-quant path}}
++ \underbrace{w_c\big(1 - \cos(z_s^{c}, z_t)\big) + w_m\lVert z_s^{c} - z_t\rVert^2}_{\text{clean consistency}}, $$
 
-where $z_t = teacher.encode_{image}(x)$, $z_s^{q}$/ $z_s^{c}$ are the fake-quant / clean student embeddings, $\lambda = w_m = 0.05$, $w_c = 1.0$. The clean term prevents the student from drifting away from the teacher when quant noise is off.
+where $z_t$ is the teacher embedding, $z_s^{q}$/$z_s^{c}$ are the fake-quant/clean student embeddings, and $\lambda = w_m = 0.05$, $w_c = 1.0$. The clean term keeps the student from drifting away from the teacher when quant noise is off.
 
 ### 7.2 Straight-through fake-quant
 
@@ -342,234 +363,271 @@ Symmetric INT8 fake-quant with a straight-through estimator (STE):
 
 $$ q(x) = s\cdot\mathrm{clamp}\!\Big(\mathrm{round}(x/s),\,-q_{\max},\,q_{\max}\Big), \quad q_{\max} = 2^{b-1}-1 = 127, \quad s = \frac{\max|x|}{q_{\max}}. $$
 
-In code: `x + (quantized - x).detach()` — the forward pass is quantized, the backward pass is identity, so gradients flow to the FP32 weights through the rounding. This is the straight-through estimator [13], the standard way to backprop through the non-differentiable `round`.
+The forward pass is quantized; the backward pass is identity ($\partial q/\partial x \equiv 1$), so gradients flow to the FP32 weights through the non-differentiable `round`. This is the straight-through estimator [13]. (Note: this is exactly the detachment that makes a quant-MSE rotation objective have zero gradient — see §6A.2.)
 
-### 7.3 Why per-tensor, and why EMA observer (the two key fixes)
+### 7.3 Why per-tensor, and why an EMA observer (the two key fixes)
 
-The R@1 trajectory `45.42 → 46.92 → 47.80 → 48.20` (continued to `48.50 → 49.25` by widening coverage, §7.4) came from making the *simulated* quantizer match the *real* AI Hub W8A8:
+The early R@1 trajectory $45.42 \to 46.92 \to 47.80 \to 48.20$ came from making the *simulated* quantizer match the *real* AI Hub W8A8:
 
-- **v1 → v2: per-sample → per-tensor.** A per-sample scale (one scale per image) is too easy: simulated cosine looks great (`0.975`) but does not transfer to AI Hub's per-tensor scheme (real `0.92`). Per-tensor fake-quant uses one scale per activation tensor, matching deployment.
-- **v2 → v3: dynamic → EMA observer.** A per-batch dynamic max recomputes the scale every forward; AI Hub instead **calibrates once** on the calibration set and freezes the scale. The EMA observer is the standard moving-average min-max observer [14, 15]; it mimics calibrate-once with a running max,
+- **v1 → v2: per-sample → per-tensor.** A per-sample scale (one per image) is too easy: simulated cosine looks great ($0.975$) but does not transfer to AI Hub's per-tensor scheme (real $0.92$). Per-tensor fake-quant uses one scale per activation tensor, matching deployment.
+- **v2 → v3: dynamic → EMA observer.** A per-batch dynamic max recomputes the scale every forward; AI Hub instead **calibrates once** and freezes the scale. The EMA observer is the standard moving-average min-max observer [14, 15]:
 
 $$ m_t = \mu\, m_{t-1} + (1-\mu)\,\max|x_t|, \quad \mu = 0.99, $$
 
-producing a fixed-ish per-tensor scale. This closed the remaining sim↔real gap: simulated val cosine stayed ≈ `0.98`, but real QDQ cosine rose `0.9281 → 0.9353` and R@1 crossed the gate.
+producing a fixed-ish per-tensor scale. This closed the sim↔real gap: simulated val cosine stayed $\approx 0.98$, but real QDQ cosine rose $0.9281 \to 0.9353$ and R@1 crossed the gate.
 
-### 7.4 Fake-quant coverage (v3 → v4 → v5)
+### 7.4 Fake-quant coverage (v3 → v6) and the random-rotation ceiling
 
-The third lever — after per-tensor (v2) and EMA (v3) — is *which activations* carry the fake-quant operator during QAT. AI Hub quantizes **every** activation tensor, so any tensor the student never trained against contributes uncorrected INT8 error at deploy. The QAT coverage was therefore widened in two steps, each closing part of the gap the previous coverage left:
+The third lever — after per-tensor (v2) and EMA (v3) — is *which activations* carry the fake-quant operator during QAT. AI Hub quantizes **every** activation tensor, so any tensor the student never trained against contributes uncorrected INT8 error at deploy. Coverage was widened in steps:
 
-| Round | Fake-quant sites (per selected block) | Flag | QDQ cosine mean / min | T2I R@1 |
-|---|---|---|---:|---:|
-| v3 | GELU output + residual (block) output | (base) | 0.9353 / 0.919 | 48.20 |
-| v4 | + pooling head (post\_LN, head.attn, head.mlp) | `--quant-head` | 0.9364 / 0.9091 | 48.50 |
-| v5 | + every linear output (q/k/v/out\_proj, fc1, fc2, head linears) | `--quant-linears` | 0.9437 / **0.9311** | **49.25** |
+| Round | Fake-quant sites (per block) | QDQ cosine mean / min | T2I R@1 |
+|---|---|---:|---:|
+| v3 | GELU output + residual output | 0.9353 / 0.919 | 48.20 |
+| v4 | + pooling head (post-LN, head attn, head MLP) | 0.9364 / 0.9091 | 48.50 |
+| v5 | + every linear output (q/k/v/out_proj, fc1, fc2, head) | 0.9437 / **0.9311** | 49.25 |
+| v6 | + attention matmuls ($Q K^\top$, $\mathrm{softmax}\cdot V$) | 0.9491 / 0.9266 | **49.30** |
 
-The mathematics is unchanged across v3–v5 — the same per-tensor straight-through fake-quant (§7.2) and EMA observer (§7.3); **only the *set* of tensors to which the operator is applied grows.** The decisive evidence is the **minimum** cosine: widening coverage from the GELU/residual subset to all linear outputs lifted the worst-sample cosine `0.9091 → 0.9311`, confirming that the `~0.936` plateau was a *coverage gap*, not a fundamental W8A8 limit. The pooling head (v4) matters because its INT8 error is not averaged out by any later layer; the per-linear coverage (v5) matters because the q/k/v/out\_proj and fc1/fc2 activations are each quantized independently on-device.
+The mathematics is unchanged across v3–v6 — the same per-tensor straight-through fake-quant (§7.2) and EMA observer (§7.3); **only the *set* of quantized tensors grows.** The decisive early evidence is the **minimum** cosine: widening coverage from the GELU/residual subset to all linear outputs lifted the worst-sample cosine $0.9091 \to 0.9311$, confirming the $\approx 0.936$ plateau was a *coverage gap*, not a fundamental W8A8 limit.
 
-One coverage gap remains: the two **activation×activation matmuls inside attention** (`Q·Kᵀ` scores and `softmax·V`) are functional ops, not `nn.Module` outputs, so the forward-hook mechanism does not reach them, yet AI Hub still quantizes them. An attention-internal fake-quant is the remaining lever toward the stretch gate `R@1 ≥ 50`.
+But v6 then **saturates**: adding the attention matmuls lifts R@1 only $49.25 \to 49.30$. Once every activation tensor is covered, QAT alone gives diminishing returns. **This is the random-rotation ceiling** — and the reason the next gain had to come from the rotation itself (learned rotation, §6A), not more coverage.
 
-### 7.5 Result (best to date: v5)
+### 7.5 The v7 cautionary regression (why the recipe was *not* changed for v8)
+
+v7 kept v6 coverage but changed the optimizer schedule: cosine LR + learning rate doubled to $2\times10^{-5}$ over 20 epochs. Result: QDQ min **dropped** $0.9266 \to 0.9083$ and T2I R@1 **regressed** $49.30 \to 48.38$. The likely cause is LR overshoot around the quantization minimum, which the cosine floor could not recover from. The lesson carried into v8: **hold the recipe fixed at v6** (constant lr $1\times10^{-5}$, 15 epochs) so the v8 delta isolates the *rotation* (learned vs random), uncontaminated by a schedule already shown to hurt.
+
+### 7.6 Result (best to date: v8)
 
 | Task | Model | R@1 | R@5 | R@10 | mAP | mINP |
 |---|---|---:|---:|---:|---:|---:|
-| T2I | FP32 baseline | 52.40 | 79.38 | 87.80 | 57.38 | 50.67 |
-| T2I | **QAT v5 INT8** | **49.25** | 77.28 | 85.80 | 54.55 | 47.86 |
-| I2T | FP32 baseline | 55.30 | 81.45 | 89.70 | 51.38 | 34.50 |
-| I2T | **QAT v5 INT8** | **53.40** | 80.85 | 88.10 | 49.05 | 32.01 |
+| T2I | FP32 sanity reproduction | 52.40 | 79.38 | 87.80 | 57.38 | 50.67 |
+| T2I | **QAT v8 INT8 (learned rot.)** | **50.85** | 77.48 | 86.98 | 55.79 | 49.24 |
+| I2T | FP32 sanity reproduction | 55.30 | 81.45 | 89.70 | 51.38 | 34.50 |
+| I2T | **QAT v8 INT8 (learned rot.)** | **52.90** | 80.45 | 88.35 | 49.48 | 32.88 |
 
-QDQ cosine `0.9437` / min `0.9311`. Drop vs FP32: `3.15`. This is the best deployable vision model to date (v3 `48.20` and v4 `48.50` are the earlier coverage steps); the stretch gate `50` is pending attention-matmul coverage (§7.4). After QAT, re-export ONNX (§8) and re-quantize (§9) on the chosen `exported_model_rotated_qat_v*`.
-
----
-
-## 8. Stage [5] — Export the Rotated/QAT Vision ONNX
-
-**Script:** `deployment/scripts/qnn/export_rotated_vision_onnx.py`
-
-```bash
-python deployment/scripts/qnn/export_rotated_vision_onnx.py \
-  --model-dir artifacts/deployment/exports/exported_model_rotated_qat_v3 \
-  --opset 20
-```
-
-Output is a **directory** (`vision_onnx/vision_encoder.onnx` + `.onnx.data`) because SigLIP weights are large and AI Hub expects the graph and its external-data file uploaded together.
-
-Required export properties and gate:
-
-```text
-opset = 20 ; Pow = 0 ; Tanh = 0 ; Gelu = 13 ; LayerNormalization = 26 ; ReduceMean = 0
-ONNX vs PyTorch (rotated) cosine_l2_mean ≈ 1.0 , min ≈ 1.0
-```
-
-Because the rotated/QAT PyTorch model is output-invariant relative to the *rotated* model, this static control also confirms the graph is well-formed. **Any export showing RMSNorm-style `Pow`/`ReduceMean` clusters is not the successful pipeline** — that branch returned QDQ cosine ≈ `0.16`.
+QDQ cosine $0.9606$ / min $0.9447$. Drop vs the paper baseline $52.28$ is **1.43** on T2I — the smallest of any round, and the first vision-only branch to meet the $\geq 50$ deploy target on the QDQ proxy.
 
 ---
 
-## 9. Stage [6] — AI Hub W8A8 Quantize, Compile, Link
+## 8. Stages [5–6] — Export, Quantize/Link, Board Run & Evaluation (method)
 
-**Script:** `deployment/scripts/qnn/submit_qaihub_quantize_compile.py`
+### 8.1 Export
 
-```bash
-# quantize-only fidelity check first (1 job)
-python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
-  --model artifacts/deployment/exports/exported_model_rotated_qat_v3/vision_onnx \
-  --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 \
-  --quantize-only --wait \
-  --download-quantized artifacts/deployment/runtime/rotated_w8a8_qat_v3/qaihub_qdq
+Because every rotated/QAT model is output-invariant relative to the *rotated* model, the static ONNX-vs-PyTorch control must be $\approx 1.0$; this also confirms the graph is well-formed and op-fused (fused GELU + LayerNorm, no `Pow`/`ReduceMean` clusters). The export is a directory (graph + external-data file) because SigLIP weights are large.
 
-# full quantize + compile + link + download the context binary
-python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
-  --model artifacts/deployment/exports/exported_model_rotated_qat_v3/vision_onnx \
-  --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 \
-  --wait \
-  --download artifacts/deployment/runtime/rotated_w8a8_qat_v3/vision_encoder.bin
-```
+### 8.2 Quantize, compile, link
 
-What the helper does: (1) copies the ONNX dir and rewrites input shape to static `image: 1×3×256×256`; (2) resolves `d7jzjy1m2` to an AI Hub calibration dataset; (3) submits the W8A8 quantize job; (4) submits compile (DLC) + link jobs targeting `Dragonwing RB3 Gen 2 Vision Kit`; (5) compiles with `--quantize_io` so graph I/O is quantized rather than left as float boundary tensors.
+The deployable graph is produced by: rewriting input shape to static $1\times3\times256\times256$; resolving a fixed calibration dataset; submitting a W8A8 quantize job; then compile (DLC) + link to a context binary **with quantized I/O**. The retrieval gate, not cosine, is decisive, and the QDQ output is always compared against the **original merged FP32 model**, because the deployment contract is "match the original FP32 model," and the rotated/QAT model is behaviorally equivalent on the validation objective.
 
-The retrieval gate, not cosine, is decisive. Always compare the QDQ ONNX against the **original** merged FP32 model (`--model-dir exported_model`), because the deployment contract is "match the original FP32 model," and the rotated/QAT model is mathematically/behaviorally equivalent on the validation objective.
+**Why this links on v68:** no float I/O, no internal float surgery, no A16 (avoids the v73 requirement), no decomposed GELU cubic, no decomposed RMSNorm internals — every main activation is W8A8, which v68 supports broadly.
 
-**Why this finally links on v68:** no float I/O (`--quantize_io`), no internal float surgery, no A16 (avoids the v73 requirement), no decomposed GELU cubic, no decomposed RMSNorm internals — every main activation is W8A8, which v68 supports broadly. Reference job chain for the rotation-only v2 binary: quantize `jpv4j8lkp` → compile `jpxmwq8lg` → link `jp2j211q5`, all SUCCESS → `vision_encoder.bin` 89.7 MB.
+### 8.3 Board run and fidelity
+
+On board, graph I/O is unsigned-fixed-point-8 and the runtime dequantizes outputs to float. **Board fidelity** (board vs PyTorch cosine) for the verified v4 binary was $0.9363$, matching its QDQ ONNX $0.9364$ to $\approx 0.0001$ — i.e. HTP runtime is faithful to the quantized graph; the remaining error is *quantization*, not hardware drift. v8 has not yet been compiled/linked on board; its 50.85 is the QDQ proxy number, which v4's board↔QDQ agreement makes a trustworthy predictor.
+
+### 8.4 Why the retrieval number is trustworthy
+
+- **Vision-isolation:** image embedding = QDQ ONNX (rotated W8A8); text embedding = FP32 PyTorch. Text is kept FP32 for both baseline and quantized so the measurement isolates the vision quantization.
+- **Both-INT8 C1:** image embedding = vision QDQ ONNX and text embedding = finite-mask text QDQ ONNX; this is the current end-to-end off-board deploy proxy.
+- Retrieval mirrors the training evaluator exactly: **raw (un-normalized) pooler features**, dot-product similarity, the same rank metric. (A generic normalize-then-rank evaluator does not reproduce the baseline.)
+- **Sanity:** the FP32 pipeline reproduces T2I R@1 $52.40 \approx 52.28$; reported drops use the paper baseline $52.28$.
+- **Current deploy proxy:** both-INT8 reaches T2I R@1 $50.25$, I2T R@1 $52.95$, passing the $\geq 50$ gate off-board. Board C2 remains the final hardware confirmation.
 
 ---
 
-## 10. Stages [7–8] — Board Run and Evaluation
-
-**Run on RB3** (`qnn-net-run`, HTP v68):
-
-```bash
-qnn-net-run \
-  --backend "$QNN_LIB/libQnnHtp.so" \
-  --retrieve_context artifacts/deployment/runtime/rotated_w8a8_qat_v3/vision_encoder.bin \
-  --config_file deployment/config/qnn/htp_config_245.json \
-  --input_list artifacts/deployment/qnn_inputs/vn3k_test_10/input_list.txt \
-  --output_dir artifacts/deployment/qnn_runs/rotated_w8a8_qat_v3 \
-  --profiling_level basic --perf_profile high_performance
-```
-
-Graph I/O is `QNN_DATATYPE_UFIXED_POINT_8` (from `--quantize_io`); `qnn-net-run` dequantizes outputs to float `.raw` files. **Board fidelity** (`compare_qnn_with_pytorch.py`) for the v2 binary was `0.8982`, matching the QDQ ONNX `0.8975` to ≈ `0.0007` — i.e. HTP runtime is faithful to the quantized graph; the remaining error is quantization, not hardware drift.
-
-**Retrieval gate** (`eval_retrieval_quantized_vision.py`, on Mac/local, free):
-
-```bash
-python deployment/scripts/qnn/eval_retrieval_quantized_vision.py \
-  --qdq-onnx artifacts/deployment/runtime/rotated_w8a8_qat_v3/qaihub_qdq \
-  --model-dir artifacts/deployment/exports/exported_model \
-  --dataset-root VN3K --gate-r1 48.0 --also-cosine \
-  --cache artifacts/deployment/runtime/rotated_w8a8_qat_v3/retrieval_embeddings.npz \
-  --json artifacts/deployment/runtime/rotated_w8a8_qat_v3/retrieval_r1.json
-```
-
-Methodology that makes the number trustworthy:
-- **Image embedding** = QDQ ONNX (rotated W8A8) via onnxruntime; **text embedding** = FP32 PyTorch `encode_text`. Text is kept FP32 for both baseline and quantized so the measurement isolates the vision quantization.
-- Retrieval mirrors `LitTBPS._compute_metrics` exactly: **raw (un-normalized) pooler features**, dot-product similarity, `utils.metrics.rank`. (The generic `Evaluator` normalizes and does not reproduce 52.28.)
-- **Sanity:** FP32 baseline reproduces **T2I R@1 52.40 ≈ 52.28** (±1.5), so the quantized number is comparable.
-
-> Isolation note: this isolates the vision branch (text still FP32). The final both-INT8 system can only be **≤** this number, so a vision-only result of 48.20 is an *upper bound*; the text encoder must also pass before the end-to-end board system is accepted.
-
----
-
-## 11. Why Earlier Candidates Failed
+## 9. Why Earlier Candidates Failed
 
 | Attempt | Result | Lesson |
 |---|---|---|
 | FP32/FP16 ONNX directly on HTP | link fail | v68 context binary requires integer I/O. |
-| Deprecated CLI INT8 path | preserves FP I/O | Use Python-API quantize + compile/link with `--quantize_io`. |
-| Plain W8A8 (no rotation) | cosine `0.13–0.17` | Runtime works; per-tensor INT8 destroys embedding direction. |
+| Deprecated CLI INT8 path | preserves FP I/O | Use API quantize + compile/link with quantized I/O. |
+| Plain W8A8 (no rotation) | cosine 0.13–0.17 | Runtime works; per-tensor INT8 destroys embedding direction. |
 | More calibration samples | still fails | Not a calibration-coverage problem. |
-| Lite-MP / min-max / W8A16 on old graph | fails | Global knobs cannot fix exposed GELU cubic / outliers / concentration. |
+| Lite-MP / min-max / W8A16 on old graph | fails | Global knobs cannot fix exposed GELU cubic / outliers. |
 | `_float` QDQ surgery | local pass, link fail | v68 rejects internal float tensors. |
-| ORT W8A16 QDQ | local ≈ `0.999`, link fail | Linker rejects internal float / dequantized GELU patterns. |
-| Clipping INT8 activations (max-abs 4–64) | `0.12–0.40`, fails | Outlier channels carry real signal; clipping loses information. |
-| Opset-20 + W8A16 | QDQ `0.9997`, link fail | A16 attention/LayerNorm need HTP v73+; RB3 is v68. |
-| Rotation with RMSNorm | cosine `0.16` | RMSNorm exposes `Pow(x²)`/`ReduceMean` to the quantizer. |
-| Phase-C R2 (head-dim Hadamard) | R@1 `45.25`, no gain | Targets the value path; residual error is in MLP activations. |
-| **Mean-preserving rotation + fused LN + W8A8** | board pass, R@1 `45.42` | All-INT8, v68-compatible, but per-tensor error accumulates over 12 blocks. |
-| **+ QAT (per-tensor + EMA observer)** | **R@1 `48.20`, gate PASS** | Train the weights to tolerate the deploy-faithful INT8 noise. |
+| ORT W8A16 QDQ | local ≈ 0.999, link fail | Linker rejects internal float / dequantized GELU patterns. |
+| Clipping INT8 activations | 0.12–0.40, fails | Outlier channels carry real signal; clipping loses information. |
+| Opset-20 + W8A16 | QDQ 0.9997, link fail | A16 attention/LayerNorm need HTP v73+; RB3 is v68. |
+| Rotation with RMSNorm | cosine 0.16 | RMSNorm exposes Pow(x²)/ReduceMean to the quantizer. |
+| Phase-C R2 (head-dim Hadamard) | R@1 45.25, no gain | Targets the value path; residual error is in MLP activations. |
+| Mean-preserving rotation + fused LN + W8A8 | board pass, R@1 45.42 | All-INT8, v68-compatible, but per-tensor error accumulates over 12 blocks. |
+| + QAT (per-tensor + EMA observer) | R@1 48.20, below 50 target | Train the weights to tolerate the deploy-faithful INT8 noise. |
+| + wider fake-quant coverage (v4–v6) | R@1 49.30, below 50 target | Covering all tensors helps, then hits the random-rotation ceiling. |
+| v7 cosine LR + lr 2e-5 | R@1 48.38, regress | LR overshoot near the quantization minimum; hold the v6 recipe. |
+| **+ learned rotation (v8)** | **R@1 50.85, meets 50 target** | Optimize $Q$ against the activation max-abs²; beats random rotation. |
 
 ---
 
-## 12. Acceptance Gates
+## 10. Acceptance Gates
 
 | Gate | Threshold | Status |
 |---|---:|---|
-| Merge LoRA → clean non-adapter weights | no `lora`/`adapter` keys | PASS |
-| Rotation FP32 invariance | cosine min ≥ `0.9999` | PASS |
-| ONNX static control | cosine mean ≥ `0.999` | PASS |
-| ONNX op sanity | `Pow=0`, fused `Gelu`, fused `LayerNormalization` | PASS |
-| QDQ ONNX vs PyTorch (QAT v3) | proxy ≥ `0.95/0.90` | `0.9353 / 0.919` (near; proxy is conservative) |
-| QNN board vs PyTorch | mean ≥ `0.90` | `0.8982` (rotation-only v2 binary) |
-| Board execution | finite outputs, HTP profile | PASS (v2 binary) |
-| **Full retrieval T2I R@1** | **≥ 48.0** | **PASS — 48.20 (QAT v3, vision-only)** |
-| Stretch gate | ≥ 50.0 | not reached |
+| Merge LoRA → clean non-adapter weights | no adapter keys | PASS |
+| Rotation FP32 invariance | cosine min ≥ 0.9999 | PASS (learned & random) |
+| ONNX static control | cosine mean ≥ 0.999 | PASS |
+| ONNX op sanity | Pow=0, fused Gelu, fused LayerNorm | PASS |
+| QDQ ONNX vs PyTorch (v8) | proxy ≥ 0.95 / 0.90 | **0.9606 / 0.9447** |
+| Text finite-mask patch | replace only attention-mask `-FLT_MAX`; 12 Softmax paths found | PASS |
+| Text attention QDQ scale | max `< 10.0` on 12 `scores+mask` QDQ pairs | **PASS — 0.3523 max** |
+| Text QDQ ONNX vs PyTorch | proxy ≥ 0.95 / 0.90 | **0.9949 / 0.9912** |
+| Text-isolation retrieval | T2I R@1 ≥ 50.0 | **PASS — 51.65** |
+| Both-INT8 off-board retrieval | T2I R@1 ≥ 50.0 | **PASS — 50.25** |
+| QNN board vs PyTorch | mean ≥ 0.90 | 0.9363 (v4 binary; v8 board pending) |
+| Board execution | finite outputs, HTP profile | PASS (v4 binary) |
+| **Full retrieval T2I R@1 (deploy target)** | **≥ 50.0** | **PASS — 50.25 (both-INT8 QDQ proxy)** |
 
-Cosine is a conservative proxy set before the rotation/QAT W8A8 path existed; retrieval R@1 is the decisive metric and it passes.
-
----
-
-## 13. Reproducible Command Sequence (canonical best path)
-
-```bash
-# [1] merge LoRA
-python deployment/scripts/lora_fp16/export.py \
-  --ckpt artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt \
-  --output-dir artifacts/deployment/exports/exported_model
-
-# [2] prepare smoke + calibration inputs (see §4)
-
-# [3] mean-preserving rotation (skip R2)
-python deployment/scripts/qnn/rotate_vision_encoder.py \
-  --model-dir artifacts/deployment/exports/exported_model \
-  --output-dir artifacts/deployment/exports/exported_model_rotated \
-  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --seed 2400 --skip-r2
-
-# [4] QAT distillation (per-tensor + EMA observer)
-python deployment/scripts/qnn/train_vision_quant_robust.py \
-  --model-dir artifacts/deployment/exports/exported_model_rotated \
-  --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_4302 \
-  --val-input-dir artifacts/deployment/qnn_inputs/vn3k_test_100 \
-  --output-dir artifacts/deployment/exports/exported_model_rotated_qat_v3 \
-  --start-layer 0 --end-layer 11 \
-  --fake-quant-granularity per_tensor --fake-quant-observer ema --ema-momentum 0.99 \
-  --batch-size 24 --epochs 8 --lr 1e-5
-
-# [5] export rotated/QAT ONNX (opset 20)
-python deployment/scripts/qnn/export_rotated_vision_onnx.py \
-  --model-dir artifacts/deployment/exports/exported_model_rotated_qat_v3 --opset 20
-
-# [6] quantize-only fidelity check, then full quantize + compile + link (see §9)
-
-# [7] run on RB3 (see §10)
-
-# [8] board fidelity + retrieval R@1 gate (see §10)
-```
+Cosine is a conservative proxy; retrieval R@1 is the decisive metric. The deploy target is **T2I R@1 ≥ 50**; any candidate below 50 (v1–v7) is a FAIL on this target.
 
 ---
 
-## 14. Common Mistakes to Avoid
+## 11. Method Pitfalls to Avoid
 
 - Do not skip the LoRA merge — the checkpoint is not directly a deployment model.
 - Do not reuse rotation/QDQ artifacts across different checkpoints (they are model-specific).
-- Do not export at opset 18 for the final path — it exposes `Pow(x³)` from tanh-GELU.
+- Do not export at low opset for the final path — it exposes Pow(x³) from tanh-GELU.
 - Do not convert LayerNorm → RMSNorm for the v68 W8A8 path — it exposes normalization internals to the quantizer.
-- Do not compile `_float` QDQ-surgery candidates — they pass local diagnostics but fail the HTP link.
-- Do not use W8A16 as the final v68 plan — it passes fidelity but fails the link at attention/LayerNorm (needs v73+).
+- Do not leave internal float (`_float` surgery) — it passes local diagnostics but fails the HTP link.
+- Do not use W8A16 as the final v68 plan — it passes fidelity but fails the link (needs v73+).
 - Do not use per-sample / per-batch fake-quant for QAT — it inflates simulated cosine but does not transfer; use per-tensor + EMA observer.
-- Do not trust AI Hub/AIMET PSNR as a retrieval proxy — always compute embedding cosine and, decisively, retrieval R@1.
-- Use `qnn-net-run` (not `snpe-net-run`) for QNN context binaries, and `--quantize_io` (no float graph I/O).
+- Do not optimize a learned rotation with a quant-MSE objective — STE detaches its gradient; use max-abs² (§6A.2).
+- Do not change the QAT schedule when isolating a rotation change — hold the recipe fixed (the v7 lesson).
+- Do not let text attention export a `-FLT_MAX` mask into a quantized `scores+mask` tensor — patch it to a finite negative mask and gate the QDQ scale (§12A.4).
+- Do not trust PSNR as a retrieval proxy — always compute embedding cosine and, decisively, retrieval R@1.
 
 ---
 
-## 15. What Remains
+## 12. What Remains
 
-1. ✅ **DONE — QAT v4 binary compiled/linked/benchmarked on board:** links on HTP v68, board fidelity `0.9363` ≈ QDQ `0.9364`, `32.70 ms` / `22.88 FPS` / ~90 MB → board T2I R@1 ≈ **48.50**. (Pushing toward stretch gate 50 via fuller fake-quant coverage `--quant-linears` / learned rotation continues.)
-2. **Quantize the text encoder** with the same recipe (opset-20 fused GELU + mean-preserving rotation + W8A8 + QAT). Text is ~75% of parameters — the 250k-vocab embedding alone is ~768 MB FP32 — so text INT8 is the real 4 GB RAM payoff (both encoders INT8 ≈ 372 MB vs ~1.2 GB today).
-3. **End-to-end board retrieval** with both encoders INT8; the both-INT8 R@1 is ≤ the vision-only 48.20, so the text branch must hold the gate.
-4. **Stretch gate 50:** if needed, add `--quant-head` QAT (the pooling head's INT8 error is not averaged out by later layers), more data/epochs, or learned rotations (SpinQuant [12]) — never revert to float surgery or A16.
+1. ✅ **Board-verified W8A8 (v4):** links on HTP v68, board fidelity $0.9363 \approx$ QDQ $0.9364$, $\approx 32.7$ ms / $22.9$ FPS / $\sim$90 MB → board T2I R@1 $\approx 48.50$.
+2. ✅ **Vision-only v8 QDQ passes:** learned rotation, T2I R@1 $50.85$ (`-1.43` vs paper baseline $52.28$).
+3. **Board-verify v8:** compile/link the learned-rotation v8 binary and confirm the board number tracks its QDQ $50.85$ (v4's board↔QDQ agreement makes this expected).
+4. ✅ **Text encoder finite-mask QDQ passes:** learned rotation + text QAT + finite attention mask gives QDQ cosine $0.9949 / 0.9912$ and text-isolation T2I R@1 $51.65$.
+5. **Compile/link and board-verify text finite-mask binary:** confirm board fidelity tracks the text QDQ proxy.
+6. ✅ **End-to-end both-INT8 C1 passes off-board:** vision QDQ + text QDQ gives T2I R@1 $50.25$, I2T R@1 $52.95$, a `-2.03` T2I drop vs paper baseline $52.28$.
+7. **End-to-end both-INT8 board retrieval remains:** run C2 after v8 vision and finite-mask text binaries are linked and executed on RB3.
 
 ---
 
-## 16. References
+## 12A. Text Encoder — Deltas vs Vision
+
+The text encoder uses the **same v8 method** as the vision branch: opset-20 fusion (§4) → learned mean-preserving rotation (§5–§6A) → per-tensor STE + EMA QAT distillation (§7) → W8A8 quantize/compile/link (§8). All the residual-stream mathematics carries over unchanged — the rotation objective $\min_Q \sum \mathbb{E}[(\max|aQ^\top|)^2]$, the Cayley parametrization with $Q\mathbf 1 = \mathbf 1$, the straight-through fake-quant, and the teacher–student distillation are identical.
+
+Text adds one new requirement that vision does not have: **the attention mask must be finite before AI Hub inserts QDQ around the masked logits**. Without this, the text path can collapse even after successful learned rotation and QAT, because the quantizer may see `scores + mask` where padded positions contain `-FLT_MAX`.
+
+### 12A.1 Integer inputs and the I/O-quantization difference
+
+The text inputs are `input_ids` and `attention_mask` (int64). A token ID is an **index** into the embedding table, not a continuous signal; quantizing an index to INT8 is meaningless (it would destroy the index resolution). Therefore:
+
+- **Calibration data** is *tokenized captions* (parallel `input_ids`/`attention_mask` integer arrays), not preprocessed image tensors.
+- The W8A8 path does **not** quantize the graph I/O for text — the integer token inputs are preserved as int64. (The vision path quantizes I/O because its input is continuous.) Only the embedding *weights* are W8-quantized; the lookup itself stays integer.
+
+### 12A.2 Text pipeline overview (conceptual)
+
+The text branch mirrors the vision branch, with a finite-mask pass inserted between ONNX export and AI Hub quantization:
+
+```text
+            ┌─────────────────────────────────────────────┐
+            │  FP32 merged text encoder                  │
+            │  token ids + attention mask are int64      │
+            └─────────────────────┬───────────────────────┘
+                                  │
+            ┌─────────────────────▼───────────────────────┐
+   [1]      │  LEARNED ROTATION                           │
+            │  same mean-preserving Q as vision v8        │   FP32-invariant
+            │  fold Q into embeddings / writers / readers │
+            └─────────────────────┬───────────────────────┘
+                                  │
+            ┌─────────────────────▼───────────────────────┐
+   [2]      │  TEXT QAT DISTILLATION                      │
+            │  per-tensor STE + EMA observer              │   trains weights
+            │  fake-quant linears, head, attention sites  │   to tolerate W8A8
+            └─────────────────────┬───────────────────────┘
+                                  │
+            ┌─────────────────────▼───────────────────────┐
+   [3]      │  EXPORT OPS 20                              │
+            │  fused Gelu + LayerNormalization            │   no Pow cubic
+            │  int64 input_ids / attention_mask           │   int I/O preserved
+            └─────────────────────┬───────────────────────┘
+                                  │
+            ┌─────────────────────▼───────────────────────┐
+   [4]      │  FINITE ATTENTION MASK                      │
+            │  -FLT_MAX  →  -32.0 on mask constant path   │   Softmax semantics
+            │  12 text self-attention paths checked       │   preserved
+            └─────────────────────┬───────────────────────┘
+                                  │
+            ┌─────────────────────▼───────────────────────┐
+   [5]      │  AI HUB W8A8 QDQ                            │
+            │  int64 graph inputs, W8A8 internals         │   QDQ scale gate:
+            │  QDQ may still wrap scores+mask             │   max < 10
+            └─────────────────────┬───────────────────────┘
+                                  │
+            ┌─────────────────────▼───────────────────────┐
+   [6]      │  TEXT-ISOLATION RETRIEVAL                   │   image FP32,
+            │  image FP32 + text QDQ                      │   text INT8 only
+            └─────────────────────────────────────────────┘
+                  finite-mask text: T2I R@1 = 51.65
+```
+
+The key difference from the vision pipeline is step [4]. Vision has no padding mask, so its attention logits never contain a sentinel value. Text does, and the sentinel must be made compatible with per-tensor INT8.
+
+### 12A.3 Rotation writer/reader mapping
+
+`SiglipTextTransformer` is `token_embedding + position_embedding` → 12 encoder layers → `final_layer_norm` → **last-token pooler** → Linear head. The mean-preserving rotation folds into the text-specific modules:
+
+- **Writers** (emit $Qy$): `token_embedding` and `position_embedding` rows, every `out_proj`, every `fc2`.
+- **Readers** (apply $Q^\top$): every $q/k/v$ projection, every `fc1`, and the Linear head after `final_layer_norm`.
+
+This mirrors §5.4–§5.5 exactly; the only change is that the residual *writers* at the input are the two embedding tables rather than a patch-embedding conv, and the *reader* boundary at the output is the last-token pooler + head rather than an attention-pooling head.
+
+### 12A.4 The attention-mask quantization hazard and finite-mask fix
+
+Text self-attention computes
+
+$$ A = \mathrm{softmax}(S + M), \qquad S = \frac{QK^\top}{\sqrt{d_h}}, $$
+
+where $M_{ij}=0$ for valid positions and $M_{ij}=-F$ for padded positions. The original ONNX export uses $F\approx3.402823\times10^{38}$ (`FLT_MAX`). In pure FP32 this is harmless: $\exp(-F)=0$, so padded positions receive zero attention probability.
+
+It becomes harmful only when a per-tensor INT8 quantizer is inserted on the **sum** $S+M$ before Softmax. The real logits $S$ live at ordinary attention scale, but the tensor also contains values near $-3.4\times10^{38}$. The quantizer chooses one scale for the whole tensor, so the mask sentinel dominates the dynamic range and the real logits collapse to almost no resolution. In the bad text QDQ graph, every layer's `self_attn/Add_output_0` QDQ scale was on the order of `1e32`, and the text embedding cosine collapsed.
+
+The fix is to replace the sentinel with a finite negative constant:
+
+$$ M_{ij} \in \{0,\ -32\}. $$
+
+This preserves the attention semantics because
+
+$$ \exp(-32) \approx 1.27\times10^{-14}. $$
+
+Even across a 64-token sequence, the total masked probability leakage is negligible relative to FP32 and INT8 noise. But the quantizer now sees a normal finite range: real attention logits are not crushed by an artificial `FLT_MAX` sentinel. This is a deployment-graph fix, not a training/model-architecture change: it patches only the exported text ONNX constant on the attention-mask path.
+
+The patch is intentionally narrow:
+
+- It replaces only large negative constants on text self-attention mask paths.
+- It expects 12 text self-attention Softmax paths.
+- It fails if a large negative mask constant remains upstream of those Softmax inputs.
+- Static ONNX-vs-PyTorch must still pass before any AI Hub job is trusted.
+
+### 12A.5 Text gates and current finite-mask status
+
+The finite-mask branch is accepted only if the mask patch, QDQ scale, embedding fidelity, and retrieval gates all pass:
+
+| Gate | Expected | Current text finite-mask result |
+|---|---:|---:|
+| Mask patch | exactly the attention-mask sentinel changed | 1 Constant changed: `-3.402823e38 → -32.0` |
+| Text Softmax paths | 12 | 12 |
+| Softmax-input QDQ pairs | 12 | 12 |
+| Max `scores+mask` QDQ scale | `< 10.0` | **0.3523** |
+| QDQ cosine mean / min | ≥ 0.95 / 0.90 | **0.9949 / 0.9912** |
+| Text-isolation T2I R@1 | ≥ 50.0 | **51.65** |
+| Text-isolation I2T R@1 | monitor | **55.55** |
+
+The important diagnostic is the scale gate. A high cosine after local surgery is not enough if the real AI Hub QDQ graph still places an enormous scale on `scores+mask`. The finite-mask QDQ graph has normal scales (`0.1828–0.3523`) across all 12 layers, so the Softmax receives meaningful logits again. Retrieval confirms the proxy: text-only INT8 drops only **0.63** T2I R@1 from the paper baseline (`52.28 → 51.65`), so the text branch now independently clears the deploy target.
+
+### 12A.6 Why this is the real memory payoff
+
+The text encoder is $\sim$75\% of the model's parameters because the multilingual token embedding alone is $250{,}000 \times 768 \approx 768$ MB in FP32. Quantizing it to INT8 is the dominant lever for fitting both encoders into the 4 GB RB3 budget — far larger than the vision saving. The end-to-end C1 both-INT8 proxy now holds the deploy gate at T2I R@1 $50.25$; the remaining question is board confirmation.
+
+---
+
+## 13. References
 
 Quantization / outliers:
 
@@ -599,5 +657,3 @@ Model / training context:
 
 - [1] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, W. Chen. *LoRA: Low-Rank Adaptation of Large Language Models.* ICLR 2022. arXiv:2106.09685.
 - [2] X. Zhai, B. Mustafa, A. Kolesnikov, L. Beyer. *Sigmoid Loss for Language Image Pre-Training (SigLIP).* ICCV 2023. arXiv:2303.15343.
-- [3] Y. Sun, C. Cheng, Y. Zhang, C. Zhang, L. Zheng, Z. Wang, Y. Wei. *Circle Loss: A Unified Perspective of Pair Similarity Optimization.* CVPR 2020. arXiv:2002.10857.
-
