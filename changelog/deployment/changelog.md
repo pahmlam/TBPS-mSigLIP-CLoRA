@@ -1,5 +1,12 @@
 # Deployment Changelog
 
+## [2026-06-19] Record QAT v8 board retrieval
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | HIGH | docs | Updated README and canonical deployment docs with QAT v8 board vision retrieval: T2I R@1 `50.20`, I2T R@1 `54.50`, board-vs-QDQ T2I delta `-0.65` | COMPLETE |
+| 2 | HIGH | feature | Added `deployment/scripts/qnn/eval_retrieval_board_vision.py` to compute VN3K retrieval from RB3 `Result_*/output_0.raw` vision embeddings plus FP32 text embeddings | COMPLETE |
+
 ## [2026-06-19] Board verification for QAT v8 vision binary
 
 | # | Priority | Type | Action | Status |

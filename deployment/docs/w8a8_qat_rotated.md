@@ -1,11 +1,11 @@
 # Rotated W8A8 + QAT: Mathematics & Method for the mSigLIP Vision + Text Encoders on RB3 Gen2 (HTP v68)
 
-> **Scope:** this is the **theory and method** document for the vision-encoder deployment branch and the matching text-encoder finite-mask extension. It contains the mathematics of every transform and the reasoning behind every design choice. It contains **no commands, scripts, or code** — for the reproducible command sequence, AI Hub job IDs, and artifact paths, see the consolidated history in [`deployment/docs/journal/[deploy-master].md`](journal/[deploy-master].md).
+> **Scope:** this is the **theory and method** document for the vision-encoder deployment branch and the matching text-encoder finite/f32-mask extension. It contains the mathematics of every transform and the reasoning behind every design choice. It contains **no commands, scripts, or code** — for the reproducible command sequence, AI Hub job IDs, and artifact paths, see the consolidated history in [`deployment/docs/journal/[deploy-master].md`](journal/[deploy-master].md).
 > **Source checkpoint:** LoRA + Curriculum Circle, seed 2400 (FP32 reference ≈ paper 52.28).
 > **Target device:** Qualcomm RB3 Gen2 / QCS6490 / Hexagon HTP **v68**.
-> **End-to-end result:** both-INT8 W8A8 QDQ proxy reaches **T2I Rank@1 = 50.25** and **I2T Rank@1 = 52.95**, passing the ≥50 deploy target with a `-2.03` T2I drop from the paper baseline `52.28`. Board-verified vision binary is QAT v8 (T2I R@1 ≈ 50.85, passing the 50 target); both-INT8 board verification is pending.
-> **Vision status:** vision-only **T2I Rank@1 = 50.85** (learned rotation, QAT v8; `-1.43` vs paper baseline `52.28`) on the all-INT8 W8A8 QDQ proxy.
-> **Text status:** text-only finite-mask W8A8 QDQ passes cosine and retrieval gates: QDQ cosine mean/min **0.9949 / 0.9912**, text-isolation T2I Rank@1 **51.65**.
+> **End-to-end result:** both-INT8 W8A8 QDQ proxy reaches **T2I Rank@1 = 50.25** and **I2T Rank@1 = 52.95**, passing the ≥50 deploy target with a `-2.03` T2I drop from the paper baseline `52.28`. Board-verified vision binary is QAT v8 (T2I R@1 **50.20**, I2T R@1 **54.50**, passing the 50 target); both-INT8 board verification is pending.
+> **Vision status:** vision-only QDQ proxy reaches **T2I Rank@1 = 50.85** (learned rotation, QAT v8; `-1.43` vs paper baseline `52.28`), and the RB3 board context binary reaches **50.20** T2I R@1.
+> **Text status:** text-only finite/f32-mask W8A8 QDQ passes cosine and retrieval gates: QDQ cosine mean/min **0.9949 / 0.9912**, text-isolation T2I Rank@1 **51.65**.
 
 This document explains the hardware constraints that *force* the pipeline, the mathematics of each transform (rotation, learned rotation, quantization-aware training, finite attention masking), why earlier candidates failed, and the acceptance gates that define success. The decisive acceptance metric throughout is **retrieval Rank@1**, not cosine — cosine is only a fidelity proxy (§8).
 
@@ -33,12 +33,12 @@ Two facts frame everything below:
 - **v6 is the ceiling of *random* rotation.** Widening fake-quant coverage (v3→v6) climbs from 48.20 to 49.30, then saturates — diminishing returns once every activation tensor is covered.
 - **v8 breaks that ceiling by changing the rotation itself**, not the QAT. Replacing the random mean-preserving `Q` with a *learned* one (same QAT recipe as v6) lifts T2I R@1 by **+1.55** to 50.85 and improves QDQ fidelity on both mean and min. Because only `Q` differs between v6 and v8, this is a clean ablation isolating "learned vs random rotation." (v7 is recorded as a cautionary regression: changing the LR schedule and doubling LR overshot the quantization minimum.)
 
-Text follows the same v8 recipe but needs one extra graph-level fix:
+Text follows the same v8 recipe but needs two graph-level fixes:
 
-| Text branch | Mask handling | Attention QDQ scale | QDQ cosine (mean/min) | Text-isolation T2I R@1 | Target |
-|---|---|---:|---:|---:|:--:|
-| v8 text, original ONNX | `-FLT_MAX` mask in `scores+mask` | ~`1e32` | collapse | collapse | FAIL |
-| **v8 text, finite mask** | **replace mask with `-32.0` before AI Hub quantize** | **0.3523 max** | **0.9949 / 0.9912** | **51.65** | **PASS** |
+| Text branch | Mask handling | Link-safe I/O handling | Attention QDQ scale | QDQ cosine (mean/min) | Text-isolation T2I R@1 | Target |
+|---|---|---|---:|---:|---:|:--:|
+| v8 text, original ONNX | `-FLT_MAX` mask in `scores+mask` | `attention_mask int64 -> Cast(FLOAT)` island | ~`1e32` | collapse | collapse | FAIL |
+| **v8 text, finite + f32 mask** | **replace mask with `-32.0` before AI Hub quantize** | **`input_ids` integer, `attention_mask` float32 0/1** | **0.3523 max** | **0.9949 / 0.9912** | **51.65** | **PASS** |
 
 The current end-to-end C1 deploy proxy uses both QDQ graphs together:
 
@@ -47,6 +47,7 @@ The current end-to-end C1 deploy proxy uses both QDQ graphs together:
 | Paper baseline | **52.28** | — | main reporting baseline |
 | Local FP32 sanity | 52.40 | 55.30 | pipeline reproduction only, not the reporting baseline |
 | Vision INT8 only | 50.85 | 52.90 | `-1.43` T2I vs paper baseline |
+| Vision INT8 board | 50.20 | 54.50 | full gallery RB3 run; `-0.65` T2I vs QDQ proxy |
 | Text INT8 only | 51.65 | 55.55 | `-0.63` T2I vs paper baseline |
 | **Both INT8** | **50.25** | **52.95** | **PASS**, `-2.03` T2I vs paper baseline |
 
@@ -421,12 +422,12 @@ The deployable graph is produced by: rewriting input shape to static $1\times3\t
 
 ### 8.3 Board run and fidelity
 
-On board, graph I/O is unsigned-fixed-point-8 and the runtime dequantizes outputs to float. **Board fidelity** (board vs PyTorch cosine) for the verified v8 binary is $0.9585$ (mean) / $0.9399$ (min), closely matching its QDQ ONNX $0.9606 / 0.9447$. HTP runtime is faithful to the quantized graph; the remaining error is *quantization*, not hardware drift. The runtime for v8 is $\approx 33.05$ ms / $22.77$ FPS.
+On board, graph I/O is unsigned-fixed-point-8 and the runtime dequantizes outputs to float. **Board fidelity** (board vs PyTorch cosine) for the verified v8 binary is $0.9585$ (mean) / $0.9399$ (min), closely matching its QDQ ONNX $0.9606 / 0.9447$. Full vision-isolation retrieval on RB3 reaches **T2I R@1 $50.20$** and **I2T R@1 $54.50$**, a small $-0.65$ T2I delta from the $50.85$ QDQ proxy while staying above the deploy target. HTP runtime is faithful to the quantized graph; the remaining error is *quantization*, not hardware drift. The runtime for v8 is $\approx 33.05$ ms / $22.77$ FPS.
 
 ### 8.4 Why the retrieval number is trustworthy
 
 - **Vision-isolation:** image embedding = QDQ ONNX (rotated W8A8); text embedding = FP32 PyTorch. Text is kept FP32 for both baseline and quantized so the measurement isolates the vision quantization.
-- **Both-INT8 C1:** image embedding = vision QDQ ONNX and text embedding = finite-mask text QDQ ONNX; this is the current end-to-end off-board deploy proxy.
+- **Both-INT8 C1:** image embedding = vision QDQ ONNX and text embedding = finite/f32-mask text QDQ ONNX; this is the current end-to-end off-board deploy proxy.
 - Retrieval mirrors the training evaluator exactly: **raw (un-normalized) pooler features**, dot-product similarity, the same rank metric. (A generic normalize-then-rank evaluator does not reproduce the baseline.)
 - **Sanity:** the FP32 pipeline reproduces T2I R@1 $52.40 \approx 52.28$; reported drops use the paper baseline $52.28$.
 - **Current deploy proxy:** both-INT8 reaches T2I R@1 $50.25$, I2T R@1 $52.95$, passing the $\geq 50$ gate off-board. Board C2 remains the final hardware confirmation.
@@ -470,8 +471,9 @@ On board, graph I/O is unsigned-fixed-point-8 and the runtime dequantizes output
 | Text QDQ ONNX vs PyTorch | proxy ≥ 0.95 / 0.90 | **0.9949 / 0.9912** |
 | Text-isolation retrieval | T2I R@1 ≥ 50.0 | **PASS — 51.65** |
 | Both-INT8 off-board retrieval | T2I R@1 ≥ 50.0 | **PASS — 50.25** |
-| QNN board vs PyTorch | mean ≥ 0.90 | 0.9363 (v4 binary; v8 board pending) |
-| Board execution | finite outputs, HTP profile | PASS (v4 binary) |
+| QNN board vs PyTorch | mean ≥ 0.90 | **PASS — 0.9585 / 0.9399 (v8 vision)** |
+| Board execution | finite outputs, HTP profile | **PASS — v8 vision, 33.05 ms/image, 22.77 FPS** |
+| Vision board retrieval | T2I R@1 ≥ 50.0 | **PASS — 50.20** |
 | **Full retrieval T2I R@1 (deploy target)** | **≥ 50.0** | **PASS — 50.25 (both-INT8 QDQ proxy)** |
 
 Cosine is a conservative proxy; retrieval R@1 is the decisive metric. The deploy target is **T2I R@1 ≥ 50**; any candidate below 50 (v1–v7) is a FAIL on this target.
@@ -490,6 +492,7 @@ Cosine is a conservative proxy; retrieval R@1 is the decisive metric. The deploy
 - Do not optimize a learned rotation with a quant-MSE objective — STE detaches its gradient; use max-abs² (§6A.2).
 - Do not change the QAT schedule when isolating a rotation change — hold the recipe fixed (the v7 lesson).
 - Do not let text attention export a `-FLT_MAX` mask into a quantized `scores+mask` tensor — patch it to a finite negative mask and gate the QDQ scale (§12A.4).
+- Do not leave `attention_mask` as int64 in the final QNN-linkable text export if it materializes an internal `Cast(FLOAT)` pre-quant tensor — export the binary mask as float32 0/1 (§12A.5).
 - Do not trust PSNR as a retrieval proxy — always compute embedding cosine and, decisively, retrieval R@1.
 
 ---
@@ -498,11 +501,11 @@ Cosine is a conservative proxy; retrieval R@1 is the decisive metric. The deploy
 
 1. ✅ **Legacy Board-verified W8A8 (v4):** established board-to-QDQ fidelity tracking.
 2. ✅ **Vision-only v8 QDQ passes:** learned rotation, T2I R@1 $50.85$ (`-1.43` vs paper baseline $52.28$).
-3. ✅ **Board-verified v8:** learned-rotation v8 binary executes on HTP v68. Board fidelity $0.9585$ tracks QDQ $0.9606$. Runtime $\approx 33.05$ ms / $22.77$ FPS.
-4. ✅ **Text encoder finite-mask QDQ passes:** learned rotation + text QAT + finite attention mask gives QDQ cosine $0.9949 / 0.9912$ and text-isolation T2I R@1 $51.65$.
-5. **Compile/link and board-verify text finite-mask binary:** confirm board fidelity tracks the text QDQ proxy.
+3. ✅ **Board-verified v8:** learned-rotation v8 binary executes on HTP v68. Board fidelity $0.9585$ tracks QDQ $0.9606$, full board vision retrieval reaches T2I R@1 $50.20$ / I2T R@1 $54.50$, and runtime is $\approx 33.05$ ms / $22.77$ FPS.
+4. ✅ **Text encoder finite/f32-mask QDQ passes:** learned rotation + text QAT + finite attention mask and float32 binary mask I/O give QDQ cosine $0.9949 / 0.9912$ and text-isolation T2I R@1 $51.65$.
+5. **Compile/link and board-verify text finite/f32-mask binary:** confirm board fidelity tracks the text QDQ proxy.
 6. ✅ **End-to-end both-INT8 C1 passes off-board:** vision QDQ + text QDQ gives T2I R@1 $50.25$, I2T R@1 $52.95$, a `-2.03` T2I drop vs paper baseline $52.28$.
-7. **End-to-end both-INT8 board retrieval remains:** run C2 after finite-mask text binaries are linked and executed on RB3.
+7. **End-to-end both-INT8 board retrieval remains:** run C2 after finite/f32-mask text binaries are linked and executed on RB3.
 
 ---
 
@@ -510,14 +513,16 @@ Cosine is a conservative proxy; retrieval R@1 is the decisive metric. The deploy
 
 The text encoder uses the **same v8 method** as the vision branch: opset-20 fusion (§4) → learned mean-preserving rotation (§5–§6A) → per-tensor STE + EMA QAT distillation (§7) → W8A8 quantize/compile/link (§8). All the residual-stream mathematics carries over unchanged — the rotation objective $\min_Q \sum \mathbb{E}[(\max|aQ^\top|)^2]$, the Cayley parametrization with $Q\mathbf 1 = \mathbf 1$, the straight-through fake-quant, and the teacher–student distillation are identical.
 
-Text adds one new requirement that vision does not have: **the attention mask must be finite before AI Hub inserts QDQ around the masked logits**. Without this, the text path can collapse even after successful learned rotation and QAT, because the quantizer may see `scores + mask` where padded positions contain `-FLT_MAX`.
+Text adds two requirements that vision does not have. First, **the attention mask must be finite before AI Hub inserts QDQ around the masked logits**. Without this, the text path can collapse even after successful learned rotation and QAT, because the quantizer may see `scores + mask` where padded positions contain `-FLT_MAX`. Second, **the final QNN-linkable export should feed `attention_mask` as float32 0/1**, rather than int64, to avoid an internal `Cast(FLOAT)` island that the HTP v68 linker rejects.
 
-### 12A.1 Integer inputs and the I/O-quantization difference
+### 12A.1 Token indices, binary masks, and the I/O-quantization difference
 
-The text inputs are `input_ids` and `attention_mask` (int64). A token ID is an **index** into the embedding table, not a continuous signal; quantizing an index to INT8 is meaningless (it would destroy the index resolution). Therefore:
+The text inputs are `input_ids` and `attention_mask`. A token ID is an **index** into the embedding table, not a continuous signal; quantizing an index to INT8 is meaningless (it would destroy the index resolution). Therefore:
 
-- **Calibration data** is *tokenized captions* (parallel `input_ids`/`attention_mask` integer arrays), not preprocessed image tensors.
-- The W8A8 path does **not** quantize the graph I/O for text — the integer token inputs are preserved as int64. (The vision path quantizes I/O because its input is continuous.) Only the embedding *weights* are W8-quantized; the lookup itself stays integer.
+- **`input_ids` remain integer indices.** They may be truncated to a QNN-supported integer I/O type during compile, but they are not treated as quantized continuous activations.
+- **`attention_mask` is semantically binary, not an index.** For local training and QAT it can be stored as integer 0/1. For the final QNN export it is link-safer to store the same values as float32 0/1, because the downstream mask formula immediately consumes it as a floating-point mask.
+- **Calibration data** is *tokenized captions* (parallel `input_ids` plus `attention_mask` 0/1 arrays), not preprocessed image tensors. The final f32-mask AI Hub dataset uses integer `input_ids` and float32 `attention_mask`.
+- W8A8 still applies to weights and activations. The embedding *weights* are W8-quantized; the lookup indices stay integer. The graph I/O handling exists to satisfy HTP's context-binary linker, not to reinterpret token IDs as continuous INT8 values.
 
 ### 12A.2 Text pipeline overview (conceptual)
 
@@ -526,7 +531,7 @@ The text branch mirrors the vision branch, with a finite-mask pass inserted betw
 ```text
             ┌─────────────────────────────────────────────┐
             │  FP32 merged text encoder                  │
-            │  token ids + attention mask are int64      │
+            │  token ids integer, mask binary 0/1        │
             └─────────────────────┬───────────────────────┘
                                   │
             ┌─────────────────────▼───────────────────────┐
@@ -544,7 +549,7 @@ The text branch mirrors the vision branch, with a finite-mask pass inserted betw
             ┌─────────────────────▼───────────────────────┐
    [3]      │  EXPORT OPS 20                              │
             │  fused Gelu + LayerNormalization            │   no Pow cubic
-            │  int64 input_ids / attention_mask           │   int I/O preserved
+            │  input_ids integer, attention_mask float32  │   link-safe mask I/O
             └─────────────────────┬───────────────────────┘
                                   │
             ┌─────────────────────▼───────────────────────┐
@@ -555,7 +560,7 @@ The text branch mirrors the vision branch, with a finite-mask pass inserted betw
                                   │
             ┌─────────────────────▼───────────────────────┐
    [5]      │  AI HUB W8A8 QDQ                            │
-            │  int64 graph inputs, W8A8 internals         │   QDQ scale gate:
+            │  integer token IDs, f32 binary mask         │   QDQ scale gate:
             │  QDQ may still wrap scores+mask             │   max < 10
             └─────────────────────┬───────────────────────┘
                                   │
@@ -563,7 +568,7 @@ The text branch mirrors the vision branch, with a finite-mask pass inserted betw
    [6]      │  TEXT-ISOLATION RETRIEVAL                   │   image FP32,
             │  image FP32 + text QDQ                      │   text INT8 only
             └─────────────────────────────────────────────┘
-                  finite-mask text: T2I R@1 = 51.65
+                  finite/f32-mask text: T2I R@1 = 51.65
 ```
 
 The key difference from the vision pipeline is step [4]. Vision has no padding mask, so its attention logits never contain a sentinel value. Text does, and the sentinel must be made compatible with per-tensor INT8.
@@ -604,13 +609,50 @@ The patch is intentionally narrow:
 - It fails if a large negative mask constant remains upstream of those Softmax inputs.
 - Static ONNX-vs-PyTorch must still pass before any AI Hub job is trusted.
 
-### 12A.5 Text gates and current finite-mask status
+### 12A.5 Why the QNN-linkable text export uses a float32 attention mask
 
-The finite-mask branch is accepted only if the mask patch, QDQ scale, embedding fidelity, and retrieval gates all pass:
+The finite-mask patch fixes the *numerical* quantization hazard, but the HTP v68 linker exposed a second, graph-typing hazard. With the original int64 text export, ONNX constructs the additive mask through a path equivalent to
 
-| Gate | Expected | Current text finite-mask result |
+$$
+\texttt{attention\_mask}_{\mathrm{int64}}
+\rightarrow \mathrm{Expand}
+\rightarrow \mathrm{Cast}_{\mathrm{float}}
+\rightarrow (1-\cdot)
+\rightarrow \mathrm{masked\ fill}.
+$$
+
+After AI Hub inserts QDQ, the output of this cast can appear in the QNN graph as an internal pre-quantized floating tensor such as `Cast_output_0_updated_pre_quant`. HTP v68 context binaries reject such internal float tensors, producing a link-time error even though the surrounding model is W8A8. This is not a failure of the learned rotation or QAT; it is a mismatch between the ONNX mask representation and the HTP linker's integer/quantized graph contract.
+
+Changing only the exported mask input dtype from int64 to float32 removes this internal cast:
+
+$$
+\texttt{attention\_mask}_{\mathrm{float32}}\in\{0.0,1.0\}^{B\times L}.
+$$
+
+The mathematical semantics are unchanged because the mask is binary:
+
+$$
+0_{\mathrm{int}} \mapsto 0.0_{\mathrm{float}},\qquad
+1_{\mathrm{int}} \mapsto 1.0_{\mathrm{float}}.
+$$
+
+The same additive mask is then formed:
+
+$$
+M=(1-\texttt{attention\_mask})\cdot(-32),
+\qquad A=\mathrm{softmax}(S+M).
+$$
+
+Thus the final text deployment path keeps `input_ids` as integer token indices, represents the binary `attention_mask` as float32 for graph compatibility, and still quantizes the model weights/activations as W8A8. This f32-mask export is a deployment representation change, not a model-quality change.
+
+### 12A.6 Text gates and current finite/f32-mask status
+
+The finite/f32-mask branch is accepted only if the mask patch, QDQ scale, embedding fidelity, retrieval, and link gates all pass:
+
+| Gate | Expected | Current text finite/f32-mask result |
 |---|---:|---:|
 | Mask patch | exactly the attention-mask sentinel changed | 1 Constant changed: `-3.402823e38 → -32.0` |
+| Final QNN export mask dtype | `attention_mask` float32 0/1 | required for HTP link |
 | Text Softmax paths | 12 | 12 |
 | Softmax-input QDQ pairs | 12 | 12 |
 | Max `scores+mask` QDQ scale | `< 10.0` | **0.3523** |
@@ -618,9 +660,9 @@ The finite-mask branch is accepted only if the mask patch, QDQ scale, embedding 
 | Text-isolation T2I R@1 | ≥ 50.0 | **51.65** |
 | Text-isolation I2T R@1 | monitor | **55.55** |
 
-The important diagnostic is the scale gate. A high cosine after local surgery is not enough if the real AI Hub QDQ graph still places an enormous scale on `scores+mask`. The finite-mask QDQ graph has normal scales (`0.1828–0.3523`) across all 12 layers, so the Softmax receives meaningful logits again. Retrieval confirms the proxy: text-only INT8 drops only **0.63** T2I R@1 from the paper baseline (`52.28 → 51.65`), so the text branch now independently clears the deploy target.
+The important diagnostic is the scale gate. A high cosine after local surgery is not enough if the real AI Hub QDQ graph still places an enormous scale on `scores+mask`. The finite-mask QDQ graph has normal scales (`0.1828–0.3523`) across all 12 layers, so the Softmax receives meaningful logits again. Retrieval confirms the proxy: text-only INT8 drops only **0.63** T2I R@1 from the paper baseline (`52.28 → 51.65`), so the text branch now independently clears the deploy target. The f32-mask dtype is the complementary link gate: it prevents QNN from materializing the binary-mask cast as a rejected internal float tensor.
 
-### 12A.6 Why this is the real memory payoff
+### 12A.7 Why this is the real memory payoff
 
 The text encoder is $\sim$75\% of the model's parameters because the multilingual token embedding alone is $250{,}000 \times 768 \approx 768$ MB in FP32. Quantizing it to INT8 is the dominant lever for fitting both encoders into the 4 GB RB3 budget — far larger than the vision saving. The end-to-end C1 both-INT8 proxy now holds the deploy gate at T2I R@1 $50.25$; the remaining question is board confirmation.
 

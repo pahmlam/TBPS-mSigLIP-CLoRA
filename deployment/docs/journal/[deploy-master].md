@@ -26,6 +26,7 @@ File master này hợp nhất toàn bộ lịch sử deployment/model-compressio
 | Artifact QDQ QAT v8 | `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_jp24xxn65_qdq_onnx` |
 | Cosine QDQ QAT v8 | **`0.9606 / 0.9447`** mean/min |
 | Retrieval QAT v8 vision-isolation | **T2I R@1 `50.85`** (đạt deploy target 50), I2T R@1 `52.90`; drop T2I `-1.43` so với `52.28` |
+| Board retrieval QAT v8 vision-isolation | **T2I R@1 `50.20`**, I2T R@1 `54.50`; drop T2I `-0.65` so với QDQ proxy `50.85`, vẫn PASS target `50` |
 | Text finite-mask QDQ | Job `jp17y648p`; QDQ `0.9949 / 0.9912`; text-isolation T2I R@1 `51.65`, I2T R@1 `55.55` |
 | Ứng viên trước đó | QAT v6 (random rotation): T2I R@1 `49.30`, QDQ `0.9491 / 0.9266` — v8 hơn `+1.55` T2I |
 | Binary deploy đã verify trên board | **QAT v8** W8A8 context binary (vision-only) |
@@ -37,7 +38,7 @@ Cách hiểu:
 
 - **C1 both-INT8 là số deploy proxy chính hiện tại**: vision QDQ + text QDQ đạt T2I R@1 `50.25`, vượt target `50` và giảm `-2.03` so với paper baseline `52.28`.
 - **v8 vision là ablation accuracy quan trọng**: learned rotation nâng vision-isolation T2I R@1 lên `50.85`, cosine QDQ mean/min đều vượt v6. Delta `+1.55` so v6 là ablation sạch "learned vs random" (recipe v6 giữ nguyên).
-- **v8 là binary deploy đã verify trên board hiện tại**: link và chạy thành công trên HTP v68, fidelity mean trên board đạt `0.9585` (rất sát với QDQ `0.9606`).
+- **v8 là binary deploy đã verify trên board hiện tại**: link và chạy thành công trên HTP v68, fidelity mean trên board đạt `0.9585` (rất sát với QDQ `0.9606`), full board vision retrieval đạt T2I R@1 `50.20`.
 
 ### Pipeline Vision Chuẩn
 
@@ -1277,3 +1278,44 @@ python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py \
 **Kết luận:** C1 both-INT8 đạt T2I R@1 **`50.25`**, vượt deploy target `50.0` với margin `+0.25`. Khi báo cáo drop, dùng paper baseline `52.28`: both-INT8 giảm **`-2.03`** T2I R@1 (`52.28 → 50.25`). Số `52.40` chỉ là sanity reproduction của pipeline local, không dùng làm mốc drop chính.
 
 **Bước tiếp theo:** compile/link v8 vision và text finite-mask thành `.bin`, chạy board fidelity/runtime, rồi chạy C2 both-INT8 trực tiếp trên RB3.
+
+## 8. 2026-06-19 - QAT v8 Vision Board Retrieval PASS
+
+**Mục tiêu:** xác nhận binary vision v8 learned-rotation trên RB3 bằng retrieval full VN3K gallery, không chỉ smoke cosine trên 10 ảnh.
+
+**Board run:** chạy `vision_encoder.bin` trên `vn3k_test_gallery_2000` bằng QAIRT `2.45.40.260406`, HTP v68, graph I/O `UFIXED_POINT_8`.
+
+**Local retrieval command:**
+
+```bash
+python3 deployment/scripts/qnn/eval_retrieval_board_vision.py \
+  --vision-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000 \
+  --gallery-input-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000 \
+  --model-dir artifacts/deployment/exports/exported_model \
+  --dataset-root . \
+  --json artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/board_vision_r1.json
+```
+
+**Artifacts:**
+
+| Artifact | Ý nghĩa |
+|---|---|
+| `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch_summary.json` | Smoke board fidelity 10 ảnh |
+| `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/profile.txt` | QNN profile: `33.05 ms/image`, `22.77 FPS` |
+| `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/board_vision_r1.json` | Full board vision-isolation retrieval |
+
+**Kết quả:**
+
+| Metric | QDQ proxy | Board | Delta |
+|---|---:|---:|---:|
+| T2I R@1 | `50.85` | `50.20` | `-0.65` |
+| I2T R@1 | `52.90` | `54.50` | `+1.60` |
+
+**Chi tiết board retrieval:**
+
+| Task | R@1 | R@5 | R@10 | mAP | mINP |
+|---|---:|---:|---:|---:|---:|
+| T2I | `50.20` | `77.62` | `86.73` | `55.84` | `49.51` |
+| I2T | `54.50` | `81.65` | `90.00` | `50.22` | `33.25` |
+
+**Kết luận:** v8 vision binary **PASS** board retrieval gate (`50.20 >= 50.0`). QDQ proxy `50.85` dự đoán tốt, board giảm nhẹ `-0.65` T2I nhưng vẫn đạt mục tiêu deploy. Bước còn lại cho số deploy cuối là board-verify text finite-mask và C2 both-INT8 trực tiếp trên RB3.

@@ -1,0 +1,29 @@
+{
+  "vision_output_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000",
+  "gallery_input_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000",
+  "model_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/exports/exported_model",
+  "num_gallery_images": 2000,
+  "num_query_captions": 4000,
+  "subset_smoke": false,
+  "similarity": "raw_dot_product",
+  "combo": "board_vision_int8_text_fp32",
+  "metrics": {
+    "t2i": {
+      "R1": 50.19999694824219,
+      "R5": 77.625,
+      "R10": 86.72500610351562,
+      "mAP": 55.839111328125,
+      "mINP": 49.5078010559082
+    },
+    "i2t": {
+      "R1": 54.5,
+      "R5": 81.6500015258789,
+      "R10": 90.0,
+      "mAP": 50.22221755981445,
+      "mINP": 33.25022506713867
+    }
+  },
+  "gate_r1": 48.0,
+  "gate_pass": true,
+  "baseline_reference_t2i_r1": 52.28
+}

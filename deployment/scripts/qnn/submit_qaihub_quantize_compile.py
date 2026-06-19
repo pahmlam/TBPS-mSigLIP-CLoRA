@@ -196,9 +196,9 @@ def parse_args() -> argparse.Namespace:
         default="vision",
         help=(
             "Selects safe defaults for --input-specs and --compile-options. "
-            "vision: float image input + --quantize_io. text: two int inputs "
-            "(input_ids, attention_mask) and NO --quantize_io (token IDs reach "
-            "~250k and cannot be int8-quantized as graph I/O). Explicit flags override."
+            "vision: float image input + --quantize_io. text: integer input_ids, "
+            "integer-or-float attention_mask, --truncate_64bit_io, and --quantize_io "
+            "for HTP-compatible output I/O. Explicit flags override."
         ),
     )
     parser.add_argument(
@@ -208,12 +208,23 @@ def parse_args() -> argparse.Namespace:
         help="Text only. Token sequence length for the int input-specs.",
     )
     parser.add_argument(
+        "--text-attention-mask-dtype",
+        choices=["int64", "float32"],
+        default="int64",
+        help=(
+            "Text only. Default attention_mask dtype for --input-specs. "
+            "Use float32 for text ONNX exports created with "
+            "--attention-mask-dtype float32."
+        ),
+    )
+    parser.add_argument(
         "--input-specs",
         default=None,
         help=(
             "Python literal input specs for compile/link. Default by --modality: "
             "vision -> {\"image\": ((1,3,256,256),\"float32\")}; "
-            "text -> {\"input_ids\": ((1,S),\"int64\"), \"attention_mask\": ((1,S),\"int64\")}."
+            "text -> {\"input_ids\": ((1,S),\"int64\"), "
+            "\"attention_mask\": ((1,S), <text attention mask dtype>)}."
         ),
     )
     parser.add_argument(
@@ -315,9 +326,10 @@ def main() -> None:
             args.input_specs = '{"image": ((1, 3, 256, 256), "float32")}'
         else:
             s = args.seq_len
+            mask_dtype = args.text_attention_mask_dtype
             args.input_specs = (
                 f'{{"input_ids": ((1, {s}), "int64"), '
-                f'"attention_mask": ((1, {s}), "int64")}}'
+                f'"attention_mask": ((1, {s}), "{mask_dtype}")}}'
             )
     if args.compile_options is None:
         # Vision quantizes float graph I/O. Text keeps token IDs as integer inputs

@@ -84,6 +84,15 @@ def parse_args() -> argparse.Namespace:
         help="Text only. Integer dtype to upload (must match the text ONNX input type).",
     )
     parser.add_argument(
+        "--mask-dtype",
+        choices=["same", "int64", "int32", "float32"],
+        default="same",
+        help=(
+            "Text only. attention_mask dtype to upload. Use float32 with a "
+            "float32-mask ONNX export."
+        ),
+    )
+    parser.add_argument(
         "--input-name",
         default="image",
         help="Vision only. Dataset key; must match the ONNX input tensor name.",
@@ -101,7 +110,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _build_text_dataset(input_dir: Path, input_list: str, seq_len: int, id_dtype: str, max_samples: int | None):
+def _read_raw_float32(path: Path, length: int):
+    import numpy as np
+
+    data = path.read_bytes()
+    expected = length * np.dtype(np.float32).itemsize
+    if len(data) != expected:
+        raise ValueError(f"{path}: {len(data)} bytes does not match {length} float32 values")
+    return np.frombuffer(data, dtype=np.float32).reshape(1, length).copy()
+
+
+def _build_text_dataset(
+    input_dir: Path,
+    input_list: str,
+    seq_len: int,
+    id_dtype: str,
+    mask_dtype: str,
+    max_samples: int | None,
+):
     """Parse a dual input_list and return {"input_ids": [...], "attention_mask": [...]}."""
     import sys as _sys
 
@@ -114,9 +140,18 @@ def _build_text_dataset(input_dir: Path, input_list: str, seq_len: int, id_dtype
     rows = _parse_dual_input_list(input_dir, input_list)
     if max_samples:
         rows = rows[:max_samples]
-    np_dtype = np.int64 if id_dtype == "int64" else np.int32
-    ids = [_read_raw_ints(r["input_ids"], seq_len).astype(np_dtype) for r in rows]
-    masks = [_read_raw_ints(r["attention_mask"], seq_len).astype(np_dtype) for r in rows]
+    id_np_dtype = np.int64 if id_dtype == "int64" else np.int32
+    resolved_mask_dtype = id_dtype if mask_dtype == "same" else mask_dtype
+    mask_np_dtype = {
+        "int64": np.int64,
+        "int32": np.int32,
+        "float32": np.float32,
+    }[resolved_mask_dtype]
+    ids = [_read_raw_ints(r["input_ids"], seq_len).astype(id_np_dtype) for r in rows]
+    if resolved_mask_dtype == "float32":
+        masks = [_read_raw_float32(r["attention_mask"], seq_len).astype(mask_np_dtype) for r in rows]
+    else:
+        masks = [_read_raw_ints(r["attention_mask"], seq_len).astype(mask_np_dtype) for r in rows]
     return {"input_ids": ids, "attention_mask": masks}, len(rows)
 
 
@@ -129,7 +164,12 @@ def main() -> None:
 
     if args.modality == "text":
         data, count = _build_text_dataset(
-            input_dir, args.input_list, args.seq_len, args.id_dtype, args.max_samples
+            input_dir,
+            args.input_list,
+            args.seq_len,
+            args.id_dtype,
+            args.mask_dtype,
+            args.max_samples,
         )
         name = args.name or "msiglip-text-vn3k-calibration"
     else:

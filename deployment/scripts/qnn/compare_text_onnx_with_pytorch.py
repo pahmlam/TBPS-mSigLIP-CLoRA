@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Compare an ONNX text encoder (FP32 or QDQ) against the PyTorch baseline.
 
-Text counterpart of `compare_onnx_with_pytorch.py`. The text encoder takes two
-integer inputs (`input_ids`, `attention_mask`, shape [1, 64]) produced by
-`prepare_vn3k_text_inputs.py`, so this reuses those raw files and the same
-manifest, and calls `TBPS.encode_text({...})` for the PyTorch reference.
+Text counterpart of `compare_onnx_with_pytorch.py`. The text encoder takes
+`input_ids` plus an `attention_mask` (integer or float32, depending on the ONNX
+export), both shape [1, 64], produced by `prepare_vn3k_text_inputs.py`. This
+reuses those raw files and the same manifest, and calls `TBPS.encode_text({...})`
+for the PyTorch reference.
 
 Use it for the same gate as vision: if the QDQ text ONNX already diverges from
 PyTorch, the issue is PTQ/calibration (e.g. the 250k embedding table); if QDQ
@@ -82,6 +83,15 @@ def _read_raw_ints(path: Path, length: int) -> np.ndarray:
     raise ValueError(f"{path}: {len(data)} bytes does not match {length} int32/int64 values")
 
 
+def _read_raw_tensor(path: Path, length: int, dtype: np.dtype) -> np.ndarray:
+    dtype = np.dtype(dtype)
+    data = path.read_bytes()
+    expected = length * dtype.itemsize
+    if len(data) != expected:
+        raise ValueError(f"{path}: {len(data)} bytes does not match {length} {dtype} values")
+    return np.frombuffer(data, dtype=dtype).reshape(1, length).copy()
+
+
 def _write_csv(rows: list[dict], path: Path) -> None:
     fieldnames = [
         "result_index", "pid", "caption", "dim", "onnx_norm", "torch_norm",
@@ -132,18 +142,23 @@ def main() -> None:
     rows: list[dict] = []
     with torch.no_grad():
         for idx, entry in enumerate(rows_in):
+            ids_dtype = _NP_BY_ORT.get(in_types.get("input_ids"), np.int64)
+            attn_dtype = _NP_BY_ORT.get(in_types.get("attention_mask"), np.int64)
             ids = _read_raw_ints(entry["input_ids"], args.seq_len)
-            attn = _read_raw_ints(entry["attention_mask"], args.seq_len)
+            if np.dtype(attn_dtype).kind == "f":
+                attn = _read_raw_tensor(entry["attention_mask"], args.seq_len, attn_dtype)
+            else:
+                attn = _read_raw_ints(entry["attention_mask"], args.seq_len)
 
             caption_input = {
                 "input_ids": torch.from_numpy(ids.astype(np.int64)).to(args.device),
-                "attention_mask": torch.from_numpy(attn.astype(np.int64)).to(args.device),
+                "attention_mask": torch.from_numpy(attn.astype(attn_dtype)).to(args.device),
             }
             torch_out = model.encode_text(caption_input).detach().float().cpu().reshape(-1)
 
             feed = {
-                "input_ids": ids.astype(_NP_BY_ORT.get(in_types.get("input_ids"), np.int64)),
-                "attention_mask": attn.astype(_NP_BY_ORT.get(in_types.get("attention_mask"), np.int64)),
+                "input_ids": ids.astype(ids_dtype),
+                "attention_mask": attn.astype(attn_dtype),
             }
             onnx_out = torch.from_numpy(
                 np.asarray(session.run([out_name], feed)[0], dtype=np.float32)

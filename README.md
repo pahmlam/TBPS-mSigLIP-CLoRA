@@ -52,7 +52,7 @@
 |---|---|---|
 | **Training** | LoRA + Curriculum Circle Loss is the main reported method. It trains **5.9M parameters, about 1.57% of the 376M-parameter base model**. | Keep the paper recipe as the clean deployment baseline. |
 | **Multilingual evaluation** | VN3K, 10% CUHK-PEDES, and PRW-TPS-CN results are reported below. | Extend full multilingual ablations only when needed. |
-| **Edge deployment** | Both encoders now pass the W8A8 QDQ retrieval gate off-board: both-INT8 reaches **50.25** T2I R@1, a `-2.03` drop from the paper baseline `52.28`. QAT v8 is now the board-verified vision binary. | Board-verify finite-mask text, and both-INT8 retrieval on RB3. |
+| **Edge deployment** | Both encoders now pass the W8A8 QDQ retrieval gate off-board: both-INT8 reaches **50.25** T2I R@1, a `-2.03` drop from the paper baseline `52.28`. QAT v8 vision is board-verified at **50.20** T2I R@1. | Board-verify finite-mask text, and both-INT8 retrieval on RB3. |
 
 ## What This Repository Contains
 
@@ -260,9 +260,10 @@ The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN
 | Source checkpoint | `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` |
 | Paper baseline | VN3K T2I R@1 `52.28`; local FP32 sanity reproduction is `52.40` |
 | Best end-to-end deploy proxy | Both-INT8 W8A8 QDQ on the full VN3K test set; T2I R@1 `50.25` (`-2.03` vs `52.28`) and I2T R@1 `52.95` |
-| Vision-only isolation | QAT v8 learned rotation, `50.85` T2I R@1, `52.90` I2T R@1 |
+| Vision-only QDQ proxy | QAT v8 learned rotation, `50.85` T2I R@1, `52.90` I2T R@1 |
+| Vision-only board retrieval | QAT v8 W8A8 context binary on RB3, `50.20` T2I R@1, `54.50` I2T R@1 |
 | Text-only isolation | Learned rotation + finite mask, `51.65` T2I R@1, `55.55` I2T R@1 |
-| Board-verified binary | QAT v8 W8A8 context binary (`50.85`, passes the `50` target; text/both-INT8 board-verify pending) |
+| Board-verified binary | QAT v8 W8A8 vision context binary (`50.20` T2I R@1, passes the `50` target; text/both-INT8 board-verify pending) |
 | Board runtime | `33.05 ms/img`, `22.77 FPS` |
 | Context size | about `90 MB` for vision encoder |
 | Text encoder | W8A8 QDQ passes off-board; compile/link and board verification pending |
@@ -275,6 +276,13 @@ Current end-to-end deploy retrieval, measured off-board with both QDQ graphs on 
 |---|---:|---:|---:|---:|---:|
 | **T2I** | **50.25** | **77.72** | **86.68** | **55.53** | **48.91** |
 | **I2T** | **52.95** | **79.45** | **87.60** | **49.40** | **33.09** |
+
+Board-verified vision-only retrieval on RB3:
+
+| Direction | R@1 | R@5 | R@10 | mAP | mINP |
+|---|---:|---:|---:|---:|---:|
+| **T2I** | **50.20** | **77.62** | **86.73** | **55.84** | **49.51** |
+| **I2T** | **54.50** | **81.65** | **90.00** | **50.22** | **33.25** |
 
 Canonical references:
 
@@ -326,7 +334,7 @@ Text is 75% of parameters because the multilingual token embedding has `250000 x
 | QAT v5 | QDQ `0.9437 / 0.9311`, T2I R@1 `49.25`, I2T R@1 `53.40` | Below `50` target |
 | QAT v6 | QDQ `0.9491 / 0.9266`, T2I R@1 `49.30`, I2T R@1 `53.85` | Random-rotation ceiling, below `50` target |
 | QAT v7 | QDQ `0.9485 / 0.9083`, T2I R@1 `48.38`, I2T R@1 `53.05` | Regressed vs v6 |
-| **QAT v8** | QDQ `0.9606 / 0.9447`, T2I R@1 `50.85`, I2T R@1 `52.90`; board `0.9585 / 0.9399` | **Learned rotation — PASS (board-verified)** |
+| **QAT v8** | QDQ `0.9606 / 0.9447`, T2I R@1 `50.85`, I2T R@1 `52.90`; board `0.9585 / 0.9399`, T2I R@1 `50.20`, I2T R@1 `54.50` | **Learned rotation — PASS (board-verified)** |
 
 </details>
 

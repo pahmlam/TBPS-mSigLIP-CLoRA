@@ -9,8 +9,8 @@ and the same call the datasets use (`bases.py`):
               return_attention_mask=True)   # max_length = 64
 
 Two inputs are produced per sample (`input_ids`, `attention_mask`), written as
-raw little-endian integer tensors of shape [1, 64], plus an `input_list.txt` in
-the multi-input qnn-net-run format:
+raw little-endian tensors of shape [1, 64], plus an `input_list.txt` in the
+multi-input qnn-net-run format:
 
     input_ids:=raw/00000_..._input_ids.raw attention_mask:=raw/00000_..._attention_mask.raw
 
@@ -109,7 +109,7 @@ def _load_tokenizer(model_dir: Path):
 
 
 def _np_dtype(name: str) -> np.dtype:
-    return {"int64": np.int64, "int32": np.int32}[name]
+    return np.dtype({"int64": np.int64, "int32": np.int32, "float32": np.float32}[name])
 
 
 def parse_args() -> argparse.Namespace:
@@ -125,6 +125,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-length", type=int, default=64)
     p.add_argument("--id-dtype", choices=["int64", "int32"], default="int64",
                    help="Raw integer dtype. int64 matches the ONNX export; switch to int32 if the compiled QNN graph expects it.")
+    p.add_argument(
+        "--mask-dtype",
+        choices=["same", "int64", "int32", "float32"],
+        default="same",
+        help=(
+            "Raw attention_mask dtype. Use float32 with a float32-mask ONNX "
+            "export; default keeps the historical integer mask."
+        ),
+    )
     p.add_argument("--path-mode", choices=["relative", "absolute"], default="relative")
     return p.parse_args()
 
@@ -138,7 +147,8 @@ def main() -> None:
     output_dir = args.output_dir.expanduser().resolve()
     raw_dir = output_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    dtype = _np_dtype(args.id_dtype)
+    id_dtype = _np_dtype(args.id_dtype)
+    mask_dtype = id_dtype if args.mask_dtype == "same" else _np_dtype(args.mask_dtype)
 
     tokenizer, _ = _load_tokenizer(args.model_dir.expanduser().resolve())
     records = _load_records(dataset_root, args.split)
@@ -155,8 +165,8 @@ def main() -> None:
             return_attention_mask=True,
             return_tensors="np",
         )
-        input_ids = np.asarray(enc["input_ids"], dtype=dtype).reshape(1, args.max_length)
-        attn = np.asarray(enc["attention_mask"], dtype=dtype).reshape(1, args.max_length)
+        input_ids = np.asarray(enc["input_ids"], dtype=id_dtype).reshape(1, args.max_length)
+        attn = np.asarray(enc["attention_mask"], dtype=mask_dtype).reshape(1, args.max_length)
 
         stem = f"{idx:05d}_pid{rec['pid']}_{_sanitize(Path(rec['file_path']).stem)}"
         ids_path = raw_dir / f"{stem}_input_ids.raw"
@@ -191,7 +201,11 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(prepared)
 
-    print(f"Prepared {len(prepared)} VN3K caption inputs ({args.id_dtype}, max_length={args.max_length})")
+    print(
+        f"Prepared {len(prepared)} VN3K caption inputs "
+        f"(input_ids={args.id_dtype}, attention_mask={mask_dtype.name}, "
+        f"max_length={args.max_length})"
+    )
     print(f"Output dir:  {output_dir}")
     print(f"Input list:  {output_dir / 'input_list.txt'}")
     print(f"Sample caption[0]: {prepared[0]['caption'][:80]!r} ({prepared[0]['num_tokens']} tokens)")

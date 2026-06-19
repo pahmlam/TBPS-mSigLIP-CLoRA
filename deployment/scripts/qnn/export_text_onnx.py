@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """T0 — Export the text encoder to ONNX opset-20 (fused GELU).
 
-Text counterpart of `export_rotated_vision_onnx.py`. The text encoder takes two
-integer inputs (`input_ids`, `attention_mask`, shape [1, seq_len]) and returns the
+Text counterpart of `export_rotated_vision_onnx.py`. The text encoder takes
+integer `input_ids` and an `attention_mask` (int64 by default, optionally float32
+for QNN HTP link compatibility), shape [1, seq_len], and returns the
 768-d sentence embedding via `TBPS.encode_text({...})`. Opset 20 fuses the tanh-GELU
 into a single `Gelu` op (avoiding the `Pow(x,3)` cubic that wrecks per-tensor
 quantization), exactly as on the vision path.
@@ -42,7 +43,7 @@ from compare_qnn_with_pytorch import _load_pytorch_model  # noqa: E402
 
 
 class TextWrapper(nn.Module):
-    """Wraps TBPS.encode_text for ONNX export (two integer inputs)."""
+    """Wraps TBPS.encode_text for ONNX export."""
 
     def __init__(self, tbps_model: nn.Module) -> None:
         super().__init__()
@@ -105,6 +106,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--opset", type=int, default=20)
     p.add_argument("--device", default="cpu")
     p.add_argument("--seq-len", type=int, default=0, help="0 = use config tokenizer max length.")
+    p.add_argument(
+        "--attention-mask-dtype",
+        choices=["int64", "float32"],
+        default="int64",
+        help=(
+            "ONNX dtype for attention_mask. float32 avoids the internal "
+            "attention_mask Cast(FLOAT) island that QNN HTP link rejects."
+        ),
+    )
     return p.parse_args()
 
 
@@ -118,7 +128,11 @@ def main() -> None:
 
     seq_len = args.seq_len or _seq_len(config)
     dummy_ids = torch.zeros(1, seq_len, dtype=torch.long)
-    dummy_mask = torch.ones(1, seq_len, dtype=torch.long)
+    dummy_mask = torch.ones(
+        1,
+        seq_len,
+        dtype=torch.float32 if args.attention_mask_dtype == "float32" else torch.long,
+    )
 
     out_dir = model_dir / args.output_subdir
     out_dir.mkdir(parents=True, exist_ok=True)
