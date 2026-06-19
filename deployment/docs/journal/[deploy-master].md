@@ -27,12 +27,12 @@ File master này hợp nhất toàn bộ lịch sử deployment/model-compressio
 | Cosine QDQ QAT v8 | **`0.9606 / 0.9447`** mean/min |
 | Retrieval QAT v8 vision-isolation | **T2I R@1 `50.85`** (đạt deploy target 50), I2T R@1 `52.90`; drop T2I `-1.43` so với `52.28` |
 | Board retrieval QAT v8 vision-isolation | **T2I R@1 `50.20`**, I2T R@1 `54.50`; drop T2I `-0.65` so với QDQ proxy `50.85`, vẫn PASS target `50` |
-| Text finite-mask QDQ | Job `jp17y648p`; QDQ `0.9949 / 0.9912`; text-isolation T2I R@1 `51.65`, I2T R@1 `55.55` |
+| Text finite/f32/link-safe path | QDQ proxy `0.9949 / 0.9912`; text-isolation T2I R@1 `51.65`, I2T R@1 `55.55`; link-safe ONNX local gate `0.99999999 / 0.99999976`; AI Hub link PASS, context binary available at `artifacts/deployment/bin/text_encoder.bin` |
 | Ứng viên trước đó | QAT v6 (random rotation): T2I R@1 `49.30`, QDQ `0.9491 / 0.9266` — v8 hơn `+1.55` T2I |
 | Binary deploy đã verify trên board | **QAT v8** W8A8 context binary (vision-only) |
 | Fidelity QAT v8 trên board | `0.9585 / 0.9399` mean/min, khớp QDQ `0.9606 / 0.9447` |
 | Runtime QAT v8 trên board | `33.05 ms/image`, `22.77 FPS`, context binary khoảng `90 MB` |
-| Hướng tiếp theo | Compile/link text finite-mask lên board; chạy both-INT8 C2 trực tiếp trên RB3 |
+| Hướng tiếp theo | Board-verify text finite/f32/link-safe `.bin`; compare board text vs PyTorch/QDQ; then run C2 both-INT8 retrieval directly on RB3 |
 
 Cách hiểu:
 
@@ -1318,4 +1318,94 @@ python3 deployment/scripts/qnn/eval_retrieval_board_vision.py \
 | T2I | `50.20` | `77.62` | `86.73` | `55.84` | `49.51` |
 | I2T | `54.50` | `81.65` | `90.00` | `50.22` | `33.25` |
 
-**Kết luận:** v8 vision binary **PASS** board retrieval gate (`50.20 >= 50.0`). QDQ proxy `50.85` dự đoán tốt, board giảm nhẹ `-0.65` T2I nhưng vẫn đạt mục tiêu deploy. Bước còn lại cho số deploy cuối là board-verify text finite-mask và C2 both-INT8 trực tiếp trên RB3.
+**Kết luận:** v8 vision binary **PASS** board retrieval gate (`50.20 >= 50.0`). QDQ proxy `50.85` dự đoán tốt, board giảm nhẹ `-0.65` T2I nhưng vẫn đạt mục tiêu deploy. Bước còn lại cho số deploy cuối là board-verify text finite/f32/linksafe và C2 both-INT8 trực tiếp trên RB3.
+
+## 9. 2026-06-19 - Text f32-mask link fail và link-safe mask rewrite
+
+**Mục tiêu:** compile/link text encoder W8A8 trên AI Hub sau khi chuyển `attention_mask` sang float32 0/1 để tránh lỗi `Cast_output_0_updated_pre_quant`.
+
+**AI Hub run:**
+
+```bash
+python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+  --modality text \
+  --text-attention-mask-dtype float32 \
+  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite \
+  --calibration-data d7ozgzkq9 \
+  --weights-dtype int8 \
+  --activations-dtype int8 \
+  --wait \
+  --download artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/text_encoder.bin
+```
+
+**Jobs:**
+
+| Job | ID | Status | Note |
+|---|---|---|---|
+| Quantize | `jglo6q3jg` | SUCCESS | f32-mask finite ONNX uploaded |
+| Compile | `jp17ymq7p` | SUCCESS | input specs: `input_ids int64`, `attention_mask float32`; options `--truncate_64bit_io --quantize_io` |
+| Link | `j56re0vy5` | FAILED | `Tensor '/text_model/Cast_output_0_updated' has a floating-point type...` |
+
+**Diagnosis:** f32 input dtype was necessary but not sufficient. The exported ONNX still contained a redundant mask path:
+
+```text
+Expand(attention_mask float32)
+  -> Cast(FLOAT)
+  -> Sub
+  -> Cast(BOOL)
+  -> Where
+```
+
+AI Hub QDQ materialized the redundant cast output as `/text_model/Cast_output_0_updated`, and HTP v68 rejected it as an internal floating-point tensor during link. This is a graph representation issue, not a model/QAT accuracy issue.
+
+**Mathematical rewrite:** because `attention_mask` is binary, the ONNX mask subgraph can be simplified without changing semantics:
+
+```text
+Where(1 - mask != 0, -32, 0)  ==  (1 - mask) * (-32),  mask in {0, 1}
+```
+
+**Implemented local fix:** added `deployment/scripts/qnn/patch_text_qnn_link_safe_mask.py`, which:
+
+1. removes `/text_model/Cast -> /text_model/Cast_output_0`;
+2. removes the redundant `Cast(BOOL)` / `Where` path;
+3. inserts `Mul((1-attention_mask), -32)` as the shared 4D additive mask.
+
+**Artifact:**
+
+| Artifact | Ý nghĩa |
+|---|---|
+| `artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe` | Text ONNX f32-mask finite + QNN-link-safe mask rewrite |
+| `.../qnn_link_safe_mask_patch_summary.json` | Patch summary; confirms removed `Cast/Where` nodes |
+| `.../static_vs_pytorch_summary.json` | Static ONNX-vs-PyTorch gate after rewrite |
+
+**Local gates:**
+
+| Gate | Result |
+|---|---:|
+| `/text_model/Cast_output_0` remaining in graph | `False` |
+| ONNX checker | PASS |
+| ONNX Runtime smoke load | PASS |
+| Static cosine mean/min vs PyTorch | `0.99999999 / 0.99999976` |
+| NaN | none |
+
+**Kết luận lúc đó:** dùng `text_onnx_f32mask_finite_linksafe` cho lần submit AI Hub kế tiếp. Lần submit sau đã pass link, xem section 10; bước tiếp theo vẫn là board-run text smoke/fidelity rồi C2 both-INT8 board retrieval.
+
+## 10. 2026-06-19 - Text finite/f32/link-safe AI Hub Link PASS
+
+**Mục tiêu:** xác nhận graph text finite/f32/link-safe có thể đi qua đủ chuỗi AI Hub W8A8 quantize → compile → link để sinh QNN context binary cho HTP v68.
+
+**Input model:** `artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe`
+
+**Calibration data:** `d7ozgzkq9`
+
+**Kết quả:** AI Hub link đã PASS sau link-safe mask rewrite. Job IDs của lần pass không được ghi trong prompt, nên journal này chỉ ghi artifact đã có trong workspace.
+
+**Artifact:**
+
+| Artifact | Size | Ý nghĩa |
+|---|---:|---|
+| `artifacts/deployment/bin/text_encoder.bin` | `266M` | Text W8A8 QNN context binary đã link được |
+
+**Ý nghĩa kỹ thuật:** lỗi trước đó không chứng minh text QAT/W8A8 sai về chất lượng. Nó là lỗi biểu diễn graph: finite mask và f32 mask đã sửa dynamic-range/QDQ scale, còn link-safe rewrite loại các float mask islands (`Cast`/`Where`) mà HTP v68 không chấp nhận trong context binary.
+
+**Kết luận:** text encoder hiện đã có binary linkable. Các gate còn lại là chạy `qnn-net-run` text trên RB3, so fidelity board-vs-PyTorch/QDQ, sau đó chạy C2 both-INT8 board retrieval.

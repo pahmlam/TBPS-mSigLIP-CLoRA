@@ -17,7 +17,7 @@
 | Biến | Ý nghĩa | Ví dụ |
 |---|---|---|
 | `VISION_CALIB_ID` | AI Hub dataset id calib **vision** (đã có) | `d7jzjy1m2` |
-| `TEXT_CALIB_ID` | AI Hub dataset id calib **text f32-mask** (tạo ở Part B) | `<new f32mask dataset id>` |
+| `TEXT_CALIB_ID` | AI Hub dataset id calib **text f32-mask** (tạo ở Part B) | `d7ozgzkq9` |
 | `VISION_QDQ` | thư mục QDQ vision v8 (learned rotation) | `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_<ID>_qdq_onnx` |
 | `TEXT_QDQ` | thư mục QDQ text v8 f32-mask finite-mask | `artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/job_<ID>_qdq_onnx` |
 | `BOARD` | host board | `qc-rb3g2` |
@@ -229,14 +229,24 @@ python3 deployment/scripts/qnn/patch_text_finite_attention_mask.py \
 ```
 Patch này chỉ đổi attention mask constant âm cực lớn (`-3.402823e38`) trên text self-attention path thành `-32.0`, để AI Hub không tạo scale INT8 ~`1e32` tại `scores+mask`. Summary ghi ở `text_onnx_f32mask_finite/finite_mask_patch_summary.json`; kỳ vọng đổi đúng 1 Constant và thấy 12 Softmax text attention.
 
-### B5. GATE static text ONNX finite-mask vs PyTorch (local/free)
+### B4b. Patch QNN link-safe mask subgraph (local/free)
+```bash
+python3 deployment/scripts/qnn/patch_text_qnn_link_safe_mask.py \
+  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite \
+  --output-dir artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe \
+  --check \
+  --smoke-load
+```
+Patch này đổi mask subgraph tương đương toán học từ `Where(1-mask != 0, -32, 0)` sang `(1-mask)*(-32)`, đồng thời loại `/text_model/Cast_output_0`. Summary ghi ở `text_onnx_f32mask_finite_linksafe/qnn_link_safe_mask_patch_summary.json`.
+
+### B5. GATE static text ONNX finite/f32/link-safe vs PyTorch (local/free)
 ```bash
 python3 deployment/scripts/qnn/compare_text_onnx_with_pytorch.py \
-  --onnx-model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite \
+  --onnx-model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe \
   --model-dir artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8 \
   --input-dir artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask \
-  --json artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite/static_vs_pytorch_summary.json \
-  --csv artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite/static_vs_pytorch.csv
+  --json artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe/static_vs_pytorch_summary.json \
+  --csv artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe/static_vs_pytorch.csv
 ```
 Kỳ vọng cosine mean ≥ `0.999`, min ≥ `0.9999`, không NaN, `Pow=0`, fused `Gelu`/`LayerNormalization`. Nếu fail thì dừng trước AI Hub.
 
@@ -251,12 +261,12 @@ python deployment/scripts/qnn/upload_qaihub_calibration_dataset.py \
 ```
 Ghi `Dataset ID` in ra → `TEXT_CALIB_ID`. Không dùng lại `d7oz4gol9`, vì dataset đó có `attention_mask` integer và không khớp ONNX f32-mask.
 
-### B7. AI Hub quantize-only text f32-mask finite-mask → QDQ (TỐN JOB — log journal) — `--modality text`
+### B7. AI Hub quantize-only text finite/f32/link-safe → QDQ (TỐN JOB — log journal) — `--modality text`
 ```bash
 python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
   --modality text \
   --text-attention-mask-dtype float32 \
-  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite \
+  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe \
   --calibration-data $TEXT_CALIB_ID \
   --weights-dtype int8 \
   --activations-dtype int8 \
@@ -265,7 +275,7 @@ python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
   --download-quantized artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/job_qdq_onnx
 ```
 Ghi `<JOB_ID>` → `TEXT_QDQ=artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/job_<ID>_qdq_onnx`.
-> `input_ids` vẫn là token index integer; riêng `attention_mask` là float32 0/1 để tránh node nội bộ `Cast(FLOAT)` làm QNN linker fail. W8A8 vẫn giữ `--weights-dtype int8 --activations-dtype int8`.
+> `input_ids` vẫn là token index integer; riêng `attention_mask` là float32 0/1 và mask subgraph đã rewrite linksafe để tránh node nội bộ `Cast(FLOAT)` làm QNN linker fail. W8A8 vẫn giữ `--weights-dtype int8 --activations-dtype int8`.
 
 ### B8. GATE text attention QDQ scale (local/free)
 ```bash
@@ -297,12 +307,12 @@ python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py \
 ```
 Combo `text_int8` (image FP32 + text QDQ) cho thấy riêng text-quant rớt bao nhiêu. Chỉ compile/link nếu T2I R@1 ≥ `50.0`.
 
-### B11. Compile/link text f32-mask finite-mask → `.bin` (TỐN JOB — chỉ khi B8+B9+B10 pass — log journal) — `--modality text`
+### B11. Compile/link text finite/f32/link-safe → `.bin` (TỐN JOB — chỉ khi B8+B9+B10 pass — log journal) — `--modality text`
 ```bash
 python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
   --modality text \
   --text-attention-mask-dtype float32 \
-  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite \
+  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe \
   --calibration-data $TEXT_CALIB_ID \
   --weights-dtype int8 \
   --activations-dtype int8 \
