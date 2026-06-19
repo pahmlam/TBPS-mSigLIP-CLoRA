@@ -52,7 +52,7 @@
 |---|---|---|
 | **Training** | LoRA + Curriculum Circle Loss is the main reported method. It trains **5.9M parameters, about 1.57% of the 376M-parameter base model**. | Keep the paper recipe as the clean deployment baseline. |
 | **Multilingual evaluation** | VN3K, 10% CUHK-PEDES, and PRW-TPS-CN results are reported below. | Extend full multilingual ablations only when needed. |
-| **Edge deployment** | Both encoders now pass the W8A8 QDQ retrieval gate off-board: both-INT8 reaches **50.25** T2I R@1, a `-2.03` drop from the paper baseline `52.28`. QAT v4 remains the board-verified binary. | Board-verify v8 vision, finite-mask text, and both-INT8 retrieval on RB3. |
+| **Edge deployment** | Both encoders now pass the W8A8 QDQ retrieval gate off-board: both-INT8 reaches **50.25** T2I R@1, a `-2.03` drop from the paper baseline `52.28`. QAT v8 is now the board-verified vision binary. | Board-verify finite-mask text, and both-INT8 retrieval on RB3. |
 
 ## What This Repository Contains
 
@@ -251,8 +251,8 @@ The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN
 | Best end-to-end deploy proxy | Both-INT8 W8A8 QDQ on the full VN3K test set; T2I R@1 `50.25` (`-2.03` vs `52.28`) and I2T R@1 `52.95` |
 | Vision-only isolation | QAT v8 learned rotation, `50.85` T2I R@1, `52.90` I2T R@1 |
 | Text-only isolation | Learned rotation + finite mask, `51.65` T2I R@1, `55.55` I2T R@1 |
-| Board-verified binary | QAT v4 W8A8 context binary (`48.50`, below the `50` target; v8/both-INT8 board-verify pending) |
-| Board runtime | `32.70 ms/img`, `22.88 FPS` |
+| Board-verified binary | QAT v8 W8A8 context binary (`50.85`, passes the `50` target; text/both-INT8 board-verify pending) |
+| Board runtime | `33.05 ms/img`, `22.77 FPS` |
 | Context size | about `90 MB` for vision encoder |
 | Text encoder | W8A8 QDQ passes off-board; compile/link and board verification pending |
 
@@ -309,11 +309,11 @@ Text is 75% of parameters because the multilingual token embedding has `250000 x
 |---|---:|---|
 | Rotation-only W8A8 | QDQ `0.8975 / 0.8747`, T2I R@1 `45.42`, I2T R@1 `49.40` | Links/runs, below `50` target (FAIL) |
 | QAT v3 | QDQ `0.9353 / 0.919`, T2I R@1 `48.20`, I2T R@1 `52.30` | First stable INT8, still below `50` target |
-| QAT v4 | QDQ `0.9364 / 0.9091`, T2I R@1 `48.50`, I2T R@1 `52.95`; board `0.9363 / 0.9068` | Board-verified binary, below `50` target |
+| QAT v4 | QDQ `0.9364 / 0.9091`, T2I R@1 `48.50`, I2T R@1 `52.95`; board `0.9363 / 0.9068` | Legacy board-verified binary, below `50` target |
 | QAT v5 | QDQ `0.9437 / 0.9311`, T2I R@1 `49.25`, I2T R@1 `53.40` | Below `50` target |
 | QAT v6 | QDQ `0.9491 / 0.9266`, T2I R@1 `49.30`, I2T R@1 `53.85` | Random-rotation ceiling, below `50` target |
 | QAT v7 | QDQ `0.9485 / 0.9083`, T2I R@1 `48.38`, I2T R@1 `53.05` | Regressed vs v6 |
-| **QAT v8** | QDQ `0.9606 / 0.9447`, T2I R@1 `50.85`, I2T R@1 `52.90` | **Learned rotation — first to meet `50` target** |
+| **QAT v8** | QDQ `0.9606 / 0.9447`, T2I R@1 `50.85`, I2T R@1 `52.90`; board `0.9585 / 0.9399` | **Learned rotation — PASS (board-verified)** |
 
 </details>
 

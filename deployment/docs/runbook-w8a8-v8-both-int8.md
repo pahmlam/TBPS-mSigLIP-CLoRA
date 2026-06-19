@@ -143,7 +143,8 @@ cd artifacts/deployment/qnn_inputs/vn3k_test_10
   --perf_profile high_performance
 
 "$QNN_BIN/qnn-profile-viewer" \
-  --input_log artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn-profiling-data_4.log
+  --input_log artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn-profiling-data_4.log \
+  > artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/profile.txt
 
 # về máy: board fidelity vs PyTorch
 python3 deployment/scripts/qnn/compare_qnn_with_pytorch.py --qnn-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8 --model-dir artifacts/deployment/exports/exported_model --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --precision fp32 --json artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch_summary.json --csv artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch.csv

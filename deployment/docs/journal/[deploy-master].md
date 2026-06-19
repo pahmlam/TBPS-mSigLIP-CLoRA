@@ -28,16 +28,16 @@ File master này hợp nhất toàn bộ lịch sử deployment/model-compressio
 | Retrieval QAT v8 vision-isolation | **T2I R@1 `50.85`** (đạt deploy target 50), I2T R@1 `52.90`; drop T2I `-1.43` so với `52.28` |
 | Text finite-mask QDQ | Job `jp17y648p`; QDQ `0.9949 / 0.9912`; text-isolation T2I R@1 `51.65`, I2T R@1 `55.55` |
 | Ứng viên trước đó | QAT v6 (random rotation): T2I R@1 `49.30`, QDQ `0.9491 / 0.9266` — v8 hơn `+1.55` T2I |
-| Binary deploy đã verify trên board | **QAT v4** W8A8 context binary (v8 chưa compile/link trên board) |
-| Fidelity QAT v4 trên board | `0.9363 / 0.9068` mean/min, khớp QDQ `0.9364 / 0.9091` |
-| Runtime QAT v4 trên board | `32.70 ms/image`, `22.88 FPS`, context binary khoảng `90 MB` |
-| Hướng tiếp theo | Compile/link v8 vision và text finite-mask lên board; chạy both-INT8 C2 trực tiếp trên RB3 |
+| Binary deploy đã verify trên board | **QAT v8** W8A8 context binary (vision-only) |
+| Fidelity QAT v8 trên board | `0.9585 / 0.9399` mean/min, khớp QDQ `0.9606 / 0.9447` |
+| Runtime QAT v8 trên board | `33.05 ms/image`, `22.77 FPS`, context binary khoảng `90 MB` |
+| Hướng tiếp theo | Compile/link text finite-mask lên board; chạy both-INT8 C2 trực tiếp trên RB3 |
 
 Cách hiểu:
 
 - **C1 both-INT8 là số deploy proxy chính hiện tại**: vision QDQ + text QDQ đạt T2I R@1 `50.25`, vượt target `50` và giảm `-2.03` so với paper baseline `52.28`.
 - **v8 vision là ablation accuracy quan trọng**: learned rotation nâng vision-isolation T2I R@1 lên `50.85`, cosine QDQ mean/min đều vượt v6. Delta `+1.55` so v6 là ablation sạch "learned vs random" (recipe v6 giữ nguyên).
-- **v4 là binary deploy đã verify trên board hiện tại**: link và chạy được trên HTP v68, fidelity trên board khớp QDQ. v8 vẫn cần bước compile/link để verify số board.
+- **v8 là binary deploy đã verify trên board hiện tại**: link và chạy thành công trên HTP v68, fidelity mean trên board đạt `0.9585` (rất sát với QDQ `0.9606`).
 
 ### Pipeline Vision Chuẩn
 

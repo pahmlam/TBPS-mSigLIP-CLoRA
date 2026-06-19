@@ -1,5 +1,11 @@
 # Deployment Changelog
 
+## [2026-06-19] Board verification for QAT v8 vision binary
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | HIGH | docs | Recorded QAT v8 vision context binary board execution results: 0.9585 / 0.9399 cosine fidelity, 33.05 ms/image | COMPLETE |
+
 ## [2026-06-04] Add PTQ audit and quantize-only gate
 
 | # | Priority | Type | Action | Status |
