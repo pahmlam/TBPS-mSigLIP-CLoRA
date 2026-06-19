@@ -133,7 +133,7 @@ export LD_LIBRARY_PATH="$QNN_LIB:$LD_LIBRARY_PATH"
 "$QNN_BIN/qnn-net-run" \
   --backend "$QNN_LIB/libQnnHtp.so" \
   --retrieve_context artifacts/deployment/bin/vision_encoder.bin \
-  --config_file deployment/config/qnn/htp_config_245.json \
+  --config_file deployment/config/qnn/htp_config_244.json \
   --input_list artifacts/deployment/qnn_inputs/vn3k_test_10/input_list.txt \
   --output_dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8 \
   --profiling_level basic \
