@@ -122,22 +122,28 @@ python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py --model artifac
 ```bash
 # trên board (đã push .bin + thư mục input, đã export QNN_LIB)
 
-echo "$QNN_LIB"
-find ~/ -name libQnnHtp.so 2>/dev/null | head
+ls /opt/qcom/qairt/2.45.40.260406/lib/aarch64-ubuntu-gcc9.4/libQnnHtp.so
+ls /opt/qcom/qairt/2.45.40.260406/lib/aarch64-ubuntu-gcc9.4/libQnnHtpNetRunExtensions.so
 
-export QAIRT=/home/ubuntu/backup_qnn_20260323_095204/dfine_edge/qairt/2.44.0.260225
+export QAIRT=/opt/qcom/qairt/2.45.40.260406
 export QNN_BIN=$QAIRT/bin/aarch64-ubuntu-gcc9.4
 export QNN_LIB=$QAIRT/lib/aarch64-ubuntu-gcc9.4
 export LD_LIBRARY_PATH="$QNN_LIB:$LD_LIBRARY_PATH"
+export ADSP_LIBRARY_PATH="$QAIRT/lib/hexagon-v68/unsigned:$QAIRT/lib/hexagon-v68:$ADSP_LIBRARY_PATH"
+
+cd artifacts/deployment/qnn_inputs/vn3k_test_10
 
 "$QNN_BIN/qnn-net-run" \
   --backend "$QNN_LIB/libQnnHtp.so" \
-  --retrieve_context artifacts/deployment/bin/vision_encoder.bin \
-  --config_file deployment/config/qnn/htp_config_244.json \
-  --input_list artifacts/deployment/qnn_inputs/vn3k_test_10/input_list.txt \
-  --output_dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8 \
+  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/vision_encoder.bin \
+  --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_245.json \
+  --input_list input_list.txt \
+  --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8 \
   --profiling_level basic \
   --perf_profile high_performance
+
+"$QNN_BIN/qnn-profile-viewer" \
+  --input_log artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn-profiling-data_4.log
 
 # về máy: board fidelity vs PyTorch
 python3 deployment/scripts/qnn/compare_qnn_with_pytorch.py --qnn-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8 --model-dir artifacts/deployment/exports/exported_model --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --precision fp32 --json artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch_summary.json --csv artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch.csv
