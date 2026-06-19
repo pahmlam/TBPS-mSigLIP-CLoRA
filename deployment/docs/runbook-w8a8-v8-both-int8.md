@@ -115,7 +115,15 @@ Baseline phải ~52.28; deploy target là `vision_int8` T2I R@1 ≥ 50 (kết qu
 
 ### A8. Compile/link → `.bin` (TỐN JOB — chỉ khi A6+A7 pass — log journal)
 ```bash
-python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py --model artifacts/deployment/exports/exported_model_rotated_learned_qat_v8/vision_onnx --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 --wait --download artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/vision_encoder.bin
+python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+  --modality text \
+  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_finite_mask \
+  --calibration-data d7oz4gol9 \
+  --weights-dtype int8 \
+  --activations-dtype int8 \
+  --compile-options=--truncate_64bit_io \
+  --wait \
+  --download artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/text_encoder.bin
 ```
 
 ### A9. Board run + fidelity (TRÊN BOARD — xem §Board)

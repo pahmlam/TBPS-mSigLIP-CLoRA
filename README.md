@@ -248,13 +248,20 @@ The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN
 |---|---|
 | Source checkpoint | `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` |
 | Paper baseline | VN3K T2I R@1 `52.28`; local FP32 sanity reproduction is `52.40` |
-| Best end-to-end deploy proxy | Both-INT8 W8A8 QDQ, `50.25` T2I R@1, `52.95` I2T R@1 — `-2.03` T2I vs `52.28`, meets the `50` deploy target |
+| Best end-to-end deploy proxy | Both-INT8 W8A8 QDQ on the full VN3K test set; T2I R@1 `50.25` (`-2.03` vs `52.28`) and I2T R@1 `52.95` |
 | Vision-only isolation | QAT v8 learned rotation, `50.85` T2I R@1, `52.90` I2T R@1 |
 | Text-only isolation | Learned rotation + finite mask, `51.65` T2I R@1, `55.55` I2T R@1 |
 | Board-verified binary | QAT v4 W8A8 context binary (`48.50`, below the `50` target; v8/both-INT8 board-verify pending) |
 | Board runtime | `32.70 ms/img`, `22.88 FPS` |
 | Context size | about `90 MB` for vision encoder |
 | Text encoder | W8A8 QDQ passes off-board; compile/link and board verification pending |
+
+Current end-to-end deploy retrieval, measured off-board with both QDQ graphs on the full VN3K test set:
+
+| Direction | R@1 | R@5 | R@10 | mAP | mINP |
+|---|---:|---:|---:|---:|---:|
+| **T2I** | **50.25** | **77.72** | **86.68** | **55.53** | **48.91** |
+| **I2T** | **52.95** | **79.45** | **87.60** | **49.40** | **33.09** |
 
 Canonical references:
 
