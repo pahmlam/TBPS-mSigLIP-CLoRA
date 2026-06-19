@@ -244,6 +244,17 @@ uv run test.py --ckpt_path artifacts/models/checkpoints/epoch=56-val_score=52.28
 
 The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN context binaries. The current deploy path is all-INT8 W8A8 for both the vision and text encoders.
 
+### Target Hardware Specification
+
+| Component | Specification |
+|---|---|
+| **Platform** | Qualcomm Robotics RB3 Gen2 |
+| **SoC** | Qualcomm QCS6490 |
+| **CPU** | Kryo 670 (4x Cortex-A78 @ 2.7GHz, 4x Cortex-A55 @ 1.9GHz) |
+| **NPU / DSP** | Qualcomm AI Engine (Hexagon 770 / HTP v68) |
+| **RAM** | 5.2 GB Total (~4.0 GB Available) |
+| **OS** | Ubuntu 24.04 LTS (aarch64) |
+
 | Deployment item | Current state |
 |---|---|
 | Source checkpoint | `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` |
