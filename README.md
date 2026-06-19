@@ -267,6 +267,8 @@ The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN
 | Context size | about `90 MB` for vision encoder |
 | Text encoder | W8A8 QDQ passes off-board; compile/link and board verification pending |
 
+*NOTE: ckpt can be download at: https://drive.google.com/file/d/1Mo8OnjVhrIGhMp8Og5x99GSwBCzPQ7Bn/view?usp=sharing"*
+
 Current end-to-end deploy retrieval, measured off-board with both QDQ graphs on the full VN3K test set:
 
 | Direction | R@1 | R@5 | R@10 | mAP | mINP |
