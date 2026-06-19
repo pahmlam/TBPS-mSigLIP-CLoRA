@@ -60,7 +60,7 @@ AI Hub vision calib dataset `d7jzjy1m2` (`msiglip-vision-vn3k-train-calib-2000`)
 
 ### P3. Text inputs
 
-Integer `attention_mask` dùng cho learned rotation/QAT local. F32-mask input dùng cho ONNX/QDQ/QNN text, vì QNN HTP link reject tensor float nội bộ sinh từ `attention_mask int -> Cast(FLOAT)`.
+Integer `attention_mask` dùng cho learned rotation/QAT local. F32-mask input dùng cho ONNX/QDQ text, vì QNN HTP link reject tensor float nội bộ sinh từ `attention_mask int -> Cast(FLOAT)`. Riêng QNN board input phải dùng `input_ids=int32`, vì compile dùng `--truncate_64bit_io`: graph ONNX/QDQ vẫn thấy `input_ids=int64`, nhưng context binary trên board nhận 64 token x 4 bytes = 256 bytes.
 
 ```bash
 python deployment/scripts/qnn/prepare_vn3k_text_inputs.py --split test  --num-samples 10   --selection first  --output-dir artifacts/deployment/qnn_inputs/vn3k_text_10          # smoke fidelity + board
@@ -68,7 +68,8 @@ python deployment/scripts/qnn/prepare_vn3k_text_inputs.py --split train --num-sa
 python deployment/scripts/qnn/prepare_vn3k_text_inputs.py --split train --num-samples 4000 --selection random --output-dir artifacts/deployment/qnn_inputs/vn3k_text_train_4000   # QAT train
 python deployment/scripts/qnn/prepare_vn3k_text_inputs.py --split test  --num-samples 100  --selection first  --output-dir artifacts/deployment/qnn_inputs/vn3k_text_test_100     # QAT val
 
-python deployment/scripts/qnn/prepare_vn3k_text_inputs.py --split test  --num-samples 10   --selection first  --output-dir artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask       --mask-dtype float32  # QNN text smoke fidelity + board
+python deployment/scripts/qnn/prepare_vn3k_text_inputs.py --split test  --num-samples 10   --selection first  --output-dir artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask       --mask-dtype float32  # ONNX/QDQ text smoke fidelity
+python deployment/scripts/qnn/prepare_vn3k_text_inputs.py --split test  --num-samples 10   --selection first  --output-dir artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask_i32   --id-dtype int32 --mask-dtype float32  # QNN board text smoke
 python deployment/scripts/qnn/prepare_vn3k_text_inputs.py --split train --num-samples 500  --selection random --output-dir artifacts/deployment/qnn_inputs/vn3k_text_calib_500_f32mask --mask-dtype float32  # AI Hub text calib source
 ```
 
@@ -313,19 +314,41 @@ python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
   --modality text \
   --text-attention-mask-dtype float32 \
   --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe \
-  --calibration-data $TEXT_CALIB_ID \
+  --calibration-data d7ozgzkq9 \
   --weights-dtype int8 \
   --activations-dtype int8 \
-  --compile-options="--truncate_64bit_io --quantize_io" \
   --wait \
   --download artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/text_encoder.bin
 ```
 
 ### B12. Board run + fidelity text (TRÊN BOARD)
 ```bash
-qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/text_encoder.bin --config_file deployment/config/qnn/htp_config_245.json --input_list artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask/input_list.txt --output_dir artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask --profiling_level basic --perf_profile high_performance
+
+ls /opt/qcom/qairt/2.45.40.260406/lib/aarch64-ubuntu-gcc9.4/libQnnHtp.so
+ls /opt/qcom/qairt/2.45.40.260406/lib/aarch64-ubuntu-gcc9.4/libQnnHtpNetRunExtensions.so
+
+export QAIRT=/opt/qcom/qairt/2.45.40.260406
+export QNN_BIN=$QAIRT/bin/aarch64-ubuntu-gcc9.4
+export QNN_LIB=$QAIRT/lib/aarch64-ubuntu-gcc9.4
+export LD_LIBRARY_PATH="$QNN_LIB:$LD_LIBRARY_PATH"
+export ADSP_LIBRARY_PATH="$QAIRT/lib/hexagon-v68/unsigned;$QAIRT/lib/hexagon-v68;/usr/lib/rfsa/adsp;/dsp"
+
+cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask_i32
+
+wc -c raw/00000_pid2000_02001_1_input_ids.raw raw/00000_pid2000_02001_1_attention_mask.raw
+# Expected: input_ids 256 bytes (int32), attention_mask 256 bytes (float32)
+
+"$QNN_BIN/qnn-net-run" \
+  --backend "$QNN_LIB/libQnnHtp.so" \
+  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/text_encoder.bin \
+  --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_245.json \
+  --input_list input_list.txt \
+  --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask \
+  --profiling_level basic \
+  --perf_profile high_performance
+
 ```
-> Lưu ý: text input cho QNN f32-mask là `input_ids` integer + `attention_mask` float32; `input_list.txt` vẫn dùng dạng `input_ids:=... attention_mask:=...`. Đừng dùng `compare_qnn_with_pytorch.py` cho B12 vì script đó hiện chỉ compare vision/image. Nếu cần fidelity text board, viết/ dùng helper text riêng đọc dual-input raw và gọi `encode_text`.
+> Lưu ý: text input cho QNN f32-mask là `input_ids` **int32** + `attention_mask` float32; `input_list.txt` vẫn dùng dạng `input_ids:=... attention_mask:=...`. Nếu dùng input_ids int64, qnn-net-run báo file size 512 bytes nhưng graph chỉ expect 256 bytes. Đừng dùng `compare_qnn_with_pytorch.py` cho B12 vì script đó hiện chỉ compare vision/image. Nếu cần fidelity text board, viết/ dùng helper text riêng đọc dual-input raw và gọi `encode_text`.
 
 ---
 
@@ -356,7 +379,7 @@ Kết luận C1: **both-INT8 T2I R@1 `50.25`**, giảm `-2.03` so với paper ba
 **C2.1. Chuẩn bị FULL test set `.raw` (local/free)** — gallery 2000 ảnh, query 4000 caption.
 ```bash
 python3 deployment/scripts/qnn/prepare_vn3k_vision_inputs.py --dataset-root VN3K --split test --selection first --num-samples 2000 --output-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000 --path-mode relative
-python3 deployment/scripts/qnn/prepare_vn3k_text_inputs.py --split test --num-samples 4000 --selection first --output-dir artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask --mask-dtype float32
+python3 deployment/scripts/qnn/prepare_vn3k_text_inputs.py --split test --num-samples 4000 --selection first --output-dir artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32 --id-dtype int32 --mask-dtype float32
 ```
 
 **C2.2. Board: vision `.bin` chạy FULL gallery → image embeddings** (trong thư mục input trên board).
@@ -366,14 +389,14 @@ qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context vision_encoder.
 
 **C2.3. Board: text `.bin` chạy FULL query → text embeddings.**
 ```bash
-qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context text_encoder.bin --config_file deployment/config/qnn/htp_config_245.json --input_list vn3k_test_query_4000_f32mask/input_list.txt --output_dir qnn_runs/both_int8_text --profiling_level basic --perf_profile high_performance
+qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context text_encoder.bin --config_file deployment/config/qnn/htp_config_245.json --input_list vn3k_test_query_4000_f32mask_i32/input_list.txt --output_dir qnn_runs/both_int8_text --profiling_level basic --perf_profile high_performance
 ```
 
 **C2.4. Kéo embedding board về host** (`adb pull`/`scp` 2 thư mục `qnn_runs/both_int8_{vision,text}` chứa `Output_*.raw` đã dequantize sang float).
 
 **C2.5. Tính R@1 từ embedding board** (local/free) — raw dot product, đúng `LitTBPS._compute_metrics`.
 ```bash
-python3 deployment/scripts/qnn/eval_retrieval_board_embeddings.py --vision-output-dir artifacts/deployment/qnn_runs/both_int8_vision --text-output-dir artifacts/deployment/qnn_runs/both_int8_text --gallery-input-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000 --query-input-dir artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask --json artifacts/deployment/qnn_runs/both_int8_board_r1.json
+python3 deployment/scripts/qnn/eval_retrieval_board_embeddings.py --vision-output-dir artifacts/deployment/qnn_runs/both_int8_vision --text-output-dir artifacts/deployment/qnn_runs/both_int8_text --gallery-input-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000 --query-input-dir artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32 --json artifacts/deployment/qnn_runs/both_int8_board_r1.json
 ```
 > **Trạng thái script:** `eval_retrieval_board_embeddings.py` là helper *cần viết* (đọc `Output_*.raw` board của cả 2 encoder, map pid theo thứ tự `input_list`, tính R@1 raw dot product — port từ `eval_retrieval_quantized_vision.py`, thay phần inference ONNX bằng load `.raw`). Cho tới khi có text `.bin` f32-mask và text board fidelity/retrieval, **số both-INT8 ở C1 (QDQ) vẫn là proxy**; vision board đã verify ở A9/A10.
 
@@ -384,7 +407,7 @@ Deploy target áp cho both-INT8 board: **T2I R@1 ≥ 50** (kết quả < 50 là 
 # Board — prerequisites & gotchas
 
 **Chuẩn bị (1 lần mỗi phiên trên board `qc-rb3g2`):**
-1. `adb push` (hoặc scp) lên board: file `.bin`, thư mục input kèm `input_list.txt` + `raw/`. Smoke fidelity: `vn3k_test_10` / `vn3k_text_10_f32mask`. Both-INT8 board (C2): `vn3k_test_gallery_2000` / `vn3k_test_query_4000_f32mask`.
+1. `adb push` (hoặc scp) lên board: file `.bin`, thư mục input kèm `input_list.txt` + `raw/`. Smoke fidelity: `vn3k_test_10` / `vn3k_text_10_f32mask_i32`. Both-INT8 board (C2): `vn3k_test_gallery_2000` / `vn3k_test_query_4000_f32mask_i32`.
 2. `export QNN_LIB=<đường dẫn QNN libs trên board>` (chứa `libQnnHtp.so`). Nếu chưa set → lỗi `--backend` không tìm thấy.
 3. Chạy `qnn-net-run` **từ trong thư mục input** (hoặc dùng path tuyệt đối) vì `raw/` trong `input_list.txt` là path tương đối.
 
