@@ -115,21 +115,29 @@ Baseline phải ~52.28; deploy target là `vision_int8` T2I R@1 ≥ 50 (kết qu
 
 ### A8. Compile/link → `.bin` (TỐN JOB — chỉ khi A6+A7 pass — log journal)
 ```bash
-python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
-  --modality text \
-  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_finite_mask \
-  --calibration-data d7oz4gol9 \
-  --weights-dtype int8 \
-  --activations-dtype int8 \
-  --compile-options=--truncate_64bit_io \
-  --wait \
-  --download artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/text_encoder.bin
+python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py --model artifacts/deployment/exports/exported_model_rotated_learned_qat_v8/vision_onnx --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 --wait --download artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/vision_encoder.bin
 ```
 
 ### A9. Board run + fidelity (TRÊN BOARD — xem §Board)
 ```bash
 # trên board (đã push .bin + thư mục input, đã export QNN_LIB)
-qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/vision_encoder.bin --config_file deployment/config/qnn/htp_config_245.json --input_list artifacts/deployment/qnn_inputs/vn3k_test_10/input_list.txt --output_dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8 --profiling_level basic --perf_profile high_performance
+
+echo "$QNN_LIB"
+find ~/ -name libQnnHtp.so 2>/dev/null | head
+
+export QAIRT=/home/ubuntu/backup_qnn_20260323_095204/dfine_edge/qairt/2.44.0.260225
+export QNN_BIN=$QAIRT/bin/aarch64-ubuntu-gcc9.4
+export QNN_LIB=$QAIRT/lib/aarch64-ubuntu-gcc9.4
+export LD_LIBRARY_PATH="$QNN_LIB:$LD_LIBRARY_PATH"
+
+"$QNN_BIN/qnn-net-run" \
+  --backend "$QNN_LIB/libQnnHtp.so" \
+  --retrieve_context artifacts/deployment/bin/vision_encoder.bin \
+  --config_file deployment/config/qnn/htp_config_245.json \
+  --input_list artifacts/deployment/qnn_inputs/vn3k_test_10/input_list.txt \
+  --output_dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8 \
+  --profiling_level basic \
+  --perf_profile high_performance
 
 # về máy: board fidelity vs PyTorch
 python3 deployment/scripts/qnn/compare_qnn_with_pytorch.py --qnn-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8 --model-dir artifacts/deployment/exports/exported_model --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --precision fp32 --json artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch_summary.json --csv artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch.csv
@@ -204,7 +212,15 @@ Combo `text_int8` (image FP32 + text QDQ) cho thấy riêng text-quant rớt bao
 
 ### B11. Compile/link text finite-mask → `.bin` (TỐN JOB — chỉ khi B8+B9+B10 pass — log journal) — `--modality text`
 ```bash
-python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py --modality text --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_finite_mask --calibration-data d7oz4gol9 --weights-dtype int8 --activations-dtype int8 --wait --download artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/text_encoder.bin
+python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+  --modality text \
+  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_finite_mask \
+  --calibration-data d7oz4gol9 \
+  --weights-dtype int8 \
+  --activations-dtype int8 \
+  --compile-options="--truncate_64bit_io --quantize_io" \
+  --wait \
+  --download artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/text_encoder.bin
 ```
 
 ### B12. Board run + fidelity text (TRÊN BOARD)

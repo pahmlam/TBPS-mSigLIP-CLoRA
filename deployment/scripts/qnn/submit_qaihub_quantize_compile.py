@@ -26,6 +26,23 @@ def _job_label(job: Any) -> str:
     return str(job)
 
 
+def _status_code(status: Any) -> str:
+    code = getattr(status, "code", status)
+    name = getattr(code, "name", None)
+    if name is not None:
+        return str(name)
+    return str(code)
+
+
+def _raise_if_not_success(status: Any, label: str) -> None:
+    code = _status_code(status).upper()
+    if code == "SUCCESS" or code.endswith(".SUCCESS"):
+        return
+    message = getattr(status, "message", "")
+    details = f"\n{message}" if message else ""
+    raise RuntimeError(f"{label} failed with status {code}.{details}")
+
+
 def _dtype(name: str):
     import qai_hub as hub
 
@@ -236,8 +253,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Additional cli-like compile options. Default by --modality: vision -> "
-            "'--quantize_io' (quantize graph I/O); text -> '' (preserve int I/O — "
-            "token IDs must stay integer, not int8)."
+            "'--quantize_io' (quantize graph I/O); text -> "
+            "'--truncate_64bit_io --quantize_io' (truncate integer token inputs "
+            "to QNN-supported 32-bit I/O while quantizing the float embedding output)."
         ),
     )
     parser.add_argument(
@@ -302,8 +320,13 @@ def main() -> None:
                 f'"attention_mask": ((1, {s}), "int64")}}'
             )
     if args.compile_options is None:
-        # Vision quantizes graph I/O; text MUST preserve int I/O (token IDs > int8).
-        args.compile_options = "--quantize_io" if args.modality == "vision" else ""
+        # Vision quantizes float graph I/O. Text keeps token IDs as integer inputs
+        # but still needs quantized float output I/O for HTP context linking.
+        args.compile_options = (
+            "--quantize_io"
+            if args.modality == "vision"
+            else "--truncate_64bit_io --quantize_io"
+        )
 
     input_specs = _parse_input_specs(args.input_specs)
     quantize_model = model
@@ -333,6 +356,7 @@ def main() -> None:
         print("Waiting for quantize job")
         quantize_status = quantize_job.wait()
         print(f"Quantize status: {quantize_status}")
+        _raise_if_not_success(quantize_status, "Quantize job")
 
     quantized_model = quantize_job.get_target_model()
     if quantized_model is None:
@@ -371,7 +395,9 @@ def main() -> None:
     if args.wait:
         for index, compile_job in enumerate(compile_jobs):
             print(f"Waiting for compile job {index}")
-            print(f"Compile status {index}: {compile_job.wait()}")
+            compile_status = compile_job.wait()
+            print(f"Compile status {index}: {compile_status}")
+            _raise_if_not_success(compile_status, f"Compile job {index}")
 
     if link_job is None:
         raise RuntimeError(
@@ -381,7 +407,9 @@ def main() -> None:
     print(f"Link job: {_job_label(link_job)}")
     if args.wait:
         print("Waiting for link job")
-        print(f"Link status: {link_job.wait()}")
+        link_status = link_job.wait()
+        print(f"Link status: {link_status}")
+        _raise_if_not_success(link_status, "Link job")
 
     if args.download:
         output = args.download.expanduser().resolve()

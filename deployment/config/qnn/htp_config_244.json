@@ -1,0 +1,6 @@
+{
+  "backend_extensions": {
+    "shared_library_path": "$QNN_LIB/libQnnHtpNetRunExtensions.so",
+    "config_file_path": "/home/ubuntu/sigm/Lam/deployment/config/qnn/htp_setting.json"
+  }
+}
