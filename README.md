@@ -267,7 +267,7 @@ The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN
 | Context size | about `90 MB` for vision encoder |
 | Text encoder | W8A8 QDQ passes off-board; compile/link and board verification pending |
 
-*NOTE: ckpt can be download at: https://drive.google.com/file/d/1Mo8OnjVhrIGhMp8Og5x99GSwBCzPQ7Bn/view?usp=sharing"*
+*NOTE: ckpt can be download at: https://drive.google.com/file/d/1Mo8OnjVhrIGhMp8Og5x99GSwBCzPQ7Bn/view?usp=sharing*
 
 Current end-to-end deploy retrieval, measured off-board with both QDQ graphs on the full VN3K test set:
 
@@ -372,6 +372,11 @@ figures/                           # README and paper figures
 | [deployment/docs/journal/[deploy-master].md](deployment/docs/journal/[deploy-master].md) | Consolidated deployment/model-compression journal |
 | [deployment/docs/runbook-w8a8-v8-both-int8.md](deployment/docs/runbook-w8a8-v8-both-int8.md) | Forward runbook for learned rotation, text, and both-INT8 |
 
+## License
+Distributed under the Apache License, Version 2.0. See `LICENSE.txt` for more information.
+
 ## Contact
 
-For questions, please open an issue or contact the authors.
+For questions and checkpoint access please open an issue or contact the authors:
+
+Phạm Tùng Lâm - 18phamtunglam@gmail.com
