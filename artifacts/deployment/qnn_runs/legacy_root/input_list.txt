@@ -1,1 +1,0 @@
-image:=image_256_float32.raw

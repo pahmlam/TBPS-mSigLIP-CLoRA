@@ -17,7 +17,7 @@
 | Biến | Ý nghĩa | Ví dụ |
 |---|---|---|
 | `VISION_CALIB_ID` | AI Hub dataset id calib **vision** (đã có) | `d7jzjy1m2` |
-| `TEXT_CALIB_ID` | AI Hub dataset id calib **text f32-mask** (tạo ở Part B) | `d7ozgzkq9` |
+| `TEXT_CALIB_ID` | AI Hub dataset id calib **text f32-mask** (tạo ở Part B) | `d7mv1vkv7` |
 | `VISION_QDQ` | thư mục QDQ vision v8 (learned rotation) | `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_<ID>_qdq_onnx` |
 | `TEXT_QDQ` | thư mục QDQ text v8 f32-mask finite-mask | `artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/job_<ID>_qdq_onnx` |
 | `BOARD` | host board | `qc-rb3g2` |
@@ -86,7 +86,7 @@ PYTHONUNBUFFERED=1 python deployment/scripts/qnn/learn_rotation.py --model-dir a
 **GATE**: in `GATE PASS` (cosine min ≥ 0.9999) thì mới lưu `model_fp32.pt`. → `VISION_BASE=exported_model_rotated_learned`.
 
 ### A2. QAT v8 (local/free, cuda) — recipe **v6** (const lr 1e-5, 15 ep)
-> v7 (cosine + lr 2e-5) đã regress (`48.38` < v6 `49.30`), nên v8 dùng recipe v6 để ablation cô lập đúng phần rotation.
+
 ```bash
 PYTHONUNBUFFERED=1 python deployment/scripts/qnn/train_vision_quant_robust.py --model-dir artifacts/deployment/exports/exported_model_rotated_learned --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 --val-input-dir artifacts/deployment/qnn_inputs/vn3k_test_100 --output-dir artifacts/deployment/exports/exported_model_rotated_learned_qat_v8 --device cuda --batch-size 16 --epochs 15 --lr 1e-5 --fake-quant-observer ema --quant-head --quant-linears --quant-attention --start-layer 0 --end-layer 11 --num-workers 4
 ```
@@ -118,7 +118,6 @@ Kỳ vọng mean ≥ 0.95, min ≥ 0.90.
 ```bash
 python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py --qdq-onnx $VISION_QDQ --model-dir artifacts/deployment/exports/exported_model --json artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/retrieval_r1.json
 ```
-Baseline phải ~52.28; deploy target là `vision_int8` T2I R@1 ≥ 50 (kết quả < 50 là FAIL). Đây là số quyết định v8 thắng/thua v7.
 
 ### A8. Compile/link → `.bin` (TỐN JOB — chỉ khi A6+A7 pass — log journal)
 ```bash
@@ -156,7 +155,6 @@ cd artifacts/deployment/qnn_inputs/vn3k_test_10
 # về máy: board fidelity vs PyTorch
 python3 deployment/scripts/qnn/compare_qnn_with_pytorch.py --qnn-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8 --model-dir artifacts/deployment/exports/exported_model --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --precision fp32 --json artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch_summary.json --csv artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch.csv
 ```
-**GATE board smoke**: mean ≥ 0.90. Kết quả v8 hiện tại: board fidelity `0.9585 / 0.9399` mean/min, runtime `33.05 ms/image`, `22.77 FPS`, không NaN/Inf. Board fidelity ≈ QDQ fidelity là dấu hiệu QDQ proxy đúng.
 
 ### A10. Board retrieval R@1 — vision-isolation FULL gallery (TRÊN BOARD + local)
 
@@ -183,15 +181,6 @@ python3 deployment/scripts/qnn/eval_retrieval_board_vision.py \
   --dataset-root . \
   --json artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/board_vision_r1.json
 ```
-
-**Kết quả hiện tại (board vision-isolation, full VN3K gallery):**
-
-| Task | R@1 | R@5 | R@10 | mAP | mINP |
-|---|---:|---:|---:|---:|---:|
-| T2I | `50.20` | `77.62` | `86.73` | `55.84` | `49.51` |
-| I2T | `54.50` | `81.65` | `90.00` | `50.22` | `33.25` |
-
-Kết luận A10: board vision v8 giảm `-0.65` T2I so với QDQ proxy `50.85`, nhưng vẫn vượt deploy target `50.0`. Artifact: `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/board_vision_r1.json`.
 
 ---
 
@@ -350,26 +339,63 @@ wc -c raw/00000_pid2000_02001_1_input_ids.raw raw/00000_pid2000_02001_1_attentio
 ```
 > Lưu ý: text input cho QNN f32-mask là `input_ids` **int32** + `attention_mask` float32; `input_list.txt` vẫn dùng dạng `input_ids:=... attention_mask:=...`. Nếu dùng input_ids int64, qnn-net-run báo file size 512 bytes nhưng graph chỉ expect 256 bytes. Đừng dùng `compare_qnn_with_pytorch.py` cho B12 vì script đó hiện chỉ compare vision/image. Nếu cần fidelity text board, viết/ dùng helper text riêng đọc dual-input raw và gọi `encode_text`.
 
+### B13. GATE board text fidelity (host/local sau khi kéo output về)
+```bash
+python3 deployment/scripts/qnn/compare_text_qnn_with_pytorch.py \
+  --qnn-output-dir artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask_i32 \
+  --model-dir artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8 \
+  --id-dtype int32 \
+  --mask-dtype float32 \
+  --json artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask/qnn_vs_pytorch_summary.json \
+  --csv artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask/qnn_vs_pytorch.csv
+```
+**GATE**: mean >= `0.90`, không NaN/Inf. Nếu fail ở đây thì debug text `.bin`/input dtype/runtime trước khi chạy full 4000 query.
+
+### B14. Board text retrieval R@1 — text-isolation FULL query (TRÊN BOARD + local)
+
+Chạy full 4000 query text trên board bằng input `input_ids=int32`, kéo output về host, rồi tính retrieval với image FP32 để xác nhận proxy `text_int8`.
+
+```bash
+# local: chuẩn bị full query input cho QNN board
+python3 deployment/scripts/qnn/prepare_vn3k_text_inputs.py \
+  --split test \
+  --num-samples 4000 \
+  --selection first \
+  --output-dir artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32 \
+  --id-dtype int32 \
+  --mask-dtype float32
+
+# board: cd vào input dir rồi chạy text .bin
+cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32
+
+"$QNN_BIN/qnn-net-run" \
+  --backend "$QNN_LIB/libQnnHtp.so" \
+  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/text_encoder.bin \
+  --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_245.json \
+  --input_list input_list.txt \
+  --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_query_4000_f32mask_i32 \
+  --profiling_level basic \
+  --perf_profile high_performance
+
+# host: sau khi rsync/scp output về
+python3 deployment/scripts/qnn/eval_retrieval_board_text.py \
+  --text-output-dir artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_query_4000_f32mask_i32 \
+  --query-input-dir artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32 \
+  --model-dir artifacts/deployment/exports/exported_model \
+  --dataset-root . \
+  --json artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_query_4000_f32mask_i32/board_text_r1.json
+```
+**GATE**: T2I R@1 >= `50.0` cho text-isolation board run. Nếu pass, tiếp tục C2 both-INT8 board retrieval.
+
 ---
 
 # PART C — BOTH-INT8 (số deploy cuối cùng)
 
-### C1. Off-board both-INT8 R@1 (local/free, FULL set) — **số chính của luận văn**
+### C1. Off-board both-INT8 R@1 (local/free, FULL set)
 ```bash
 python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py --qdq-onnx $VISION_QDQ --text-qdq-onnx $TEXT_QDQ --model-dir artifacts/deployment/exports/exported_model --json artifacts/deployment/runtime/both_int8/both_int8_r1.json
 ```
-In 4 combo: `baseline_fp32` (~52.28), `vision_int8`, `text_int8`, **`both_int8`** = số deploy thật. Deploy target T2I R@1 ≥ 50 (kết quả < 50 là FAIL).
-
-**Kết quả hiện tại (C1, QDQ/off-board, full VN3K test):**
-
-| Combo | T2I R@1 | I2T R@1 | Ghi chú |
-|---|---:|---:|---|
-| `baseline_fp32` | `52.40` | `55.30` | local sanity reproduction; baseline báo cáo chính vẫn là paper `52.28` |
-| `vision_int8` | `50.85` | `52.90` | vision v8 learned rotation |
-| `text_int8` | `51.65` | `55.55` | text v8 learned rotation + finite mask |
-| **`both_int8`** | **`50.25`** | **`52.95`** | **PASS** |
-
-Kết luận C1: **both-INT8 T2I R@1 `50.25`**, giảm `-2.03` so với paper baseline `52.28`, vẫn vượt deploy target `50.0` với margin `+0.25`. C2 board retrieval vẫn là bước xác nhận tiếp theo.
 
 ### C2. Board both-INT8 — retrieval INT8×INT8 TRỰC TIẾP trên thiết bị
 
@@ -398,7 +424,7 @@ qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context text_encoder.bi
 ```bash
 python3 deployment/scripts/qnn/eval_retrieval_board_embeddings.py --vision-output-dir artifacts/deployment/qnn_runs/both_int8_vision --text-output-dir artifacts/deployment/qnn_runs/both_int8_text --gallery-input-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000 --query-input-dir artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32 --json artifacts/deployment/qnn_runs/both_int8_board_r1.json
 ```
-> **Trạng thái script:** `eval_retrieval_board_embeddings.py` là helper *cần viết* (đọc `Output_*.raw` board của cả 2 encoder, map pid theo thứ tự `input_list`, tính R@1 raw dot product — port từ `eval_retrieval_quantized_vision.py`, thay phần inference ONNX bằng load `.raw`). Cho tới khi có text `.bin` f32-mask và text board fidelity/retrieval, **số both-INT8 ở C1 (QDQ) vẫn là proxy**; vision board đã verify ở A9/A10.
+> `eval_retrieval_board_embeddings.py` đọc `Result_*/output_0.raw` board của cả 2 encoder, map pid theo manifest của input dirs, và tính retrieval raw dot product như `eval_retrieval_quantized_vision.py`. Cho tới khi có text board fidelity/retrieval, **số both-INT8 ở C1 (QDQ) vẫn là proxy**; vision board đã verify ở A9/A10.
 
 Deploy target áp cho both-INT8 board: **T2I R@1 ≥ 50** (kết quả < 50 là FAIL).
 
