@@ -1,0 +1,21 @@
+---
+timestamp: 4161092257
+command: /opt/qcom/qairt/2.45.40.260406/bin/aarch64-ubuntu-gcc9.4/qnn-net-run --backend /opt/qcom/qairt/2.45.40.260406/lib/aarch64-ubuntu-gcc9.4/libQnnHtp.so --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/text_encoder_i32.bin --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_text_i32.json --input_list input_list.txt --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_zero_ids --profiling_level basic --perf_profile high_performance
+execution_mode: synchronous
+inferences_completed: 10
+graphs:
+  - graph_name: graph_jnt6glq3
+    input_tensors:
+    - tensor_name: attention_mask
+      id: 1
+      datatype: QNN_DATATYPE_UFIXED_POINT_8
+      dimensions: [1,64]
+    - tensor_name: input_ids
+      id: 4
+      datatype: QNN_DATATYPE_INT_32
+      dimensions: [1,64]
+    output_tensors:
+    - tensor_name: output_0
+      id: 681
+      datatype: QNN_DATATYPE_UFIXED_POINT_8
+      dimensions: [1,768]
