@@ -1,0 +1,19 @@
+{
+  "context": {
+    "weight_sharing_enabled": false
+  },
+  "devices": [
+    {
+      "device_id": 0,
+      "dsp_arch": "v68",
+      "soc_model": 93
+    }
+  ],
+  "graphs": [
+    {
+      "fp16_relaxed_precision": 0,
+      "vtcm_mb": 0,
+      "O": 3
+    }
+  ]
+}

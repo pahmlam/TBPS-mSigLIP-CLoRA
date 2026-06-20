@@ -1,0 +1,6 @@
+{
+  "backend_extensions": {
+    "shared_library_path": "/opt/qcom/qairt/2.45.40.260406/lib/aarch64-ubuntu-gcc9.4/libQnnHtpNetRunExtensions.so",
+    "config_file_path": "/home/ubuntu/sigm/Lam/deployment/config/qnn/htp_setting_text_i32.json"
+  }
+}
