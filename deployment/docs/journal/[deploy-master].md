@@ -1,6 +1,6 @@
 # [Deploy Master] Nhật ký nén vision mSigLIP lên RB3/QNN
 
-> **Cập nhật hợp nhất cuối:** 2026-06-19
+> **Cập nhật hợp nhất cuối:** 2026-06-20
 > **Phạm vi:** RB3 Gen2 / QNN / AI Hub / ONNX / nén mô hình cho deployment mSigLIP.
 > **Nguồn trạng thái chuẩn:** file này.
 > **Nhật ký deploy duy nhất:** toàn bộ lịch sử deployment/model-compression và kết quả mới nằm ở đây.
@@ -27,18 +27,20 @@ File master này hợp nhất toàn bộ lịch sử deployment/model-compressio
 | Cosine QDQ QAT v8 | **`0.9606 / 0.9447`** mean/min |
 | Retrieval QAT v8 vision-isolation | **T2I R@1 `50.85`** (đạt deploy target 50), I2T R@1 `52.90`; drop T2I `-1.43` so với `52.28` |
 | Board retrieval QAT v8 vision-isolation | **T2I R@1 `50.20`**, I2T R@1 `54.50`; drop T2I `-0.65` so với QDQ proxy `50.85`, vẫn PASS target `50` |
-| Text finite/f32/link-safe path | QDQ proxy `0.9949 / 0.9912`; text-isolation T2I R@1 `51.65`, I2T R@1 `55.55`; link-safe ONNX local gate `0.99999999 / 0.99999976`; AI Hub link PASS, context binary available at `artifacts/deployment/bin/text_encoder.bin` |
+| Text finite/f32/link-safe path | QDQ proxy `0.9949 / 0.9912`; text-isolation T2I R@1 `51.65`, I2T R@1 `55.55`; link-safe ONNX local gate `0.99999999 / 0.99999976`; AI Hub link PASS, nhưng full text context trên board FAIL fidelity |
+| Text board diagnosis | `input_ids` thật và all-zero `input_ids` cho output board giống hệt (`cos=1.0`, `max_abs=0.0` trên 10/10 mẫu); HTP context hiện không dùng dynamic token IDs đúng cách |
 | Ứng viên trước đó | QAT v6 (random rotation): T2I R@1 `49.30`, QDQ `0.9491 / 0.9266` — v8 hơn `+1.55` T2I |
-| Binary deploy đã verify trên board | **QAT v8** W8A8 context binary (vision-only) |
+| Binary deploy đã verify trên board | **QAT v8** W8A8 context binary (vision-only); text full-context board bị chặn bởi dynamic embedding lookup |
 | Fidelity QAT v8 trên board | `0.9585 / 0.9399` mean/min, khớp QDQ `0.9606 / 0.9447` |
 | Runtime QAT v8 trên board | `33.05 ms/image`, `22.77 FPS`, context binary khoảng `90 MB` |
-| Hướng tiếp theo | Board-verify text finite/f32/link-safe `.bin`; compare board text vs PyTorch/QDQ; then run C2 both-INT8 retrieval directly on RB3 |
+| Hướng tiếp theo | Không tiếp tục coi full text `.bin` nhận `input_ids` là đáng tin; thử microbenchmark `Gather`, rồi export split-text: CPU board làm embedding lookup, QNN HTP chạy transformer/head nhận `inputs_embeds` |
 
 Cách hiểu:
 
 - **C1 both-INT8 là số deploy proxy chính hiện tại**: vision QDQ + text QDQ đạt T2I R@1 `50.25`, vượt target `50` và giảm `-2.03` so với paper baseline `52.28`.
 - **v8 vision là ablation accuracy quan trọng**: learned rotation nâng vision-isolation T2I R@1 lên `50.85`, cosine QDQ mean/min đều vượt v6. Delta `+1.55` so v6 là ablation sạch "learned vs random" (recipe v6 giữ nguyên).
 - **v8 là binary deploy đã verify trên board hiện tại**: link và chạy thành công trên HTP v68, fidelity mean trên board đạt `0.9585` (rất sát với QDQ `0.9606`), full board vision retrieval đạt T2I R@1 `50.20`.
+- **Text QDQ đúng nhưng full text HTP context không đáng tin**: static ONNX và QDQ đều giữ fidelity tốt, nhưng board output không đổi khi zero toàn bộ `input_ids`; do đó vấn đề nằm ở compile/link/runtime HTP cho dynamic `Gather(token_embedding.weight, input_ids)`, không phải do QAT hay calibration.
 
 ### Pipeline Vision Chuẩn
 
@@ -1409,3 +1411,360 @@ Where(1 - mask != 0, -32, 0)  ==  (1 - mask) * (-32),  mask in {0, 1}
 **Ý nghĩa kỹ thuật:** lỗi trước đó không chứng minh text QAT/W8A8 sai về chất lượng. Nó là lỗi biểu diễn graph: finite mask và f32 mask đã sửa dynamic-range/QDQ scale, còn link-safe rewrite loại các float mask islands (`Cast`/`Where`) mà HTP v68 không chấp nhận trong context binary.
 
 **Kết luận:** text encoder hiện đã có binary linkable. Các gate còn lại là chạy `qnn-net-run` text trên RB3, so fidelity board-vs-PyTorch/QDQ, sau đó chạy C2 both-INT8 board retrieval.
+
+## 11. 2026-06-20 - Text board FAIL do dynamic token embedding lookup trên HTP
+
+**Mục tiêu:** xác định vì sao text W8A8 context binary đã link được nhưng board fidelity rất thấp, và liệu còn hướng cứu để chạy text trên RB3 hay không.
+
+**Bối cảnh:** sau link-safe mask rewrite, text graph có thể đi qua AI Hub quantize → compile → link. Tuy nhiên board smoke cho thấy output text trên HTP không khớp PyTorch/QDQ, dù input files và dtype đã được sửa từ `int64` sang `int32`.
+
+### Kết quả đã xác nhận
+
+| Gate | Artifact | Kết quả |
+|---|---|---:|
+| Static ONNX i32/f32-mask/link-safe vs PyTorch | `artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_i32_f32mask_finite_linksafe/static_vs_pytorch_i32_summary.json` | cosine mean/min `0.99999999 / 0.99999976` |
+| QDQ i32/f32-mask/link-safe vs PyTorch | `artifacts/deployment/runtime/text_w8a8_learned_qat_v8_i32_f32mask/text_qdq_fid.json` | cosine mean/min/max `0.99494732 / 0.99116683 / 0.99719608` |
+| Board QNN i32/f32-mask vs PyTorch | `artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/qnn_vs_pytorch_summary.json` | cosine mean/min/max `0.12666028 / 0.05224004 / 0.23556966` |
+| Board execution metadata | `artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/execution_metadata.yaml` | 10 inferences completed; `input_ids` = `QNN_DATATYPE_INT_32`, `attention_mask`/`output_0` = `QNN_DATATYPE_UFIXED_POINT_8` |
+
+**Input file sanity:** board `input_ids` `.raw` đã được kiểm bằng `od` và chứa token thật, ví dụ sample đầu bắt đầu bằng:
+
+```text
+259 272 2342 2214 266 326 1842 12996 ...
+```
+
+Như vậy lỗi không phải do file `.raw` bị rỗng, sai endian, sai dtype, hoặc copy nhầm input.
+
+### Zero-token ablation
+
+Để kiểm tra graph HTP có thật sự dùng `input_ids` hay không, đã tạo bản input mới bằng cách copy `vn3k_text_10_f32mask_i32` rồi zero toàn bộ file `*_input_ids.raw`, giữ nguyên `attention_mask`.
+
+**Board runs được so sánh:**
+
+| Run | Ý nghĩa |
+|---|---|
+| `artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask` | token IDs thật |
+| `artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_zero_ids` | cùng mask, nhưng `input_ids` toàn 0 |
+
+**Kết quả so real-vs-zero board output:**
+
+```text
+0 cos(real,zero)= 1.0 max_abs= 0.0
+1 cos(real,zero)= 1.0 max_abs= 0.0
+2 cos(real,zero)= 1.0 max_abs= 0.0
+3 cos(real,zero)= 1.0 max_abs= 0.0
+4 cos(real,zero)= 1.0 max_abs= 0.0
+5 cos(real,zero)= 1.0 max_abs= 0.0
+6 cos(real,zero)= 1.0 max_abs= 0.0
+7 cos(real,zero)= 1.0 max_abs= 0.0
+8 cos(real,zero)= 1.0 max_abs= 0.0
+9 cos(real,zero)= 1.0 max_abs= 0.0
+```
+
+**Kết luận thực nghiệm:** text HTP context binary hiện cho output bit-identical khi `input_ids` thật và khi `input_ids` toàn zero. Vì vậy full-context text binary nhận `input_ids` không đáng tin, dù graph đã link và `qnn-net-run` báo execute thành công.
+
+### Diễn giải kỹ thuật
+
+Text encoder bắt đầu bằng embedding lookup:
+
+```text
+input_ids -> Gather(token_embedding.weight, input_ids)
+          -> + position_embedding
+          -> transformer encoder
+          -> final layer norm/head
+```
+
+ONNX graph hợp lệ: `Gather` cho phép indices `int32`/`int64`, và local ONNX Runtime chạy đúng với cosine gần `1.0`. QDQ ONNX cũng đúng với cosine mean `0.9949`. Điểm fail chỉ xuất hiện sau khi graph được compile/link thành HTP context binary và chạy bằng `qnn-net-run` trên RB3.
+
+Do đó nguyên nhân phù hợp nhất hiện tại là **giới hạn/bug ở QNN HTP path cho dynamic `Gather(token_embedding.weight, input_ids)`**, hoặc ở lowering/runtime của subgraph embedding lookup khi input indices là runtime tensor. Các thay đổi trước đó như finite mask, f32 mask, link-safe mask, `input_ids int32`, `--quantize_io`, hay calibration chỉ giải quyết linkability và dtype; chúng không sửa được việc HTP context không phụ thuộc vào token IDs.
+
+Đây không phải là thất bại của QAT/text model:
+
+- static ONNX vẫn trung thực với PyTorch;
+- QDQ proxy vẫn trung thực với PyTorch;
+- text-isolation retrieval proxy vẫn tốt (`51.65` T2I R@1, `55.55` I2T R@1);
+- board output sai vì dynamic token lookup không được runtime tôn trọng.
+
+### Trạng thái deploy sau phát hiện này
+
+| Hạng mục | Trạng thái |
+|---|---|
+| Vision QAT v8 board | PASS: full VN3K gallery board retrieval T2I `50.20`, I2T `54.50` |
+| Text QDQ proxy | PASS: fidelity `0.9949 / 0.9912`, text-isolation T2I `51.65` |
+| Both-INT8 QDQ proxy | PASS: T2I `50.25`, I2T `52.95` |
+| Text full-context HTP board | FAIL: output không đổi giữa real `input_ids` và zero `input_ids` |
+| Both-INT8 board trực tiếp | BLOCKED cho tới khi có text board path đáng tin |
+
+### Hướng cứu không bỏ all-board
+
+Không nên hiểu kết luận này là "không thể chạy text trên board". Kết luận chính xác hơn là: **không nên chạy toàn bộ text encoder thành một HTP context duy nhất nhận `input_ids`** trên stack hiện tại.
+
+Hướng khả thi nhất là split text encoder:
+
+1. CPU/host trên RB3 làm token embedding lookup:
+
+```text
+input_ids -> token_embedding[input_ids] + position_embedding -> inputs_embeds [1,64,768]
+```
+
+2. QNN HTP chạy phần nặng còn lại:
+
+```text
+inputs_embeds + attention_mask -> transformer encoder -> final layer norm/head -> text embedding
+```
+
+Ưu điểm:
+
+- vẫn là pipeline chạy local trên RB3;
+- loại bỏ dynamic integer `Gather` khỏi HTP;
+- giữ transformer/head, phần compute nặng nhất, trên QNN HTP;
+- không cần huấn luyện lại ngay vì code `SiglipTextEmbeddings` đã hỗ trợ `inputs_embeds`, và `SiglipEncoder` nhận trực tiếp `inputs_embeds`.
+
+Rủi ro/chi phí:
+
+- cần export wrapper ONNX mới nhận `inputs_embeds`;
+- cần tạo input `.raw` cho embedding tensor thay vì `input_ids`;
+- cần giữ token embedding table ở CPU-side runtime;
+- nếu muốn all-INT8 nghiêm ngặt, cần quyết định cách lưu/lookup embedding table: FP16/FP32 CPU đơn giản trước, sau đó mới xét int8 table + dequant selected rows.
+
+### Bước tiếp theo đề xuất
+
+1. Làm microbenchmark QNN `Gather`: model rất nhỏ `input_ids -> Gather(embedding_table) -> output`. Nếu real/zero vẫn giống nhau trên board, có bằng chứng tối giản để chốt bug/limit HTP.
+2. Export split-text ONNX nhận `inputs_embeds` và `attention_mask`.
+3. Static compare split-text ONNX vs PyTorch.
+4. AI Hub W8A8 quantize/compile/link split-text graph.
+5. Board smoke split-text vs PyTorch/QDQ.
+6. Nếu pass, chạy full VN3K board text-isolation rồi C2 both-INT8 board retrieval.
+
+**Quyết định tạm thời:** dừng đầu tư vào full text HTP context nhận `input_ids` như đường deploy chính. Tiếp tục theo hướng split-text để vẫn đạt mục tiêu all-board, nhưng không phụ thuộc vào dynamic embedding lookup trên HTP.
+
+## 12. 2026-06-20 - Kế hoạch thử nghiệm bóc tách nguyên nhân text board + tìm giải pháp
+
+**Mục tiêu:** trước khi đổ công vào split-text, thiết kế bộ thử nghiệm có kiểm soát để (A) đóng đinh nguyên nhân gốc của việc text board bỏ qua `input_ids`, và (B) tìm/đo một đường deploy chạy được. Hai mục tiêu chạy song song vì một số thử nghiệm của B đồng thời là bằng chứng cho A.
+
+### 12.1 Đánh giá chẩn đoán hiện tại (section 11)
+
+- **Phần thực nghiệm — chắc chắn đúng.** Zero-token ablation (giữ mask, zero toàn bộ `input_ids`) cho board output bit-identical (`cos=1.0, max_abs=0.0` trên 10/10), cộng với `.raw` đã verify chứa token thật bằng `od`. Kết luận "board output không phụ thuộc `input_ids`" là không thể bác bỏ. Vì test **giữ nguyên mask**, nó cũng gián tiếp loại mask path khỏi nghi can — lỗi bị khóa vào nửa embedding/ids.
+- **Phần quy kết nguyên nhân — hợp lý nhưng CHƯA chứng minh.** Zero-ids chỉ chứng minh "ids bị bỏ qua", không chứng minh thủ phạm là op `Gather`. Hạ kết luận "HTP không làm được dynamic Gather" từ **kết luận** xuống **giả thuyết hàng đầu**.
+- **Lưu ý confound:** zero-ids identical KHÔNG chứng minh transformer còn sống — output hằng số có thể là transformer nhả rác cố định. Mọi test "feed X vào" phải kèm control "đổi X → output phải đổi".
+
+### 12.2 Bốn giả thuyết cạnh tranh
+
+| GT | Cơ chế | Đã loại trừ? |
+|---|---|---|
+| **H1** | HTP v68 không lower được dynamic `Gather(weight, input_ids)` với runtime indices | Chưa — mới suy đoán |
+| **H2** | Bảng token-embedding INT8 ~192 MB (250k×768) vượt giới hạn constant buffer của DLC/HTP → compiler degrade graph | **Chưa xét** — giải thích sạch bất đối xứng vision (conv vài MB, PASS) vs text (bảng khổng lồ, FAIL) |
+| **H3** | Pass quantize/compile của AI Hub làm hỏng Gather (constant-fold/clamp indices về 0) | Chưa — chưa thử toolchain khác |
+| **H4** | Lỗi binding `qnn-net-run` (sai thứ tự `input_list`, input_ids map nhầm) | Đã verify nội dung file, **chưa** verify binding |
+
+### 12.3 Ý tưởng cốt lõi: phân hoạch logic Gather ∘ Transformer
+
+```text
+Full text graph (FAIL)  =  E_gather (embedding lookup)  ∘  E_trans (transformer+head)
+```
+
+Graph đầy đủ fail ⇒ lỗi ở ít nhất một nửa. Test riêng từng nửa trên board ⇒ định vị thủ phạm. Nửa "transformer nhận `inputs_embeds`" đồng thời là giải pháp split-text. **Hai mục tiêu trùng nhau tại đây.**
+
+Cây quyết định (ghép A2 = test E_gather riêng, B2 = test E_trans riêng):
+
+| A2 (Gather/embed riêng) | B2 (Transformer nhận embeds riêng) | Kết luận → Hành động |
+|---|---|---|
+| FAIL | PASS | Lỗi ở embedding lookup (H1/H2) → **split-text GIẢI QUYẾT**; chốt H1 vs H2 bằng A1 (bảng nhỏ vs to) |
+| PASS | FAIL | Lỗi ở transformer lowering (bất ngờ lớn) → split-text KHÔNG đủ; phải debug op transformer/mask |
+| PASS | PASS | Mỗi nửa OK, full-graph fail khi ghép → lỗi interaction/size lúc compile full → vẫn split để né |
+| FAIL | FAIL | Cả hai nửa hỏng → nghi toolchain (chạy A3) hoặc fallback CPU (B3) |
+
+Kỳ vọng theo bằng chứng hiện có: nhánh **A2 FAIL + B2 PASS** (split-text thắng). Giá trị của kế hoạch: mọi nhánh đều có lối ra, kể cả nhánh xấu B2 FAIL mà trước đó chưa lường.
+
+### 12.4 Nhóm A — đóng đinh nguyên nhân gốc
+
+| # | Thử nghiệm | Đổi biến | Chi phí | Outcome → kết luận |
+|---|---|---|---|---|
+| **A0** | Hai bộ `input_ids` thật khác nhau (X vs Y), không chỉ real-vs-zero | nội dung input | Board, ~free (dùng lại `.bin`) | X≡Y → khẳng định chắc "ids bị bỏ qua". X≠Y → **H4 binding** |
+| **A1** | Microbench Gather **bảng nhỏ** (vocab~1000): `ids → Gather(W) → out` | bỏ transformer + bảng nhỏ | 1 job AI Hub + board | Chạy đúng → **H1 sai** (HTP làm được Gather động). Fail → H1/H3 |
+| **A2** | Microbench Gather **bảng thật 250k**, output = `inputs_embeds` | chỉ phóng to bảng | 1 job + board | A1 PASS & A2 FAIL → **H2 confirmed** (giới hạn buffer). Cả hai PASS → Gather không phải thủ phạm |
+| **A3** | Compile graph fail cũ qua host x86 `qairt-converter/quantizer` thay vì AI Hub | toolchain | Host + board | Direct-QNN đúng & AI Hub sai → **H3 confirmed** (pass AI Hub) |
+
+### 12.5 Nhóm B — tìm/đo giải pháp (song song)
+
+| # | Thử nghiệm | Vai trò kép | Chi phí |
+|---|---|---|---|
+| **B1** | Export split-text ONNX: `inputs_embeds[1,64,768] + attention_mask → transformer → head`; static-compare vs PyTorch | Gate local bắt buộc cho mọi đường split | Local/free |
+| **B2** | Board split-text: quantize/compile/link graph B1, chạy board, **feed 2 bộ embeds khác nhau** | Vừa là lời giải (nếu PASS) vừa test nửa E_trans | 1 job + board |
+| **B3** | Chạy text QDQ ONNX trên **CPU (ORT) ngay trên RB3 ARM**: đo latency/query, RAM, both-INT8 R@1 | Lưới an toàn — đường both-INT8 chắc chắn chạy với memory win; text không nằm trên hot path | Board + local |
+| **B4** | (chỉ khi B2 PASS) Quyết định lưu bảng: FP16 384 MB vs INT8 per-row 192 MB; đo RAM headroom 4 GB | Tối ưu bộ nhớ cuối | Board |
+
+### 12.6 Thứ tự lệnh đề xuất (local làm trước, board/AI Hub để sau)
+
+Quy ước: `[LOCAL]` chạy nhanh trên máy này; `[AIHUB]` tốn job; `[BOARD]` chạy trên RB3 (để user chạy).
+
+```bash
+# ─────────────────────────────────────────────────────────────
+# A0 — chuẩn bị bộ input_ids thật KHÁC (Y), để board test real-vs-real
+# [LOCAL] prep input (caption khác: start-index 100), i32 + f32 mask khớp graph hiện tại
+venv/bin/python deployment/scripts/qnn/prepare_vn3k_text_inputs.py \
+  --split test --num-samples 10 --selection first --start-index 100 \
+  --id-dtype int32 --mask-dtype float32 \
+  --output-dir artifacts/deployment/qnn_inputs/vn3k_text_10_altreal_i32
+# [BOARD] chạy ĐÚNG binary i32 đã FAIL ở §11 (text_encoder_i32.bin + htp_config_text_i32.json) trên Y.
+#   X đã có sẵn ở qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask (cùng binary, input vn3k_text_10_f32mask_i32).
+#   Input Y (vn3k_text_10_altreal_i32) đã là int32 ids (256 bytes/sample) + f32 mask — khớp graph i32.
+qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" \
+  --retrieve_context artifacts/deployment/bin/text_encoder_i32.bin \
+  --config_file deployment/config/qnn/htp_config_text_i32.json \
+  --input_list artifacts/deployment/qnn_inputs/vn3k_text_10_altreal_i32/input_list.txt \
+  --output_dir artifacts/deployment/qnn_runs/text_altreal \
+  --profiling_level basic --perf_profile high_performance
+# [LOCAL] so output Y vs X: nếu max_abs==0 mọi mẫu => ids bị bỏ qua (loại H4); nếu khác => H4 binding
+venv/bin/python - <<'PY'
+import numpy as np, glob
+ys=sorted(glob.glob("artifacts/deployment/qnn_runs/text_altreal/Result_*/*.raw"))
+xs=sorted(glob.glob("artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/Result_*/*.raw"))
+d=[float(np.abs(np.fromfile(y,np.float32)-np.fromfile(x,np.float32)).max()) for y,x in zip(ys,xs)]
+print("max_abs(Y-X):",[round(v,4) for v in d], "=> IGNORES ids (loại H4)" if max(d)==0 else "=> H4 binding")
+PY
+
+# ─────────────────────────────────────────────────────────────
+# A1/A2 — microbench Gather (script build_gather_microbench.py)
+# [LOCAL] build 2 ONNX (vocab 1000 + 250k thật) + ORT sanity (đã chạy, depends_on_ids=True)
+venv/bin/python deployment/scripts/qnn/build_gather_microbench.py \
+  --model-dir artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8 \
+  --out-dir artifacts/deployment/exports/gather_microbench
+
+# [AIHUB] upload calib input_ids cho từng bảng (raw modality, 1 key int32) — ghi lại dataset ID in ra
+venv/bin/python deployment/scripts/qnn/upload_qaihub_calibration_dataset.py \
+  --modality raw --keys input_ids:int32:1,64 \
+  --input-dir artifacts/deployment/exports/gather_microbench/small \
+  --input-list input_list_real.txt --name msiglip-gather-small-calib
+venv/bin/python deployment/scripts/qnn/upload_qaihub_calibration_dataset.py \
+  --modality raw --keys input_ids:int32:1,64 \
+  --input-dir artifacts/deployment/exports/gather_microbench/big \
+  --input-list input_list_real.txt --name msiglip-gather-big-calib
+
+# [AIHUB] quantize/compile/link mỗi bảng. input_ids là INDEX int32 → KHÔNG quantize_io
+#   (thay <DS_SMALL>/<DS_BIG> bằng dataset ID vừa upload)
+venv/bin/python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+  --model artifacts/deployment/exports/gather_microbench/small/gather_small.onnx \
+  --calibration-data <DS_SMALL> --weights-dtype int8 --activations-dtype int8 \
+  --no-staticize \
+  --input-specs '{"input_ids": ((1, 64), "int32")}' \
+  --compile-options "--truncate_64bit_io" \
+  --wait --download artifacts/deployment/runtime/gather_microbench/small/gather_small.bin
+venv/bin/python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+  --model artifacts/deployment/exports/gather_microbench/big/gather_big.onnx \
+  --calibration-data <DS_BIG> --weights-dtype int8 --activations-dtype int8 \
+  --no-staticize \
+  --input-specs '{"input_ids": ((1, 64), "int32")}' \
+  --compile-options "--truncate_64bit_io" \
+  --wait --download artifacts/deployment/runtime/gather_microbench/big/gather_big.bin
+
+# [BOARD] với mỗi bảng, chạy real và zero rồi so output (real_vs_zero). Ví dụ small
+#   (graph text-family int32-in → dùng htp_config_text_i32.json như binary i32):
+qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" \
+  --retrieve_context artifacts/deployment/runtime/gather_microbench/small/gather_small.bin \
+  --config_file deployment/config/qnn/htp_config_text_i32.json \
+  --input_list artifacts/deployment/exports/gather_microbench/small/input_list_real.txt \
+  --output_dir artifacts/deployment/qnn_runs/gather_small_real --perf_profile high_performance
+qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" \
+  --retrieve_context artifacts/deployment/runtime/gather_microbench/small/gather_small.bin \
+  --config_file deployment/config/qnn/htp_config_text_i32.json \
+  --input_list artifacts/deployment/exports/gather_microbench/small/input_list_zero.txt \
+  --output_dir artifacts/deployment/qnn_runs/gather_small_zero --perf_profile high_performance
+# [LOCAL] so real vs zero (np): nếu max_abs==0 trên mọi mẫu => bảng đó BỎ QUA ids
+venv/bin/python - <<'PY'
+import numpy as np, glob, os
+for tag in ["small","big"]:
+    rs=sorted(glob.glob(f"artifacts/deployment/qnn_runs/gather_{tag}_real/Result_*/*.raw"))
+    zs=sorted(glob.glob(f"artifacts/deployment/qnn_runs/gather_{tag}_zero/Result_*/*.raw"))
+    if not rs: print(tag,"(chưa có output)"); continue
+    diffs=[float(np.abs(np.fromfile(r,np.float32)-np.fromfile(z,np.float32)).max()) for r,z in zip(rs,zs)]
+    print(tag,"max_abs(real-zero) per sample:",[round(d,4) for d in diffs],
+          "=> RESPECTS ids" if max(diffs)>0 else "=> IGNORES ids")
+PY
+# Kết luận: small RESPECTS & big IGNORES => H2 (size). small IGNORES => H1/H3. cả hai RESPECTS => Gather không phải thủ phạm.
+
+# ─────────────────────────────────────────────────────────────
+# B1 — split-text export nhận inputs_embeds (script export_split_text_onnx.py)
+# [LOCAL] export transformer+head nhận inputs_embeds + attention_mask (opset-20),
+#         CHẠY LUÔN static gate inline (--check-input-dir) + dump inputs_embeds .raw cho board (--dump-embeds-dir)
+venv/bin/python deployment/scripts/qnn/export_split_text_onnx.py \
+  --model-dir artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8 \
+  --attention-mask-dtype float32 \
+  --check-input-dir artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask_i32 \
+  --dump-embeds-dir artifacts/deployment/qnn_inputs/vn3k_text_10_split_embeds \
+  --json artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_split/static_vs_pytorch_summary.json
+
+# ─────────────────────────────────────────────────────────────
+# B2 — board split-text (sau khi B1 PASS)
+# [LOCAL] inputs_embeds .raw đã dump sẵn: vn3k_text_10_split_embeds (smoke), vn3k_text_calib_500_split_embeds (calib)
+# [AIHUB] upload calib inputs_embeds + mask (raw modality 2 key) — ghi dataset ID
+venv/bin/python deployment/scripts/qnn/upload_qaihub_calibration_dataset.py \
+  --modality raw \
+  --keys inputs_embeds:float32:1,64,768 attention_mask:float32:1,64 \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_text_calib_500_split_embeds \
+  --name msiglip-split-text-embeds-calib-500
+
+# [AIHUB] W8A8 quantize/compile/link split-text (inputs_embeds là activation float → quantize; mask f32)
+#   (thay <DS_SPLIT> bằng dataset ID vừa upload)
+venv/bin/python deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
+  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_split/text_encoder_split.onnx \
+  --calibration-data <DS_SPLIT> --weights-dtype int8 --activations-dtype int8 \
+  --input-specs '{"inputs_embeds": ((1, 64, 768), "float32"), "attention_mask": ((1, 64), "float32")}' \
+  --compile-options "--quantize_io" \
+  --wait --download artifacts/deployment/runtime/split_text_w8a8/text_encoder_split.bin
+
+# [AIHUB] (tuỳ chọn) QDQ-only gate trước khi link — tải QDQ ONNX rồi so vs PyTorch split
+#   thêm --quantize-only --download-quantized artifacts/deployment/runtime/split_text_w8a8/job_qdq_onnx
+#   rồi: export_split_text_onnx.py --check-input-dir ... trên QDQ ONNX (so split-vs-full)
+
+# [BOARD] chạy split-text trên board (input = inputs_embeds + attention_mask)
+#   NOTE: inputs_embeds là activation float đã quantize (UFIXED_8) — KHÁC graph i32 (input_ids INT_32).
+#   Dùng config text-family; nếu I/O khác thì chỉnh config tương ứng lúc compile.
+qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" \
+  --retrieve_context artifacts/deployment/runtime/split_text_w8a8/text_encoder_split.bin \
+  --config_file deployment/config/qnn/htp_config_text_i32.json \
+  --input_list artifacts/deployment/qnn_inputs/vn3k_text_10_split_embeds/input_list.txt \
+  --output_dir artifacts/deployment/qnn_runs/split_text_w8a8 \
+  --profiling_level basic --perf_profile high_performance
+# [BOARD] control: feed embeds đã zero để kiểm output có phụ thuộc embeds (phải KHÁC, không như full-graph)
+#   (tạo bản zero embeds: copy vn3k_text_10_split_embeds, zero các *_inputs_embeds.raw, giữ mask)
+# [LOCAL] fidelity board vs PyTorch (split wrapper): so output_0.raw vs encode_text(input_ids gốc)
+
+# ─────────────────────────────────────────────────────────────
+# B3 — fallback CPU-INT8 text (lưới an toàn, song song)
+# [BOARD] chạy text QDQ ONNX bằng onnxruntime trên RB3 ARM (full-graph QDQ đã có), đo latency/RAM:
+#   onnxruntime.InferenceSession(text_qdq.onnx) trên input_ids+attention_mask, providers=CPUExecutionProvider
+# [LOCAL] both-INT8 R@1 đã có off-board = 50.25 (§7) làm tham chiếu; B3 chỉ cần xác nhận chạy được + RAM trên board
+```
+
+### 12.7 Trạng thái checklist
+
+| Hạng mục | Trạng thái |
+|---|---|
+| A0 prep input Y | ✅ `vn3k_text_10_altreal_i32` (caption khác, X≠Y verified) |
+| A0 board real-vs-real | ⬜ (board, user) |
+| A1/A2 build microbench | ✅ `gather_microbench/{small,big}`, ORT depends_on_ids=True |
+| A1/A2 board | ⬜ (AI Hub + board, user) |
+| B1 export split-text + static gate | ✅ **PASS** cosine mean/min `0.99977 / 0.99972`; torch-split==full exact `1.0/0.0` |
+| B2 board split-text | ⬜ (AI Hub + board, user; inputs_embeds .raw đã dump) |
+| B3 CPU-INT8 text fallback | ⬜ (board, user) |
+
+### 12.8 Kết quả local đã chạy (2026-06-20)
+
+| Thử nghiệm | Lệnh/script | Kết quả | Artifact |
+|---|---|---|---|
+| A0 prep | `prepare_vn3k_text_inputs.py --start-index 100 --id-dtype int32 --mask-dtype float32` | 10 caption khác; token X≠Y (`X[:4]=[259,272,2342,2214]` vs `Y[:4]=[2135,326,1335,297]`) | `qnn_inputs/vn3k_text_10_altreal_i32` |
+| B1 export + gate | `export_split_text_onnx.py ... --check-input-dir ... --dump-embeds-dir ...` | split ONNX vs full `encode_text`: cosine mean **0.99977**, min **0.99972** → **PASS** (≥0.999). 29 Gather còn lại = position-embed tĩnh, KHÔNG phải token table động | `exported_model_text_rotated_learned_qat_v8/text_onnx_split/`, `qnn_inputs/vn3k_text_10_split_embeds` |
+| B1 sanity toán | torch-split vs torch-full (inline check) | cosine **1.0**, max abs diff **0.0** → wrapper đúng tuyệt đối; gap 0.9997 chỉ là noise fused-op ONNX, lành tính | — |
+| A1/A2 build | `build_gather_microbench.py` | small (vocab1000, ~1MB) + big (250k, ~192MB INT8) ONNX; ORT real-vs-zero depends_on_ids=True cả hai | `exports/gather_microbench/{small,big}/` (+ input_list_real/zero.txt) |
+| B2 calib prep | host token-lookup trên 500 calib caption | 500 `inputs_embeds` [1,64,768] f32 + mask f32 | `qnn_inputs/vn3k_text_calib_500_split_embeds` |
+| Uploader mở rộng | `upload_qaihub_calibration_dataset.py` + `--modality raw --keys name:dtype:shape` | hỗ trợ calib generic (microbench input_ids, split-text inputs_embeds) | — |
+
+> Lệnh đầy đủ (upload calib → submit AI Hub → board → so sánh) cho A0/A1/A2/B2/B3 nằm ở §12.6; chỉ cần thay `<DS_*>` bằng dataset ID in ra khi upload.
+
+**Phát hiện phụ:** model `exported_model_text_rotated_learned_qat_v8` **không có `text_projection`** → `encode_text` trả thẳng `pooler_output` (head). Split wrapper đã guard `hasattr` nên khớp; lưu ý nếu port sang model có projection.
+
+**Sẵn sàng cho user (board/AI Hub):**
+1. **A0**: board-run **`text_encoder_i32.bin`** (+ `htp_config_text_i32.json`, đúng binary đã FAIL ở §11) trên `vn3k_text_10_altreal_i32`, so output Y vs X (`vn3k_text_10_f32mask_i32`). X≡Y ⇒ ids bị bỏ qua (loại H4); X≠Y ⇒ H4 binding.
+2. **A1/A2**: AI Hub quantize/compile/link `gather_microbench/{small,big}` (input_ids INT32 index, KHÔNG quantize); board-run `input_list_real.txt` vs `input_list_zero.txt`. small PASS & big FAIL ⇒ H2; small FAIL ⇒ H1/H3; both PASS ⇒ Gather không phải thủ phạm.
+3. **B2**: AI Hub W8A8 split-text (`text_onnx_split`, input `inputs_embeds` f32 + `attention_mask` f32), board-run với `vn3k_text_10_split_embeds`.

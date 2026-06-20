@@ -68,11 +68,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input-list", default="input_list.txt")
     parser.add_argument(
         "--modality",
-        choices=["vision", "text"],
+        choices=["vision", "text", "raw"],
         default="vision",
         help=(
             "vision: float32 image .raw under a single key. text: two int keys "
-            "(input_ids, attention_mask) parsed from a dual input_list."
+            "(input_ids, attention_mask) parsed from a dual input_list. raw: generic "
+            "multi-key dataset driven by --keys (e.g. Gather microbench input_ids, or "
+            "split-text inputs_embeds + attention_mask)."
+        ),
+    )
+    parser.add_argument(
+        "--keys",
+        nargs="+",
+        help=(
+            "raw modality only. One or more 'name:dtype:d0,d1,...' specs matching the "
+            "input_list keys, e.g. --keys input_ids:int32:1,64 or "
+            "--keys inputs_embeds:float32:1,64,768 attention_mask:float32:1,64."
         ),
     )
     parser.add_argument("--image-size", type=int, default=256)
@@ -155,6 +166,46 @@ def _build_text_dataset(
     return {"input_ids": ids, "attention_mask": masks}, len(rows)
 
 
+def _build_raw_dataset(
+    input_dir: Path,
+    input_list: str,
+    key_specs: list[str],
+    max_samples: int | None,
+):
+    """Generic multi-key dataset from a dual input_list and 'name:dtype:shape' specs."""
+    import sys as _sys
+
+    script_dir = str(Path(__file__).resolve().parent)
+    if script_dir not in _sys.path:
+        _sys.path.insert(0, script_dir)
+    import numpy as np
+    from compare_text_onnx_with_pytorch import _parse_dual_input_list
+
+    np_by_name = {"int64": np.int64, "int32": np.int32, "float32": np.float32}
+    specs: dict[str, tuple[np.dtype, tuple[int, ...]]] = {}
+    for spec in key_specs:
+        name, dtype_name, shape_str = spec.split(":")
+        shape = tuple(int(s) for s in shape_str.split(","))
+        specs[name] = (np.dtype(np_by_name[dtype_name]), shape)
+
+    rows = _parse_dual_input_list(input_dir, input_list)
+    if max_samples:
+        rows = rows[:max_samples]
+
+    data: dict[str, list] = {name: [] for name in specs}
+    for row in rows:
+        for name, (dtype, shape) in specs.items():
+            if name not in row:
+                raise SystemExit(f"Key {name!r} not found in input_list row: {row}")
+            count = int(np.prod(shape))
+            buf = row[name].read_bytes()
+            expected = count * dtype.itemsize
+            if len(buf) != expected:
+                raise ValueError(f"{row[name]}: {len(buf)} bytes != {count} {dtype} values")
+            data[name].append(np.frombuffer(buf, dtype=dtype).reshape(shape).copy())
+    return data, len(rows)
+
+
 def main() -> None:
     args = parse_args()
 
@@ -162,7 +213,12 @@ def main() -> None:
 
     input_dir = args.input_dir.expanduser().resolve()
 
-    if args.modality == "text":
+    if args.modality == "raw":
+        if not args.keys:
+            raise SystemExit("--modality raw requires --keys name:dtype:shape ...")
+        data, count = _build_raw_dataset(input_dir, args.input_list, args.keys, args.max_samples)
+        name = args.name or "msiglip-raw-calibration"
+    elif args.modality == "text":
         data, count = _build_text_dataset(
             input_dir,
             args.input_list,
