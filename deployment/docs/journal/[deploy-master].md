@@ -1831,7 +1831,22 @@ M = (1 - attention_mask) * (-32),  expand [B,1,L,L]   # exp(-32)~1.3e-14, no Cas
 | `Cast:24`, `Where:1` còn lại | KHÔNG trên mask path (position_ids int + upcast LN/softmax chuẩn — có trong vision & full-graph đã link) |
 | Zero-embeds control (ORT) | real-vs-zero max_abs `7.79` |
 
-**Bước tiếp:** re-submit lần nữa với ONNX đã strip Expand; mask path giờ giống hệt full-graph đã link nên kỳ vọng link PASS. Re-export tự động strip (đã tích hợp `_strip_mask_expand` vào `export_split_text_onnx.py`).
+**Re-submit lần 2 (sau strip Expand) → LINK PASS**, sinh `artifacts/deployment/runtime/split_text_w8a8/text_encoder_split.bin`. Mask path khớp full-graph link-safe ⇒ hết float island.
+
+### 12.11 2026-06-21 - Split-text board smoke PASS: SỬA ĐƯỢC bug §11
+
+**Board:** chạy `text_encoder_split.bin` (HTP v68) trên `vn3k_text_10_split_embeds` (real) và `vn3k_text_10_split_embeds_zero` (zero embeds, cùng mask).
+
+| Kiểm tra | Kết quả | Ý nghĩa |
+|---|---|---|
+| **Control real-vs-zero embeds** | maxabs `[4.97, 4.97, 4.48, 5.28, 4.06, 3.97, 3.66, 4.33, 4.64, 4.7]` — **đều > 0** | board split graph **PHỤ THUỘC `inputs_embeds`** — ngược hẳn full-graph (§11/§12.9 bỏ qua ids). **Split-text SỬA ĐƯỢC bug.** |
+| **Fidelity board vs PyTorch** | cos **mean `0.9951`, min `0.9926`** | khớp QDQ proxy `0.9949`; transformer chạy trung thực trên HTP |
+
+**Kết luận:** moving embedding lookup ra host + chạy transformer nhận `inputs_embeds` trên HTP **giải quyết triệt để** lỗi dynamic Gather bị bỏ qua. Đây là đường text deploy chạy được trên board.
+
+**Bước tiếp (Pha 2/3):**
+- Pha 2 — full text-isolation retrieval: dump `inputs_embeds` cho query set (✅ `vn3k_test_query_4000_split_embeds`, 2000 query) → board-run split bin → `eval_retrieval_board_text.py` (gate T2I R@1 ≥ 50).
+- Pha 3 — C2 both-INT8 board: `eval_retrieval_board_embeddings.py` ghép board vision (`rotated_w8a8_learned_qat_v8_gallery_2000`) + board text split.
 
 ### 12.9 2026-06-20 - A0 kết quả: board output = f(attention_mask), input_ids bị bỏ qua hoàn toàn (xác nhận §11, LOẠI H4)
 
