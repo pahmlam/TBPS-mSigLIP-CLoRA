@@ -227,18 +227,33 @@ def main() -> None:
     opt = torch.optim.Adam(rot.parameters(), lr=args.lr)
 
     print(f"Optimizing learned rotation: {args.steps} steps (base obj={base_obj:.1f}, max|a|={base_maxabs:.1f}) ...")
+    # The objective oscillates under a constant Adam lr, so the LAST step is often not
+    # the best (it can land on a peak). Track the lowest-objective parameters and fold
+    # THAT Q, not the final step's. obj is full-batch (all cached sites) so it is
+    # comparable across steps.
+    best_obj = float("inf")
+    best_state: dict | None = None
     for step in range(args.steps):
         opt.zero_grad()
         Qt = rot.matrix(torch.float32).t()  # float32 optimization path
         obj = 0.0
         for a in acts:
             obj = obj + _per_tensor_max_sq(a @ Qt)  # rotated reader/writer activation = a · Q^T
+        obj_val = float(obj)
+        if obj_val < best_obj:
+            best_obj = obj_val
+            best_state = {k: v.detach().clone() for k, v in rot.state_dict().items()}
         obj.backward()
         opt.step()
         if step % 100 == 0 or step == args.steps - 1:
             with torch.no_grad():
                 cur_max = max((a @ rot.matrix(torch.float32).t()).abs().max().item() for a in acts)
-            print(f"  step {step:4d}  obj={float(obj):.1f}  max|Qa|={cur_max:.2f}")
+            print(f"  step {step:4d}  obj={obj_val:.1f}  max|Qa|={cur_max:.2f}")
+
+    # Restore the best-objective parameters before folding (oscillation-robust).
+    if best_state is not None:
+        rot.load_state_dict(best_state)
+        print(f"Restored best-objective rotation: obj={best_obj:.1f} (folding this, not the final step)")
 
     with torch.no_grad():
         Q = rot.matrix(torch.float64).detach()  # precise Q for fold + orthogonality
