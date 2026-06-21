@@ -1844,9 +1844,24 @@ M = (1 - attention_mask) * (-32),  expand [B,1,L,L]   # exp(-32)~1.3e-14, no Cas
 
 **Kết luận:** moving embedding lookup ra host + chạy transformer nhận `inputs_embeds` trên HTP **giải quyết triệt để** lỗi dynamic Gather bị bỏ qua. Đây là đường text deploy chạy được trên board.
 
-**Bước tiếp (Pha 2/3):**
-- Pha 2 — full text-isolation retrieval: dump `inputs_embeds` cho query set (✅ `vn3k_test_query_4000_split_embeds`, 2000 query) → board-run split bin → `eval_retrieval_board_text.py` (gate T2I R@1 ≥ 50).
-- Pha 3 — C2 both-INT8 board: `eval_retrieval_board_embeddings.py` ghép board vision (`rotated_w8a8_learned_qat_v8_gallery_2000`) + board text split.
+**Pha 2 — Full text-isolation retrieval board (✅ PASS):** dump `inputs_embeds` cho 2000 query (`vn3k_test_query_4000_split_embeds`) → board-run split bin → `eval_retrieval_board_text.py` (image FP32 + text board).
+
+| Task | R@1 | R@5 | R@10 | mAP | mINP |
+|---|---:|---:|---:|---:|---:|
+| **T2I** | **`51.05`** | `78.90` | `87.25` | `56.72` | `50.18` |
+| I2T | `51.35` | `78.90` | `88.25` | `55.80` | `48.20` |
+
+→ **PASS gate ≥50**; chỉ lệch `-0.60` so với text QDQ proxy `51.65`. Split-text board trung thực (khớp board fidelity `0.9951`). Artifact: `qnn_runs/text_w8a8_learned_qat_v8_f32mask/board_text_r1.json`.
+
+**Pha 3 — C2 both-INT8 board (số deploy cuối):** `eval_retrieval_board_embeddings.py` ghép board vision (`rotated_w8a8_learned_qat_v8_gallery_2000`) + board text split. **KHÔNG có `--model-dir`** (script dùng embeddings board cho cả hai tower):
+
+```bash
+venv/bin/python deployment/scripts/qnn/eval_retrieval_board_embeddings.py \
+  --text-output-dir artifacts/deployment/qnn_runs/split_text_query_4000 \
+  --query-input-dir artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32 \
+  --vision-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000 \
+  --gallery-input-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000
+```
 
 ### 12.9 2026-06-20 - A0 kết quả: board output = f(attention_mask), input_ids bị bỏ qua hoàn toàn (xác nhận §11, LOẠI H4)
 

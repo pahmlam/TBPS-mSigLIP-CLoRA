@@ -1,0 +1,29 @@
+{
+  "text_output_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/qnn_runs/split_text_query_4000",
+  "query_input_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32",
+  "model_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/exports/exported_model",
+  "num_gallery_images": 2000,
+  "num_query_captions": 2000,
+  "subset_smoke": false,
+  "similarity": "raw_dot_product",
+  "combo": "board_text_int8_image_fp32",
+  "metrics": {
+    "t2i": {
+      "R1": 51.05000305175781,
+      "R5": 78.89999389648438,
+      "R10": 87.25,
+      "mAP": 56.72333908081055,
+      "mINP": 50.1779899597168
+    },
+    "i2t": {
+      "R1": 51.349998474121094,
+      "R5": 78.89999389648438,
+      "R10": 88.25,
+      "mAP": 55.8026123046875,
+      "mINP": 48.20123291015625
+    }
+  },
+  "gate_r1": 48.0,
+  "gate_pass": true,
+  "baseline_reference_t2i_r1": 52.28
+}
