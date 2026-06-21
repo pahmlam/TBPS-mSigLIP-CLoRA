@@ -3,9 +3,9 @@
 > **Scope:** this is the **theory and method** document for the vision-encoder deployment branch and the matching text-encoder finite/f32/link-safe mask extension. It contains the mathematics of every transform and the reasoning behind every design choice. It contains **no commands, scripts, or code** — for the reproducible command sequence, AI Hub job IDs, and artifact paths, see the consolidated history in [`deployment/docs/journal/[deploy-master].md`](journal/[deploy-master].md).
 > **Source checkpoint:** LoRA + Curriculum Circle, seed 2400 (FP32 reference ≈ paper 52.28).
 > **Target device:** Qualcomm RB3 Gen2 / QCS6490 / Hexagon HTP **v68**.
-> **End-to-end result:** both-INT8 W8A8 QDQ proxy reaches **T2I Rank@1 = 50.25** and **I2T Rank@1 = 52.95**, passing the ≥50 deploy target with a `-2.03` T2I drop from the paper baseline `52.28`. Board-verified vision binary is QAT v8 (T2I R@1 **50.20**, I2T R@1 **54.50**, passing the 50 target); both-INT8 board verification is pending.
+> **End-to-end result:** both-INT8 W8A8 QDQ proxy reaches **T2I Rank@1 = 50.25** and **I2T Rank@1 = 52.95**, passing the ≥50 deploy target with a `-2.03` T2I drop from the paper baseline `52.28`. **Both encoders are now board-verified INT8 on HTP v68**: board both-INT8 reaches **T2I R@1 = 49.95**, **I2T R@1 = 53.05** (`-0.30` T2I vs the QDQ proxy, within ~2 queries of the 50 target), with vision-only board **50.20** and text-only board **51.33** both passing.
 > **Vision status:** vision-only QDQ proxy reaches **T2I Rank@1 = 50.85** (learned rotation, QAT v8; `-1.43` vs paper baseline `52.28`), and the RB3 board context binary reaches **50.20** T2I R@1.
-> **Text status:** text-only finite/f32/link-safe mask path passes local static link-safe gate (**0.99999999 / 0.99999976**); finite-mask QDQ proxy passes cosine/retrieval gates (**0.9949 / 0.9912**, text-isolation T2I Rank@1 **51.65**), and the QNN context binary now links successfully. Text board execution/fidelity is the next gate.
+> **Text status:** the *full-graph* text binary links but is **unusable on board** — its output ignores `input_ids` because HTP v68 breaks the dynamic 250k-row embedding `Gather` (§12A.8). The **deployable text path is the split-encoder**: host-side embedding lookup feeds `inputs_embeds` to an HTP transformer. It is board-verified — board fidelity **0.9951 / 0.9926** (matching the QDQ proxy), text-isolation board **T2I R@1 = 51.33**.
 
 This document explains the hardware constraints that *force* the pipeline, the mathematics of each transform (rotation, learned rotation, quantization-aware training, finite attention masking), why earlier candidates failed, and the acceptance gates that define success. The decisive acceptance metric throughout is **retrieval Rank@1**, not cosine — cosine is only a fidelity proxy (§8).
 
@@ -506,7 +506,9 @@ Cosine is a conservative proxy; retrieval R@1 is the decisive metric. The deploy
 4. ✅ **Text encoder finite/f32/link-safe local path passes:** learned rotation + text QAT + finite attention mask and float32 binary mask I/O give QDQ cosine $0.9949 / 0.9912$ and text-isolation T2I R@1 $51.65$; the link-safe rewrite removes `/text_model/Cast_output_0` and keeps static cosine $0.99999999 / 0.99999976$.
 5. ✅ **Text finite/f32/link-safe context binary links:** the algebraic mask rewrite removes the internal float mask island that previously failed HTP v68 link, so the text branch now has a linkable W8A8 QNN context binary.
 6. ✅ **End-to-end both-INT8 C1 passes off-board:** vision QDQ + text QDQ gives T2I R@1 $50.25$, I2T R@1 $52.95$, a `-2.03` T2I drop vs paper baseline $52.28$.
-7. **End-to-end both-INT8 board retrieval remains:** run C2 after the finite/f32/link-safe text binary executes on RB3 and its board fidelity is confirmed.
+7. ✅ **Full-graph text board fails — diagnosed:** the finite/f32/link-safe text binary links but its board output ignores `input_ids` (HTP v68 breaks the dynamic 250k-row embedding `Gather`; §12A.8). Static ONNX and QDQ proxy stay faithful, so it is a graph-lowering limit, not a QAT/calibration failure.
+8. ✅ **Split-encoder text is board-verified:** moving the embedding lookup to the host and running the transformer on HTP via `inputs_embeds` fixes it — board fidelity $0.9951 / 0.9926$, text-isolation board T2I R@1 $51.33$.
+9. ✅ **End-to-end both-INT8 board:** vision board + split-text board gives T2I R@1 $49.95$, I2T R@1 $53.05$ — `-0.30` T2I vs the QDQ proxy, ~2 queries short of the 50 target. The off-board QDQ proxy ($50.25$) remains the passing deploy number; lifting the vision floor tower is the optional path to push the on-board number strictly over 50.
 
 ---
 
@@ -695,6 +697,34 @@ The important diagnostic is the scale gate. A high cosine after local surgery is
 ### 12A.7 Why this is the real memory payoff
 
 The text encoder is $\sim$75\% of the model's parameters because the multilingual token embedding alone is $250{,}000 \times 768 \approx 768$ MB in FP32. Quantizing it to INT8 is the dominant lever for fitting both encoders into the 4 GB RB3 budget — far larger than the vision saving. The end-to-end C1 both-INT8 proxy now holds the deploy gate at T2I R@1 $50.25$; the remaining question is board confirmation.
+
+### 12A.8 The full-graph board failure and the split-encoder method (the deployable text path)
+
+Everything in §12A.1–12A.7 makes the full-graph text **link** on HTP v68. It does not make it **work** on board. The decisive observation: the board context binary produces an output that is a function of `attention_mask` only and is **bit-identical for the real `input_ids` and an all-zero `input_ids`** (cosine $1.0$, max-abs $0.0$ across all smoke samples), while static ONNX ($\approx 1.0$) and the QDQ proxy ($0.9949$) stay faithful. Two independent controls confirm the token IDs are ignored *inside the compiled graph*: (i) zeroing `input_ids` with the mask held fixed leaves the output unchanged; (ii) two different real captions differ on board **iff** their attention masks differ (the diff is perfectly mask-correlated). Because the failure appears only after compile/link — not in ONNX or QDQ — it is a graph-lowering / runtime limit, not a QAT, calibration, or mask-representation failure.
+
+**Root cause.** The text encoder begins with a dynamic gather
+
+$$ \texttt{inputs\_embeds} \;=\; \mathrm{Gather}\big(W_{\text{tok}} \in \mathbb{R}^{250000\times 768},\; \texttt{input\_ids}\big), $$
+
+where `input_ids` is a *runtime* index tensor and $W_{\text{tok}}$ is a $\sim$192 MB INT8 constant. HTP v68 does not honour this runtime lookup in the context binary, so the embedding output decouples from `input_ids`. (Vision has no analogue: its patch-embedding is a small convolution on a continuous input, not an index lookup into a giant table.) Decisively, the lookup is *not compute* — it is a memory read — so the natural fix is to take it off the NPU rather than to repair it.
+
+**The split-encoder.** Cut the graph at the embedding boundary:
+
+$$
+\underbrace{\texttt{input\_ids} \mapsto W_{\text{tok}}[\texttt{input\_ids}]}_{\text{host CPU (FP, exact)}}
+\;\longrightarrow\;
+\underbrace{\texttt{inputs\_embeds} \;(+\,\text{position}) \to \text{encoder} \to \mathrm{LN} \to \text{pooler} \to \text{head}}_{\text{HTP v68, W8A8}} .
+$$
+
+The host performs only the table read (64 rows per query); **all 12 transformer layers — the entire compute cost — remain on the NPU**, now consuming `inputs_embeds` as an ordinary quantized activation input (exactly like the vision image input, which HTP handles correctly). This removes both the dynamic `Gather` and the 192 MB constant from the context binary. With the *rotated* model, $Q$ is already folded into $W_{\text{tok}}$ and the position table, so the host lookup lives in the rotated space and the in-graph position add is consistent — no extra math.
+
+**Mask, built link-safe at the boundary.** The split wrapper does not call HuggingFace's `_prepare_4d_attention_mask` (which emits an `Expand → Cast(\text{float}) → Sub → Cast(\text{bool}) → Where` island plus an `-FLT_MAX` sentinel). It builds the additive mask directly,
+
+$$ M \;=\; (1 - \texttt{attention\_mask}) \cdot (-32), \qquad \texttt{attention\_mask}\in\{0,1\}, $$
+
+shaped $[B,1,1,L]$ and broadcast inside the attention $\mathrm{softmax}(S + M)$. Two HTP-v68 rejections were eliminated this way: a redundant `float32→float32` cast on the mask input (materialized as the float island `/Cast_output_0`), and the **materialized** $[B,1,L,L]$ mask from `Expand` (rejected as a floating coefficient `/Expand_coef`). Feeding the un-expanded $[B,1,1,L]$ mask and letting the attention `Add` broadcast keeps the graph free of internal float islands. The split graph reproduces the full `encode_text` to cosine $0.99999999$.
+
+**Result.** The split-text binary is board-faithful (cosine $0.9951 / 0.9926$, matching the QDQ proxy) and **does** depend on `inputs_embeds` (real-vs-zero embedding outputs differ by $3.7$–$5.3$), confirming the bug is fixed. Text-isolation board retrieval is T2I R@1 $51.33$; end-to-end both-INT8 board retrieval is T2I R@1 $49.95$ (§12 items 7–9). The memory payoff of §12A.7 is unchanged: the $\sim$192 MB INT8 token table still exists, it simply lives in host DRAM (read by the CPU) instead of inside the HTP context — and RB3's CPU and NPU share the same DRAM, so there is no extra memory cost.
 
 ---
 

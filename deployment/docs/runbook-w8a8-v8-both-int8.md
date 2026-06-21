@@ -17,13 +17,12 @@
 | Biến | Ý nghĩa | Ví dụ |
 |---|---|---|
 | `VISION_CALIB_ID` | AI Hub dataset id calib **vision** (đã có) | `d7jzjy1m2` |
-| `TEXT_CALIB_ID` | AI Hub dataset id calib **text f32-mask** (tạo ở Part B) | `d7mv1vkv7` |
+| `TEXT_SPLIT_CALIB` | AI Hub dataset id calib **split-text `inputs_embeds`** (tạo ở B4) | `d9vpnzz09` |
 | `VISION_QDQ` | thư mục QDQ vision v8 (learned rotation) | `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_<ID>_qdq_onnx` |
-| `TEXT_QDQ` | thư mục QDQ text v8 f32-mask finite-mask | `artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/job_<ID>_qdq_onnx` |
+| `TEXT_QDQ` | thư mục QDQ **split-text** v8 | `artifacts/deployment/runtime/split_text_w8a8/job_<ID>_qdq_onnx` |
 | `BOARD` | host board | `qc-rb3g2` |
 
-new text data ID: `d9vpnzz09` - vn3k_text_calib_500_split_embeds
-new text data ID: `d9pg6dpd9` - 2000 TEXT CALIB
+Split-text calib dataset IDs (đã upload): `d9vpnzz09` = `vn3k_text_calib_500_split_embeds`; `d9pg6dpd9` = 2000-sample (calib bão hòa — 500 và 2000 cho QDQ byte-identical, dùng 500 là đủ).
 
 ## Gates chấp nhận (áp cho cả vision và text)
 
@@ -187,9 +186,11 @@ python3 deployment/scripts/qnn/eval_retrieval_board_vision.py \
 
 ---
 
-# PART B — TEXT (mirror v8 — learned rotation)
+# PART B — TEXT (split-encoder, v8 learned rotation)
 
 > Text inputs đã tạo ở **PART P3**. Part B độc lập với Part A (có thể chạy song song).
+>
+> ⚠️ **Đường full-graph text (input_ids → HTP) ĐÃ BỎ.** Nó link được nhưng **không dùng được trên board**: output bỏ qua `input_ids` vì HTP v68 không xử lý đúng dynamic `Gather` trên bảng token 250k (chi tiết: `[deploy-master].md` §11–§12, `w8a8_qat_rotated.md` §12A.8). **Đường deploy text cuối cùng là split-encoder:** host CPU làm embedding lookup → HTP chạy transformer nhận `inputs_embeds`. B1/B2 (rotation + QAT) giữ nguyên; từ B3 trở đi là split-text.
 
 ### B1. Learned rotation text (local/free, cuda) — v8 path
 ```bash
@@ -203,240 +204,221 @@ PYTHONUNBUFFERED=1 python deployment/scripts/qnn/learn_rotation_text.py --model-
 PYTHONUNBUFFERED=1 python deployment/scripts/qnn/train_vision_quant_robust.py --modality text --model-dir artifacts/deployment/exports/exported_model_text_rotated_learned --train-input-dir artifacts/deployment/qnn_inputs/vn3k_text_train_4000 --val-input-dir artifacts/deployment/qnn_inputs/vn3k_text_test_100 --output-dir artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8 --device cuda --batch-size 16 --epochs 15 --lr 1e-5 --fake-quant-observer ema --quant-head --quant-linears --quant-attention --start-layer 0 --end-layer 11 --num-workers 4
 ```
 
-### B3. Export text ONNX opset-20 (local/free)
+### B3. Export split-text ONNX (`inputs_embeds`) + static gate (local/free)
+
+Script `export_split_text_onnx.py` xuất phần transformer+head nhận `inputs_embeds`, dựng **mask link-safe finite ngay trong graph** (`M=(1-mask)·(-32)` dạng `[B,1,1,L]`, không `_prepare_4d`, không Cast thừa) và **strip Expand** sau export — nên không có float island, link được HTP v68. Có `--check-input-dir` để chạy gate static (split ONNX vs full `encode_text`, reload model tươi) và `--dump-embeds-dir` để xuất `inputs_embeds .raw` smoke cho board.
+
 ```bash
-python deployment/scripts/qnn/export_text_onnx.py \
+python deployment/scripts/qnn/export_split_text_onnx.py \
   --model-dir artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8 \
-  --output-subdir text_onnx_f32mask \
-  --attention-mask-dtype float32
+  --attention-mask-dtype float32 \
+  --check-input-dir artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask_i32 \
+  --dump-embeds-dir artifacts/deployment/qnn_inputs/vn3k_text_10_split_embeds \
+  --json artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_split/static_vs_pytorch_summary.json
 ```
+**GATE**: in `Mask Expand stripped` + `B1 gate ... PASS` (cosine min ≥ `0.999`; thực tế `0.99999999 / 0.99999976`); op sanity `Expand=0`, `attention_mask` chỉ vào `Shape`/`Reshape` (không Cast). Output: `text_onnx_split/text_encoder_split.onnx` + smoke `inputs_embeds .raw`.
 
-### B4. Patch finite attention mask (local/free)
-```bash
-python3 deployment/scripts/qnn/patch_text_finite_attention_mask.py \
-  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask \
-  --output-dir artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite \
-  --mask-value -32.0 \
-  --check \
-  --smoke-load
-```
-Patch này chỉ đổi attention mask constant âm cực lớn (`-3.402823e38`) trên text self-attention path thành `-32.0`, để AI Hub không tạo scale INT8 ~`1e32` tại `scores+mask`. Summary ghi ở `text_onnx_f32mask_finite/finite_mask_patch_summary.json`; kỳ vọng đổi đúng 1 Constant và thấy 12 Softmax text attention.
+### B3b. Dump bảng token-embedding (local/free, 1 lần — prereq cho B4/B7 + PART D)
 
-### B4b. Patch QNN link-safe mask subgraph (local/free)
+Bảng `token_embedding.weight` (đã rotate v8) dùng cho mọi bước sinh `inputs_embeds` và cho on-device encoding. Là weight đóng băng — dump 1 lần.
 ```bash
-python3 deployment/scripts/qnn/patch_text_qnn_link_safe_mask.py \
-  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite \
-  --output-dir artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe \
-  --check \
-  --smoke-load
-```
-Patch này đổi mask subgraph tương đương toán học từ `Where(1-mask != 0, -32, 0)` sang `(1-mask)*(-32)`, đồng thời loại `/text_model/Cast_output_0`. Summary ghi ở `text_onnx_f32mask_finite_linksafe/qnn_link_safe_mask_patch_summary.json`.
-
-### B5. GATE static text ONNX finite/f32/link-safe vs PyTorch (local/free)
-```bash
-python3 deployment/scripts/qnn/compare_text_onnx_with_pytorch.py \
-  --onnx-model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe \
+python deployment/scripts/qnn/dump_text_embedding_table.py \
   --model-dir artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8 \
-  --input-dir artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask \
-  --json artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe/static_vs_pytorch_summary.json \
-  --csv artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe/static_vs_pytorch.csv
+  --output-dir artifacts/deployment/bin/token_embedding_v8 --formats int8 fp16
 ```
-Kỳ vọng cosine mean ≥ `0.999`, min ≥ `0.9999`, không NaN, `Pow=0`, fused `Gelu`/`LayerNormalization`. Nếu fail thì dừng trước AI Hub.
+Sinh `token_embedding_int8.bin` (~192 MB, deploy mặc định) + `token_embedding_fp16.bin` (~384 MB) + meta. **Không commit** (`.gitignore` chặn `token_embedding_v8/`).
 
-### B6. Upload calib text f32-mask → AI Hub (TỐN JOB nhẹ — log journal)
+### B4. Calib `inputs_embeds` (host lookup) + upload → AI Hub (local/free + TỐN JOB nhẹ)
+
+`prepare_split_text_embeds.py` tokenize caption VN3K + lookup bảng (B3b) → `inputs_embeds`; rồi upload **raw modality** (2 key float32).
 ```bash
+# (chạy D1 trước nếu chưa có bảng) — calib 500 caption train
+python deployment/scripts/qnn/prepare_split_text_embeds.py \
+  --split train --num-samples 500 --selection random --seed 2400 \
+  --output-dir artifacts/deployment/qnn_inputs/vn3k_text_calib_500_split_embeds
+
 python deployment/scripts/qnn/upload_qaihub_calibration_dataset.py \
-  --modality text \
-  --input-dir artifacts/deployment/qnn_inputs/vn3k_text_calib_500_f32mask \
-  --id-dtype int64 \
-  --mask-dtype float32 \
-  --name msiglip-text-vn3k-calib-500-f32mask
+  --modality raw --keys inputs_embeds:float32:1,64,768 attention_mask:float32:1,64 \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_text_calib_500_split_embeds \
+  --name msiglip-split-text-embeds-calib-500
 ```
-Ghi `Dataset ID` in ra → `TEXT_CALIB_ID`. Không dùng lại `d7oz4gol9`, vì dataset đó có `attention_mask` integer và không khớp ONNX f32-mask.
+Ghi `Dataset ID` → `TEXT_SPLIT_CALIB` (vd `d9vpnzz09`). **Calib bão hòa**: QDQ byte-identical cho 500 vs 2000 mẫu (md5), nên 500 đủ; per-channel weight AI Hub đã bật sẵn.
 
-### B7. AI Hub quantize-only text finite/f32/link-safe → QDQ (TỐN JOB — log journal) — `--modality text`
+### B5. AI Hub quantize-only split-text → QDQ + fidelity (TỐN JOB — log journal)
 ```bash
 python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
-  --modality text \
-  --text-attention-mask-dtype float32 \
-  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe \
-  --calibration-data $TEXT_CALIB_ID \
-  --weights-dtype int8 \
-  --activations-dtype int8 \
-  --quantize-only \
-  --wait \
-  --download-quantized artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/job_qdq_onnx
+  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_split/text_encoder_split.onnx \
+  --calibration-data $TEXT_SPLIT_CALIB --weights-dtype int8 --activations-dtype int8 \
+  --input-specs '{"inputs_embeds": ((1, 64, 768), "float32"), "attention_mask": ((1, 64), "float32")}' \
+  --quantize-only --wait \
+  --download-quantized artifacts/deployment/runtime/split_text_w8a8/job_qdq_onnx
 ```
-Ghi `<JOB_ID>` → `TEXT_QDQ=artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/job_<ID>_qdq_onnx`.
-> `input_ids` vẫn là token index integer; riêng `attention_mask` là float32 0/1 và mask subgraph đã rewrite linksafe để tránh node nội bộ `Cast(FLOAT)` làm QNN linker fail. W8A8 vẫn giữ `--weights-dtype int8 --activations-dtype int8`.
+> Input là `inputs_embeds` float + `attention_mask` float (KHÔNG còn `input_ids`). Fidelity QDQ-vs-PyTorch khớp board `0.9951`.
 
-### B8. GATE text attention QDQ scale (local/free)
-```bash
-python3 deployment/scripts/qnn/inspect_text_attention_qdq.py \
-  --model $TEXT_QDQ \
-  --json artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/attention_qdq_scales.json \
-  --fail-scale-ge 10.0
-```
-Kỳ vọng tìm đúng 12 QDQ pair trước Softmax và `max_add_output_scale < 10.0`. Nếu fail, dừng: finite-mask chưa có tác dụng hoặc AI Hub vẫn quantize sai vị trí.
-
-### B9. GATE QDQ fidelity text (local/free)
-```bash
-python3 deployment/scripts/qnn/compare_text_onnx_with_pytorch.py \
-  --onnx-model $TEXT_QDQ \
-  --model-dir artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8 \
-  --input-dir artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask \
-  --json artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/text_qdq_fid.json \
-  --csv artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/text_qdq_fid.csv
-```
-Kỳ vọng mean ≥ `0.95`, min ≥ `0.90`. Nếu vẫn collapse, dừng trước compile/link và inspect top activation scales.
-
-### B10. GATE retrieval — text-isolation (local/free, FULL set)
-```bash
-python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py \
-  --skip-vision-qdq \
-  --text-qdq-onnx $TEXT_QDQ \
-  --model-dir artifacts/deployment/exports/exported_model \
-  --json artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/text_isolation_r1.json
-```
-Combo `text_int8` (image FP32 + text QDQ) cho thấy riêng text-quant rớt bao nhiêu. Chỉ compile/link nếu T2I R@1 ≥ `50.0`.
-
-### B11. Compile/link text finite/f32/link-safe → `.bin` (TỐN JOB — chỉ khi B8+B9+B10 pass — log journal) — `--modality text`
+### B6. Compile/link split-text → `.bin` (TỐN JOB — log journal)
 ```bash
 python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py \
-  --modality text \
-  --text-attention-mask-dtype float32 \
-  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_f32mask_finite_linksafe \
-  --calibration-data d7ozgzkq9 \
-  --weights-dtype int8 \
-  --activations-dtype int8 \
-  --wait \
-  --download artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/text_encoder.bin
+  --model artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_split/text_encoder_split.onnx \
+  --calibration-data $TEXT_SPLIT_CALIB --weights-dtype int8 --activations-dtype int8 \
+  --input-specs '{"inputs_embeds": ((1, 64, 768), "float32"), "attention_mask": ((1, 64), "float32")}' \
+  --compile-options "--quantize_io" \
+  --wait --download artifacts/deployment/runtime/split_text_w8a8/text_encoder_split.bin
 ```
+> Link PASS vì mask path khớp dạng `(1-mask)·(-32)` đã link được + không Expand/Cast island. Lịch sử 2 lỗi đã sửa (`/Cast_output_0`, `/Expand_coef`): xem `[deploy-master].md` §12.10.
 
-### B12. Board run + fidelity text (TRÊN BOARD)
+### B7. Prepare `inputs_embeds` cho query + control (local/free)
+
+Board chạy split graph cần `inputs_embeds` (không phải `input_ids`). `prepare_split_text_embeds.py` (tokenize VN3K + lookup bảng B3b) sinh đủ: smoke 10, full **4000 caption** (gate-comparable, mọi caption test pid=`id-1`), và bản **zero-embeds** control.
 ```bash
+# full 4000-caption query (gate-comparable)
+python3 deployment/scripts/qnn/prepare_split_text_embeds.py \
+  --split test --all-captions \
+  --output-dir artifacts/deployment/qnn_inputs/vn3k_test_query_full_split_embeds
 
-ls /opt/qcom/qairt/2.45.40.260406/lib/aarch64-ubuntu-gcc9.4/libQnnHtp.so
-ls /opt/qcom/qairt/2.45.40.260406/lib/aarch64-ubuntu-gcc9.4/libQnnHtpNetRunExtensions.so
+# smoke 10 (nếu chưa dump ở B3)
+python3 deployment/scripts/qnn/prepare_split_text_embeds.py \
+  --split test --num-samples 10 --selection first \
+  --output-dir artifacts/deployment/qnn_inputs/vn3k_text_10_split_embeds
 
+# zero-embeds control (cùng mask, embeds = 0) — chứng minh board graph DÙNG embeds
+python3 deployment/scripts/qnn/prepare_split_text_embeds.py \
+  --split test --num-samples 10 --selection first --zero-embeds \
+  --output-dir artifacts/deployment/qnn_inputs/vn3k_text_10_split_embeds_zero
+```
+> `prepare_vn3k_text_inputs.py` chỉ lấy 1 caption/ảnh (2000); tập gate đầy đủ là **4000 caption** (`--all-captions`). Số 2000-subset KHÔNG dùng làm gate.
+
+### B8. Board run + fidelity + control (TRÊN BOARD + local)
+```bash
 export QAIRT=/opt/qcom/qairt/2.45.40.260406
 export QNN_BIN=$QAIRT/bin/aarch64-ubuntu-gcc9.4
 export QNN_LIB=$QAIRT/lib/aarch64-ubuntu-gcc9.4
 export LD_LIBRARY_PATH="$QNN_LIB:$LD_LIBRARY_PATH"
 export ADSP_LIBRARY_PATH="$QAIRT/lib/hexagon-v68/unsigned;$QAIRT/lib/hexagon-v68;/usr/lib/rfsa/adsp;/dsp"
 
-cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask_i32
-
-wc -c raw/00000_pid2000_02001_1_input_ids.raw raw/00000_pid2000_02001_1_attention_mask.raw
-# Expected: input_ids 256 bytes (int32), attention_mask 256 bytes (float32)
-
-"$QNN_BIN/qnn-net-run" \
-  --backend "$QNN_LIB/libQnnHtp.so" \
-  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/text_encoder.bin \
-  --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_245.json \
+# smoke real-embeds
+cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/vn3k_text_10_split_embeds
+"$QNN_BIN/qnn-net-run" --backend "$QNN_LIB/libQnnHtp.so" \
+  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/runtime/split_text_w8a8/text_encoder_split.bin \
+  --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_text_i32.json \
   --input_list input_list.txt \
-  --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask \
-  --profiling_level basic \
-  --perf_profile high_performance
-
+  --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/split_text_w8a8 \
+  --profiling_level basic --perf_profile high_performance
+# control zero-embeds: lặp lại với cwd .../vn3k_text_10_split_embeds_zero, output .../split_text_w8a8_zero
 ```
-> Lưu ý: text input cho QNN f32-mask là `input_ids` **int32** + `attention_mask` float32; `input_list.txt` vẫn dùng dạng `input_ids:=... attention_mask:=...`. Nếu dùng input_ids int64, qnn-net-run báo file size 512 bytes nhưng graph chỉ expect 256 bytes. Đừng dùng `compare_qnn_with_pytorch.py` cho B12 vì script đó hiện chỉ compare vision/image. Nếu cần fidelity text board, viết/ dùng helper text riêng đọc dual-input raw và gọi `encode_text`.
+**GATE control (local):** real-vs-zero embeds output PHẢI khác (`max_abs > 0`) → split graph DÙNG embeds (ngược full-graph). **GATE fidelity (local):** board-vs-PyTorch cosine mean ≥ `0.90` (thực tế `0.9951 / 0.9926`). Snippet so sánh: xem `[deploy-master].md` §12.6.
 
-### B13. GATE board text fidelity (host/local sau khi kéo output về)
+### B9. Board text-isolation retrieval R@1 — FULL 4000 query (TRÊN BOARD + local)
 ```bash
-python3 deployment/scripts/qnn/compare_text_qnn_with_pytorch.py \
-  --qnn-output-dir artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask \
-  --input-dir artifacts/deployment/qnn_inputs/vn3k_text_10_f32mask_i32 \
-  --model-dir artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8 \
-  --id-dtype int32 \
-  --mask-dtype float32 \
-  --json artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask/qnn_vs_pytorch_summary.json \
-  --csv artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask/qnn_vs_pytorch.csv
-```
-**GATE**: mean >= `0.90`, không NaN/Inf. Nếu fail ở đây thì debug text `.bin`/input dtype/runtime trước khi chạy full 4000 query.
-
-### B14. Board text retrieval R@1 — text-isolation FULL query (TRÊN BOARD + local)
-
-Chạy full 4000 query text trên board bằng input `input_ids=int32`, kéo output về host, rồi tính retrieval với image FP32 để xác nhận proxy `text_int8`.
-
-```bash
-# local: chuẩn bị full query input cho QNN board
-python3 deployment/scripts/qnn/prepare_vn3k_text_inputs.py \
-  --split test \
-  --num-samples 4000 \
-  --selection first \
-  --output-dir artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32 \
-  --id-dtype int32 \
-  --mask-dtype float32
-
-# board: cd vào input dir rồi chạy text .bin
-cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32
-
-"$QNN_BIN/qnn-net-run" \
-  --backend "$QNN_LIB/libQnnHtp.so" \
-  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/text_encoder.bin \
-  --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_245.json \
+# board: chạy split bin trên 4000 query inputs_embeds
+cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/vn3k_test_query_full_split_embeds
+"$QNN_BIN/qnn-net-run" --backend "$QNN_LIB/libQnnHtp.so" \
+  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/runtime/split_text_w8a8/text_encoder_split.bin \
+  --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_text_i32.json \
   --input_list input_list.txt \
-  --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_query_4000_f32mask_i32 \
-  --profiling_level basic \
-  --perf_profile high_performance
+  --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/split_text_query_full \
+  --profiling_level basic --perf_profile high_performance
 
-# host: sau khi rsync/scp output về
+# host: text-isolation retrieval (image FP32 + text board)
 python3 deployment/scripts/qnn/eval_retrieval_board_text.py \
-  --text-output-dir artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_query_4000_f32mask_i32 \
-  --query-input-dir artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32 \
-  --model-dir artifacts/deployment/exports/exported_model \
-  --dataset-root . \
-  --json artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_query_4000_f32mask_i32/board_text_r1.json
+  --text-output-dir artifacts/deployment/qnn_runs/split_text_query_full \
+  --query-input-dir artifacts/deployment/qnn_inputs/vn3k_test_query_full_split_embeds \
+  --model-dir artifacts/deployment/exports/exported_model
 ```
-**GATE**: T2I R@1 >= `50.0` cho text-isolation board run. Nếu pass, tiếp tục C2 both-INT8 board retrieval.
+**GATE**: T2I R@1 ≥ `50.0` (thực tế board `51.33`). Pass → tiếp C2 both-INT8 board.
 
 ---
 
 # PART C — BOTH-INT8 (số deploy cuối cùng)
 
 ### C1. Off-board both-INT8 R@1 (local/free, FULL set)
+
+> `eval_retrieval_quantized_vision.py --text-qdq-onnx` feed `input_ids`, nên off-board proxy này dùng **full-graph text QDQ** (đường full-graph faithful off-board, chỉ FAIL khi chạy board). Số proxy `50.25` là mốc deploy off-board. Số board thật của đường split-text là **C2**.
 ```bash
-python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py --qdq-onnx $VISION_QDQ --text-qdq-onnx $TEXT_QDQ --model-dir artifacts/deployment/exports/exported_model --json artifacts/deployment/runtime/both_int8/both_int8_r1.json
+python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py --qdq-onnx $VISION_QDQ --text-qdq-onnx <FULL_GRAPH_TEXT_QDQ> --model-dir artifacts/deployment/exports/exported_model --json artifacts/deployment/runtime/both_int8/both_int8_r1.json
 ```
 
 ### C2. Board both-INT8 — retrieval INT8×INT8 TRỰC TIẾP trên thiết bị
 
-> Đây là số "thuần board": cả gallery image embedding và query text embedding đều sinh
-> từ `.bin` chạy trên HTP v68, rồi tính R@1. Yêu cầu A8 (vision `.bin`) + B11 (text `.bin`) đã có.
+> Đây là số "thuần board": gallery image embedding sinh từ vision `.bin`, query text embedding sinh từ **split text `.bin`** (nhận `inputs_embeds`), rồi tính R@1. Yêu cầu A8 (vision `.bin`) + B6 (split text `.bin`) đã có.
 
-**C2.1. Chuẩn bị FULL test set `.raw` (local/free)** — gallery 2000 ảnh, query 4000 caption.
+**C2.1. Chuẩn bị FULL test set (local/free)** — gallery 2000 ảnh (`.raw` image), query **4000 caption** dạng `inputs_embeds` (host lookup, B7).
 ```bash
 python3 deployment/scripts/qnn/prepare_vn3k_vision_inputs.py --dataset-root VN3K --split test --selection first --num-samples 2000 --output-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000 --path-mode relative
-python3 deployment/scripts/qnn/prepare_vn3k_text_inputs.py --split test --num-samples 4000 --selection first --output-dir artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32 --id-dtype int32 --mask-dtype float32
+# text query: vn3k_test_query_full_split_embeds (inputs_embeds + attention_mask + manifest, 4000 caption) — xem B7
 ```
 
-**C2.2. Board: vision `.bin` chạy FULL gallery → image embeddings** (trong thư mục input trên board).
+**C2.2. Board: vision `.bin` chạy FULL gallery → image embeddings** (tái dùng output gallery của A10 nếu đã chạy).
 ```bash
-qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context vision_encoder.bin --config_file deployment/config/qnn/htp_config_245.json --input_list vn3k_test_gallery_2000/input_list.txt --output_dir qnn_runs/both_int8_vision --profiling_level basic --perf_profile high_performance
+cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000
+qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/vision_encoder.bin --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_245.json --input_list input_list.txt --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000 --profiling_level basic --perf_profile high_performance
 ```
 
-**C2.3. Board: text `.bin` chạy FULL query → text embeddings.**
+**C2.3. Board: split text `.bin` chạy FULL query (`inputs_embeds`) → text embeddings.** (cwd = thư mục query split-embeds; config text-family)
 ```bash
-qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context text_encoder.bin --config_file deployment/config/qnn/htp_config_245.json --input_list vn3k_test_query_4000_f32mask_i32/input_list.txt --output_dir qnn_runs/both_int8_text --profiling_level basic --perf_profile high_performance
+cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/vn3k_test_query_full_split_embeds
+qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/runtime/split_text_w8a8/text_encoder_split.bin --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_text_i32.json --input_list input_list.txt --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/split_text_query_full --profiling_level basic --perf_profile high_performance
 ```
 
-**C2.4. Kéo embedding board về host** (`adb pull`/`scp` 2 thư mục `qnn_runs/both_int8_{vision,text}` chứa `Output_*.raw` đã dequantize sang float).
+**C2.4. Kéo embedding board về host** (`adb pull`/`scp` thư mục vision (`..._gallery_2000`) và text (`split_text_query_full`) chứa `Result_*/output_0.raw` đã dequantize sang float).
 
-**C2.5. Tính R@1 từ embedding board** (local/free) — raw dot product, đúng `LitTBPS._compute_metrics`.
+**C2.5. Tính R@1 từ embedding board** (local/free) — raw dot product, đúng `LitTBPS._compute_metrics`. **Không có `--model-dir`** (cả hai embedding đều từ board).
 ```bash
-python3 deployment/scripts/qnn/eval_retrieval_board_embeddings.py --vision-output-dir artifacts/deployment/qnn_runs/both_int8_vision --text-output-dir artifacts/deployment/qnn_runs/both_int8_text --gallery-input-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000 --query-input-dir artifacts/deployment/qnn_inputs/vn3k_test_query_4000_f32mask_i32 --json artifacts/deployment/qnn_runs/both_int8_board_r1.json
+python3 deployment/scripts/qnn/eval_retrieval_board_embeddings.py --vision-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000 --text-output-dir artifacts/deployment/qnn_runs/split_text_query_full --gallery-input-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000 --query-input-dir artifacts/deployment/qnn_inputs/vn3k_test_query_full_split_embeds --json artifacts/deployment/qnn_runs/both_int8_board_r1.json
 ```
-> `eval_retrieval_board_embeddings.py` đọc `Result_*/output_0.raw` board của cả 2 encoder, map pid theo manifest của input dirs, và tính retrieval raw dot product như `eval_retrieval_quantized_vision.py`. Cho tới khi có text board fidelity/retrieval, **số both-INT8 ở C1 (QDQ) vẫn là proxy**; vision board đã verify ở A9/A10.
+> `eval_retrieval_board_embeddings.py` đọc `Result_*/output_0.raw` board của cả 2 encoder, map pid theo `manifest.csv` của input dirs, và tính retrieval raw dot product như `eval_retrieval_quantized_vision.py`.
 
-Deploy target áp cho both-INT8 board: **T2I R@1 ≥ 50** (kết quả < 50 là FAIL).
+Deploy target áp cho both-INT8: **T2I R@1 ≥ 50**. Kết quả thực tế: off-board QDQ proxy `50.25` (PASS); board both-INT8 `49.95` (T2I) / `53.05` (I2T) — thiếu `0.05` (~2 query, trong nhiễu). Vision là tower sàn; nâng vision (v9) là hướng tùy chọn để đẩy board qua 50.
+
+---
+
+# PART D — On-device text encoding (mọi thứ trên RB3)
+
+> Các bước B/C ở trên sinh `inputs_embeds` **trên host** rồi đẩy lên board — đủ để đo R@1.
+> PART D đưa **toàn bộ mã hoá text lên chính RB3**: lookup bảng + transformer chạy trên thiết bị,
+> host chỉ còn chạy retrieval. (Lookup chạy host hay board cho `inputs_embeds` gần như bit-identical;
+> hơn nữa bin còn quantize input về uint8 ở I/O, nên không đổi R@1.)
+
+### D1. Dump bảng token-embedding (HOST, 1 lần)
+
+Đã làm ở **B3b** (`dump_text_embedding_table.py` → `token_embedding_v8/`). INT8-table vs FP32 cos `0.99997` (gọn RAM 192 MB, chất lượng ~không đổi vì bin còn quantize input về uint8). Nếu chưa chạy, chạy B3b.
+
+### D2. Push lên RB3 (1 lần)
+`scp`/`adb push`: `token_embedding_v8/` (bảng), `deployment/scripts/qnn/board_text_encode.py`, `text_encoder_split.bin`. Board cần `python3 + numpy` (lookup); tokenize-on-board (tùy chọn) cần thêm `transformers` + `src/`.
+
+### D3. RB3 CPU: tokenize (tùy chọn) + lookup → `inputs_embeds`
+```bash
+# Mode A — từ input_ids đã có (numpy-only, chắc chắn chạy):
+python3 deployment/scripts/qnn/board_text_encode.py \
+  --table artifacts/deployment/bin/token_embedding_v8/token_embedding_int8.bin \
+  --input-dir artifacts/deployment/qnn_inputs/vn3k_test_query_full_split_embeds \
+  --output-dir artifacts/deployment/qnn_inputs/query_onboard
+
+# Mode B — tokenize luôn trên board (cần transformers + src/):
+#   --captions-file caps.txt --pids-file pids.txt   (thay cho --input-dir)
+```
+Bảng được `np.memmap` → chỉ đọc 64 hàng/query, nhẹ RAM cho board 4GB.
+
+### D4. RB3 NPU: transformer (giống C2.3, nhưng input từ D3)
+```bash
+cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/query_onboard
+qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" \
+  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/runtime/split_text_w8a8/text_encoder_split.bin \
+  --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_text_i32.json \
+  --input_list input_list.txt --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/onboard_text \
+  --profiling_level basic --perf_profile high_performance
+```
+
+### D5. HOST: chỉ retrieval (đo chất lượng)
+`eval_retrieval_board_text.py` / `eval_retrieval_board_embeddings.py` như B9/C2.5, trỏ `--text-output-dir` vào `qnn_runs/onboard_text`. Encode đã 100% trên RB3; host chỉ so embedding.
+
+> **Bảng = weight, không phải data.** Nó là `token_embedding.weight` đã rotate (Q fold sẵn) — sinh 1 lần ở build-time, nạp 1 lần lúc app khởi động, tái dùng cho mọi query. Chỉ regenerate khi đổi model text. Lý thuyết: `w8a8_qat_rotated.md` §12A.8.
 
 ---
 
 # Board — prerequisites & gotchas
 
 **Chuẩn bị (1 lần mỗi phiên trên board `qc-rb3g2`):**
-1. `adb push` (hoặc scp) lên board: file `.bin`, thư mục input kèm `input_list.txt` + `raw/`. Smoke fidelity: `vn3k_test_10` / `vn3k_text_10_f32mask_i32`. Both-INT8 board (C2): `vn3k_test_gallery_2000` / `vn3k_test_query_4000_f32mask_i32`.
+1. `adb push` (hoặc scp) lên board: file `.bin`, thư mục input kèm `input_list.txt` + `raw/`. Smoke fidelity: `vn3k_test_10` (vision) / `vn3k_text_10_split_embeds` (text split). Both-INT8 board (C2): `vn3k_test_gallery_2000` (vision) / `vn3k_test_query_full_split_embeds` (text split, 4000 caption).
 2. `export QNN_LIB=<đường dẫn QNN libs trên board>` (chứa `libQnnHtp.so`). Nếu chưa set → lỗi `--backend` không tìm thấy.
 3. Chạy `qnn-net-run` **từ trong thư mục input** (hoặc dùng path tuyệt đối) vì `raw/` trong `input_list.txt` là path tương đối.
 
@@ -450,9 +432,9 @@ Deploy target áp cho both-INT8 board: **T2I R@1 ≥ 50** (kết quả < 50 là 
 
 # Logging bắt buộc
 
-- **Mỗi job AI Hub** (A5, A8, B6, B7, B11): append vào `deployment/docs/journal/[deploy-master].md` — mục tiêu, job id, input, output/error, fidelity/R@1, quyết định.
-- **Số v8 vision** (A7) và **both-INT8** (C1 off-board, C2 board): điền vào bảng `[deploy-master].md` §11 + §6.
-- Board fidelity/latency (A9, B12) và board both-INT8 R@1 (C2): vào `[deploy-master].md`.
+- **Mỗi job AI Hub** (A5, A8 vision; B4 upload calib, B5 quantize, B6 compile/link split-text): append vào `deployment/docs/journal/[deploy-master].md` — mục tiêu, job id, input, output/error, fidelity/R@1, quyết định.
+- **Số v8 vision** (A7) và **both-INT8** (C1 off-board, C2 board): điền vào bảng `[deploy-master].md` §0 + §12.
+- Board fidelity/latency (A9, B8) và board both-INT8 R@1 (C2): vào `[deploy-master].md`.
 
 ---
 

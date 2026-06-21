@@ -1891,6 +1891,8 @@ Artifact: `qnn_runs/split_text_query_full/`, text board `.../text_w8a8_learned_q
 
 **Kỳ vọng (thẳng thắn):** QAT đã bão hòa (v5→v6 marginal), learned rotation đã cho cú nhảy lớn (+1.55). v9 có thể `+0.0..+0.5` QDQ — **không chắc** đủ qua 50 trên board. Cổng QDQ (`>50.85`) cho phép bail sớm nếu vô ích.
 
+**v9a run 1 (8000 step, 512 calib, lr 2e-3) — phát hiện bug optimizer:** objective DAO ĐỘNG dưới Adam lr cố định (obj 662↔878, max|Qa| 9.5↔18.4); script cũ fold **Q ở step cuối** = đúng đỉnh dao động (`max|a| 18.43`, tệ hơn vẻ ngoài). Run đã CHẠM `obj 662 / max|Qa| 9.54` ở step 6400 → rotation chặt hơn khả thi. **Fix:** patch `learn_rotation.py` theo dõi + fold **Q có objective thấp nhất** (best-Q), không phải step cuối. Re-run cùng lệnh sẽ fold điểm trough. (Lưu ý: `max|a|` của 512-calib không so thẳng v8 256-calib — nhiều mẫu thì max cao hơn; quyết định thật là cổng QDQ.)
+
 **Pha 3 — C2 both-INT8 board (số deploy cuối):** `eval_retrieval_board_embeddings.py` ghép board vision (`rotated_w8a8_learned_qat_v8_gallery_2000`) + board text split. **KHÔNG có `--model-dir`** (script dùng embeddings board cho cả hai tower):
 
 ```bash
@@ -1924,3 +1926,19 @@ Forensic local (output board của X-run và zero-run đã sync về máy; binar
 # Cô lập ids: chỉ tin diff khi mask GIỐNG nhau. Hoặc đơn giản dùng zero-ids (giữ mask):
 #   X-run vs Z(zero)-run cùng mask => khác biệt = tác động THỰC của ids. Ở đây = 0 trên 10/10.
 ```
+
+### 12.13 2026-06-21 - On-device text encoding: bảng embedding + lookup trên RB3
+
+**Mục tiêu:** đưa NỐT bước embedding lookup (nửa CPU của split encoder) lên chính RB3, để text encode 100% trên thiết bị; host chỉ còn retrieval. Trước đó host dev tính `inputs_embeds` rồi đẩy lên board — đủ đo R@1 nhưng chưa phải on-device thật.
+
+**Deliverable (host, build-time, 1 lần):** `dump_text_embedding_table.py` trích `token_embedding.weight` (đã rotate v8) → 2 bản:
+- **int8 per-row** (deploy mặc định): `token_embedding_int8.bin` `192 MB` + `_scale.bin` `1 MB` + `meta_int8.json`. Row r = `int8[r]*scale[r]`.
+- **fp16** (dự phòng): `token_embedding_fp16.bin` `384 MB` + `meta.json`.
+
+**Chất lượng INT8 table (đo local):** INT8-table embeds vs FP32-model embeds cos **`0.99997`** (FP16: `0.9999997`). Khác biệt INT8 vs FP16 ở mức embedding cos `0.99996` — **mịn hơn** chính phép quantize uint8 per-tensor mà bin áp lên `inputs_embeds` ở I/O, nên **biến mất ngay tại cửa vào bin** ⇒ R@1 ~không đổi. (Số qua ORT QDQ không tin được — ORT-QDQ `0.957` ≠ board `0.9951`; chỉ tin mức embedding.) ⇒ **dùng INT8 192 MB**, gọn RAM.
+
+**Script board (`board_text_encode.py`):** nửa CPU của split encoder, chạy trên RB3. `np.memmap` bảng (chỉ đọc 64 hàng/query, nhẹ RAM). Mode A: lookup từ `input_ids .raw` (numpy-only). Mode B: tokenize-on-board (cần transformers + src/). Output `inputs_embeds + attention_mask` raw + input_list + manifest → qnn-net-run split bin. Verified local: INT8/FP16 đều khớp model-FP32.
+
+**Bảng = weight, không phải data:** là `token_embedding.weight` đã fold Q, đóng băng; sinh 1 lần build-time, nạp 1 lần runtime, tái dùng mọi query; chỉ regen khi đổi model text. Lý thuyết: `w8a8_qat_rotated.md` §12A.8. Runbook: PART D.
+
+**Trạng thái:** bảng + script đã tạo & verify trên host (`token_embedding_v8/` git-ignored). Bước on-board (push + chạy D3/D4 trên RB3) là việc của user.

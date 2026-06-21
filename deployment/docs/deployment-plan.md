@@ -149,6 +149,12 @@ For a two-encoder retrieval model, run this pipeline in three views:
 | Text isolation | FP32 reference | deployment candidate | diagnose text branch quality |
 | End-to-end | deployment candidate | deployment candidate | measure final deploy behavior |
 
+### 5.1 Host/Accelerator Split (when a runtime op is not honored)
+
+A compiled graph that **links** is not guaranteed to **execute correctly**. The target runtime may silently fail to honor a specific operation even though the static graph and its quantized proxy are faithful. The diagnostic is an **input-dependence ablation**: hold all other inputs fixed and check that the output actually changes when the operation's input changes; if it does not, the runtime is ignoring that op.
+
+When a non-compute op (e.g. a large dynamic table lookup / gather) is the culprit, the deployment topology can be **split across host and accelerator**: run the offending op on the host CPU and feed its result as an ordinary tensor input to the accelerator graph, keeping all heavy compute on the accelerator. This is a deployment-representation change, not a model-quality change — the model math is unchanged and the memory footprint is unchanged when host and accelerator share DRAM. Validate the split graph the same way as any other candidate: static gate, QDQ proxy, board fidelity, and an input-dependence control proving the split graph now uses its new input.
+
 ---
 
 ## 6. Experiment Catalogue
