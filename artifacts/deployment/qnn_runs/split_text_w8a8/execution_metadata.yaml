@@ -1,0 +1,21 @@
+---
+timestamp: 86079992811
+command: qnn-net-run --backend /opt/qcom/qairt/2.45.40.260406/lib/aarch64-ubuntu-gcc9.4/libQnnHtp.so --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/text_encoder_split.bin --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_text_i32.json --input_list input_list.txt --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/split_text_w8a8 --profiling_level basic --perf_profile high_performance
+execution_mode: synchronous
+inferences_completed: 10
+graphs:
+  - graph_name: graph_488rk8zt
+    input_tensors:
+    - tensor_name: attention_mask
+      id: 1
+      datatype: QNN_DATATYPE_UFIXED_POINT_8
+      dimensions: [1,64]
+    - tensor_name: inputs_embeds
+      id: 5
+      datatype: QNN_DATATYPE_UFIXED_POINT_8
+      dimensions: [1,64,768]
+    output_tensors:
+    - tensor_name: output_0
+      id: 679
+      datatype: QNN_DATATYPE_UFIXED_POINT_8
+      dimensions: [1,768]
