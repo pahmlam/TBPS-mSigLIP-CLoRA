@@ -1851,7 +1851,45 @@ M = (1 - attention_mask) * (-32),  expand [B,1,L,L]   # exp(-32)~1.3e-14, no Cas
 | **T2I** | **`51.05`** | `78.90` | `87.25` | `56.72` | `50.18` |
 | I2T | `51.35` | `78.90` | `88.25` | `55.80` | `48.20` |
 
-→ **PASS gate ≥50**; chỉ lệch `-0.60` so với text QDQ proxy `51.65`. Split-text board trung thực (khớp board fidelity `0.9951`). Artifact: `qnn_runs/text_w8a8_learned_qat_v8_f32mask/board_text_r1.json`.
+(2000-caption subset; KHÔNG dùng làm gate). Split-text board trung thực (khớp board fidelity `0.9951`).
+
+**Pha 2/3 trên FULL 4000-caption (gate-comparable với proxy):** 2000-subset kéo số xuống nên đo lại trên đủ 4000 caption (`vn3k_test_query_full_split_embeds`, pid=id-1, mọi caption test).
+
+| Eval (board, 4000 cap × 2000 gallery) | T2I R@1 | I2T R@1 | vs off-board proxy |
+|---|---:|---:|---|
+| Text-isolation (img FP32 + text board) | **`51.33`** | `55.35` | proxy `51.65` (drift `-0.32`) |
+| **Both-INT8 (img board + text board)** | **`49.95`** | `53.05` | proxy `50.25` (drift `-0.30`) |
+
+**Đánh giá:** both-INT8 board T2I `49.95` — **thiếu `0.05` so gate ≥50** (≈2/4000 query, trong biên độ nhiễu). I2T `53.05` vượt thoải mái. Drift board chia: vision `-0.65` (QDQ `50.85`→board `50.20`) lớn hơn text `-0.32`; vision là tower sàn.
+
+**Lever để vượt 50 (xếp theo chi phí):**
+1. **Rẻ nhất — tăng calib split-text:** quantize split-text hiện chỉ 500 mẫu `inputs_embeds`. Tăng mẫu/đa dạng có thể giảm drift text (`51.33`→~`51.6`), kéo both-INT8 qua 50. Chỉ re-quantize+compile+link, không train lại.
+2. **Vision (tower sàn):** vision board drift `-0.65` lớn nhất; cải thiện vision QAT (thêm epoch/coverage) nâng both-INT8 trực tiếp. Tốn 1 train run.
+3. **Chấp nhận `49.95`≈50** cho phần on-device both-INT8 (trong nhiễu 2 query), giữ vision-only `50.20` và off-board proxy `50.25` làm mốc PASS.
+
+Artifact: `qnn_runs/split_text_query_full/`, text board `.../text_w8a8_learned_qat_v8_f32mask/board_text_r1.json`.
+
+**Lever 1 (tăng calib split-text) — LOẠI (bằng chứng md5):** quantize-only 2 job khác nhau, calib 500 (`jgjoly0ep`) vs 2000 (`jp24mdmq5`) `inputs_embeds`. QDQ model **byte-for-byte identical** (md5 `model.onnx=995c4fa0…`, `model.data=fef546f7…` cho cả hai) ⇒ QDQ-vs-PyTorch cosine y hệt (`0.95769 / 0.93252`). Scale per-tensor của `inputs_embeds` do `max|embedding|` (vài token phổ biến) quyết định — 500 mẫu đã bão hòa, thêm calib KHÔNG đổi scale ⇒ identical bit. (Con số `0.957` là artifact feed float vào QDQ trong ORT — board thật `0.9951`; nhưng md5-identical đã đủ kết luận, không phụ thuộc số tuyệt đối.) ⇒ calib không cứu được `0.05`; drift là cộng-dồn 2 tower.
+
+**Còn lại:** (2) cải thiện vision (tower sàn, board drift `-0.65`) — tốn 1 train run; (3) chốt `49.95≈50` (trong nhiễu 2 query) với vision-only `50.20` + proxy `50.25` làm mốc PASS.
+
+### 12.12 2026-06-21 - Lever 2 (cải thiện vision): lever rẻ đã cạn → plan v9 (train)
+
+**Lever rẻ không-train đã cạn:**
+- **Per-channel weight ĐÃ bật:** vision QDQ có 152 DequantizeLinear vector-scale (weight 768/3072-dim per-output-channel) + 477 per-tensor (activation, đúng yêu cầu HTP). AI Hub đã làm granularity tối ưu → không còn gì để chỉnh ở quantize flag.
+- **Calib bão hòa** (md5-identical, §12.11).
+⇒ Muốn nâng vision QDQ (`50.85`) phải train lại.
+
+**Plan v9 (chạy trên GPU; mỗi bước có cổng rẻ để bail):** cần vision QDQ ≳ `51.2` để bù board drift `-0.65` → board ≳ `50.5` → both-INT8 qua 50.
+
+| Bước | Lệnh (rút gọn) | Cổng quyết định |
+|---|---|---|
+| v9a — rotation chặt hơn | `learn_rotation.py ... --num-calib 512 --tokens-per-image 32 --steps 8000` (v8: 256/32/3000, max\|a\| `14.56`) | max\|a\| in ra **< 14.56** rõ rệt? Không → bỏ v9a |
+| v9 — QAT | `train_vision_quant_robust.py --model-dir <rot_v9> --epochs 25 --lr 1e-5` (giữ recipe v6, **không đổi lr/schedule** — bài học v7), full coverage `--quant-head --quant-linears --quant-attention` | — |
+| Gate QDQ | export ONNX → `submit_qaihub_quantize_compile.py --quantize-only` → `eval_retrieval_quantized_vision.py` | QDQ T2I R@1 **> 50.85**? Không → bail (không tốn compile/link/board) |
+| Board | compile/link → board → `eval_retrieval_board_embeddings.py` both-INT8 | T2I ≥ 50? |
+
+**Kỳ vọng (thẳng thắn):** QAT đã bão hòa (v5→v6 marginal), learned rotation đã cho cú nhảy lớn (+1.55). v9 có thể `+0.0..+0.5` QDQ — **không chắc** đủ qua 50 trên board. Cổng QDQ (`>50.85`) cho phép bail sớm nếu vô ích.
 
 **Pha 3 — C2 both-INT8 board (số deploy cuối):** `eval_retrieval_board_embeddings.py` ghép board vision (`rotated_w8a8_learned_qat_v8_gallery_2000`) + board text split. **KHÔNG có `--model-dir`** (script dùng embeddings board cho cả hai tower):
 

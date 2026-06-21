@@ -23,6 +23,7 @@
 | `BOARD` | host board | `qc-rb3g2` |
 
 new text data ID: `d9vpnzz09` - vn3k_text_calib_500_split_embeds
+new text data ID: `d9pg6dpd9` - 2000 TEXT CALIB
 
 ## Gates chấp nhận (áp cho cả vision và text)
 
