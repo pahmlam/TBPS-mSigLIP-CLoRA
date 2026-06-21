@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -107,6 +108,19 @@ def _parse_dual_input_list(input_dir: Path) -> list[dict[str, Path]]:
     return rows
 
 
+def _read_source_manifest(input_dir: Path) -> list[dict[str, str]]:
+    manifest_path = input_dir / "manifest.csv"
+    if not manifest_path.exists():
+        return []
+    with manifest_path.open(newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def _pid_from_stem(stem: str) -> int:
+    match = re.search(r"(?:^|_)pid(-?\d+)(?:_|$)", stem)
+    return int(match.group(1)) if match else -1
+
+
 def _tokenize_captions(captions: list[str], model_dir: Path, seq_len: int):
     """Optional on-board tokenization using the project tokenizer (needs transformers)."""
     import yaml
@@ -169,12 +183,21 @@ def main() -> None:
             samples.append({"stem": f"{i:05d}", "ids": ids, "mask": mask,
                             "pid": pids[i] if pids else -1, "caption": captions[i][:120]})
     elif args.input_dir:  # Mode A — pre-tokenized input_ids
-        rows = _parse_dual_input_list(args.input_dir.expanduser().resolve())
+        input_dir = args.input_dir.expanduser().resolve()
+        rows = _parse_dual_input_list(input_dir)
+        manifest_rows = _read_source_manifest(input_dir)
         for i, r in enumerate(rows):
             ids = _read_ids(r["input_ids"], args.seq_len)
             mask = np.fromfile(r["attention_mask"], dtype=np.float32).reshape(args.seq_len)
-            samples.append({"stem": r["input_ids"].stem.replace("_input_ids", ""),
-                            "ids": ids, "mask": mask, "pid": -1, "caption": ""})
+            stem = r["input_ids"].stem.replace("_input_ids", "")
+            source_row = manifest_rows[i] if i < len(manifest_rows) else {}
+            samples.append({
+                "stem": stem,
+                "ids": ids,
+                "mask": mask,
+                "pid": int(source_row.get("pid") or _pid_from_stem(stem)),
+                "caption": source_row.get("caption", "")[:120],
+            })
     else:
         raise SystemExit("Provide either --input-dir (pre-tokenized) or --captions-file (tokenize on board).")
 

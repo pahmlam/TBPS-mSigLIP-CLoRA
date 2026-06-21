@@ -7,7 +7,7 @@ Important interpretation:
 - **QDQ proxy** means the AI Hub quantized ONNX graph was evaluated off-board with ONNX Runtime. It is a fidelity and retrieval proxy before QNN context-binary execution.
 - **Board vision smoke** means the QNN context binary was run on RB3 for a small 10-image input set, mainly for board-vs-PyTorch fidelity and runtime profiling.
 - **`rotated_w8a8_learned_qat_v8_gallery_2000` is not a new model variant.** It is the same QAT v8 vision context binary executed on RB3 for the full VN3K test gallery: 2000 image embeddings. The retrieval result in `board_vision_r1.json` uses **board image embeddings + FP32 text embeddings**. Therefore it is a **vision-only board result**, not both-INT8 and not text-on-board.
-- **Text is now board-verified via the split-text path (§3.1, §5.3).** The original full-graph text binary links but is *unusable on board*: its output ignores `input_ids` (HTP v68 silently breaks the dynamic 250k-row embedding `Gather`). The deployable text encoder runs the embedding lookup on the host CPU and the transformer on HTP via `inputs_embeds`. Board text-isolation T2I R@1 is `51.33` and board both-INT8 T2I R@1 is `49.95`.
+- **Text is now board-verified via the split-text path (§3.1, §5.3).** The original full-graph text binary links but is *unusable on board*: its output ignores `input_ids` (HTP v68 silently breaks the dynamic 250k-row embedding `Gather`). The deployable text encoder runs the embedding lookup on the host/RB3 CPU and the transformer on HTP via `inputs_embeds`. Board text-isolation T2I R@1 is `51.30` and board both-INT8 T2I R@1 is `49.95`.
 
 ---
 
@@ -180,10 +180,10 @@ This matches the text QDQ proxy (`0.9949`), i.e. the HTP transformer is faithful
 
 | Direction | R@1 | R@5 | R@10 | mAP | mINP |
 |---|---:|---:|---:|---:|---:|
-| T2I | 51.33 | 79.85 | 87.80 | 57.01 | 50.48 |
-| I2T | 55.35 | 80.80 | 89.25 | 51.19 | 34.59 |
+| T2I | 51.30 | 79.43 | 87.90 | 56.97 | 50.46 |
+| I2T | 54.80 | 81.00 | 88.60 | 51.14 | 34.72 |
 
-Drift vs text QDQ proxy: T2I `51.65 → 51.33` (`-0.32`).
+Drift vs text QDQ proxy: T2I `51.65 → 51.30` (`-0.35`).
 
 **Board both-INT8 retrieval (image board + text board, full set):**
 
@@ -199,7 +199,7 @@ Comparison to the off-board both-INT8 QDQ proxy:
 | T2I R@1 | 50.25 | 49.95 | -0.30 |
 | I2T R@1 | 52.95 | 53.05 | +0.10 |
 
-Conclusion: both encoders now run INT8 on RB3 HTP v68. Board both-INT8 T2I R@1 is `49.95` — `0.05` below the `≥50` target (≈2 queries out of 4000, within measurement noise), while the off-board both-INT8 QDQ proxy (`50.25`) and the board vision-only run (`50.20`) both pass. The board drift is the sum of two faithful-but-imperfect towers; vision is the floor (board drift `-0.65` vs text `-0.32`). Cheap levers are exhausted: AI Hub already applies per-channel weight quantization, and the split-text calibration is saturated (the QDQ model is byte-identical for 500 vs 2000 calibration samples).
+Conclusion: both encoders now run INT8 on RB3 HTP v68. Board both-INT8 T2I R@1 is `49.95` — `0.05` below the `≥50` target (≈2 queries out of 4000, within measurement noise), while the off-board both-INT8 QDQ proxy (`50.25`) and the board vision-only run (`50.20`) both pass. The board drift is the sum of two faithful-but-imperfect towers; vision is the floor (board drift `-0.65` vs text `-0.35`). Cheap levers are exhausted: AI Hub already applies per-channel weight quantization, and the split-text calibration is saturated (the QDQ model is byte-identical for 500 vs 2000 calibration samples).
 
 ---
 
@@ -208,7 +208,7 @@ Conclusion: both encoders now run INT8 on RB3 HTP v68. Board both-INT8 T2I R@1 i
 | Component | Status | Best current result | Next gate |
 |---|---|---|---|
 | Vision W8A8 | **Board PASS** | board vision T2I R@1 `50.20`, I2T R@1 `54.50`; runtime `33.05 ms/image` | none for vision-only |
-| Text W8A8 (split-encoder) | **Board PASS** | board text-isolation T2I R@1 `51.33`, I2T `55.35`; board fidelity `0.9951 / 0.9926` | none for text-only |
+| Text W8A8 (split-encoder) | **Board PASS** | board text-isolation T2I R@1 `51.30`, I2T `54.80`; board fidelity `0.9951 / 0.9926` | none for text-only |
 | Both W8A8 | **Board near-target** | board both-INT8 T2I R@1 `49.95`, I2T R@1 `53.05`; off-board QDQ proxy `50.25` (PASS) | optional: lift vision (floor tower) to push board both-INT8 over 50 |
 
 Both encoders are board-verified INT8. The official deploy number is the off-board both-INT8 QDQ proxy `50.25` (PASS ≥50); the direct on-board both-INT8 is `49.95`, within measurement noise of the target. The only open item is the optional vision-improvement effort (v9) to push the on-board both-INT8 strictly over 50; it is not required for the deploy target, which the proxy already meets.

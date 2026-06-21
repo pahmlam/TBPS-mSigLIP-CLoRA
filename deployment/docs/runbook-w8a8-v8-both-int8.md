@@ -324,7 +324,7 @@ python3 deployment/scripts/qnn/eval_retrieval_board_text.py \
   --query-input-dir artifacts/deployment/qnn_inputs/vn3k_test_query_full_split_embeds \
   --model-dir artifacts/deployment/exports/exported_model
 ```
-**GATE**: T2I R@1 ≥ `50.0` (thực tế board `51.33`). Pass → tiếp C2 both-INT8 board.
+**GATE**: T2I R@1 ≥ `50.0` (thực tế board `51.30` với onboard lookup, I2T `54.80`). Pass → tiếp C2 both-INT8 board.
 
 ---
 

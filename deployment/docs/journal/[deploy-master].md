@@ -1857,17 +1857,26 @@ M = (1 - attention_mask) * (-32),  expand [B,1,L,L]   # exp(-32)~1.3e-14, no Cas
 
 | Eval (board, 4000 cap × 2000 gallery) | T2I R@1 | I2T R@1 | vs off-board proxy |
 |---|---:|---:|---|
-| Text-isolation (img FP32 + text board) | **`51.33`** | `55.35` | proxy `51.65` (drift `-0.32`) |
+| Text-isolation (img FP32 + text board) | **`51.30`** | `54.80` | proxy `51.65` (drift `-0.35`) |
 | **Both-INT8 (img board + text board)** | **`49.95`** | `53.05` | proxy `50.25` (drift `-0.30`) |
 
-**Đánh giá:** both-INT8 board T2I `49.95` — **thiếu `0.05` so gate ≥50** (≈2/4000 query, trong biên độ nhiễu). I2T `53.05` vượt thoải mái. Drift board chia: vision `-0.65` (QDQ `50.85`→board `50.20`) lớn hơn text `-0.32`; vision là tower sàn.
+**Đánh giá:** both-INT8 board T2I `49.95` — **thiếu `0.05` so gate ≥50** (≈2/4000 query, trong biên độ nhiễu). I2T `53.05` vượt thoải mái. Drift board chia: vision `-0.65` (QDQ `50.85`→board `50.20`) lớn hơn text `-0.35`; vision là tower sàn.
 
 **Lever để vượt 50 (xếp theo chi phí):**
-1. **Rẻ nhất — tăng calib split-text:** quantize split-text hiện chỉ 500 mẫu `inputs_embeds`. Tăng mẫu/đa dạng có thể giảm drift text (`51.33`→~`51.6`), kéo both-INT8 qua 50. Chỉ re-quantize+compile+link, không train lại.
+1. **Rẻ nhất — tăng calib split-text:** quantize split-text hiện chỉ 500 mẫu `inputs_embeds`. Tăng mẫu/đa dạng có thể giảm drift text (`51.30`→~`51.6`), kéo both-INT8 qua 50. Chỉ re-quantize+compile+link, không train lại.
 2. **Vision (tower sàn):** vision board drift `-0.65` lớn nhất; cải thiện vision QAT (thêm epoch/coverage) nâng both-INT8 trực tiếp. Tốn 1 train run.
 3. **Chấp nhận `49.95`≈50** cho phần on-device both-INT8 (trong nhiễu 2 query), giữ vision-only `50.20` và off-board proxy `50.25` làm mốc PASS.
 
 Artifact: `qnn_runs/split_text_query_full/`, text board `.../text_w8a8_learned_qat_v8_f32mask/board_text_r1.json`.
+
+**Cập nhật 2026-06-22 — onboard lookup manifest fixed:** sau khi sửa `board_text_encode.py` để copy `pid/caption` từ manifest nguồn ở mode `--input-dir`, rerun/eval `query_onboard` ghi cùng artifact `board_text_r1.json` với full 4000-caption result:
+
+| Task | R@1 | R@5 | R@10 | mAP | mINP |
+|---|---:|---:|---:|---:|---:|
+| T2I | `51.30` | `79.43` | `87.90` | `56.97` | `50.46` |
+| I2T | `54.80` | `81.00` | `88.60` | `51.14` | `34.72` |
+
+Kết quả này xác nhận đường **RB3 CPU lookup → HTP split transformer** vẫn PASS text-isolation gate, và thay thế snapshot text-only board cũ trong các tài liệu tổng hợp. Both-INT8 board `49.95/53.05` chưa được rerun theo output onboard lookup này, nên giữ nguyên cho tới khi có artifact mới.
 
 **Lever 1 (tăng calib split-text) — LOẠI (bằng chứng md5):** quantize-only 2 job khác nhau, calib 500 (`jgjoly0ep`) vs 2000 (`jp24mdmq5`) `inputs_embeds`. QDQ model **byte-for-byte identical** (md5 `model.onnx=995c4fa0…`, `model.data=fef546f7…` cho cả hai) ⇒ QDQ-vs-PyTorch cosine y hệt (`0.95769 / 0.93252`). Scale per-tensor của `inputs_embeds` do `max|embedding|` (vài token phổ biến) quyết định — 500 mẫu đã bão hòa, thêm calib KHÔNG đổi scale ⇒ identical bit. (Con số `0.957` là artifact feed float vào QDQ trong ORT — board thật `0.9951`; nhưng md5-identical đã đủ kết luận, không phụ thuộc số tuyệt đối.) ⇒ calib không cứu được `0.05`; drift là cộng-dồn 2 tower.
 
