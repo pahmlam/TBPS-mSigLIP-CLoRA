@@ -1598,6 +1598,8 @@ Kỳ vọng theo bằng chứng hiện có: nhánh **A2 FAIL + B2 PASS** (split-
 
 Quy ước: `[LOCAL]` chạy nhanh trên máy này; `[AIHUB]` tốn job; `[BOARD]` chạy trên RB3 (để user chạy).
 
+> **Lưu ý đường dẫn [BOARD]:** `qnn-net-run` resolve entry `raw/...` trong `input_list.txt` theo **cwd**. Pattern an toàn (đúng như run i32 đã chạy): `cd` vào thư mục input, dùng `--input_list input_list.txt`, còn `--retrieve_context` / `--config_file` / `--output_dir` để **đường dẫn tuyệt đối** (`/home/ubuntu/sigm/Lam/...`). Đừng dùng path tương đối tính từ repo root khi cwd đang ở thư mục con.
+
 ```bash
 # ─────────────────────────────────────────────────────────────
 # A0 — chuẩn bị bộ input_ids thật KHÁC (Y), để board test real-vs-real
@@ -1615,13 +1617,20 @@ qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" \
   --input_list artifacts/deployment/qnn_inputs/vn3k_text_10_altreal_i32/input_list.txt \
   --output_dir artifacts/deployment/qnn_runs/text_altreal \
   --profiling_level basic --perf_profile high_performance
-# [LOCAL] so output Y vs X: nếu max_abs==0 mọi mẫu => ids bị bỏ qua (loại H4); nếu khác => H4 binding
+# [LOCAL] CÔ LẬP IDS đúng cách = zero-ids (giữ mask cố định), KHÔNG dùng alt-real (đổi cả mask).
+#   So X-run (real ids) vs Z-run (zero ids), CÙNG caption/mask: khác biệt = tác động THỰC của ids.
+#   (đã chạy §12.9: bit-identical 10/10 => ids bị bỏ qua, board output = f(mask), loại H4)
 venv/bin/python - <<'PY'
 import numpy as np, glob
-ys=sorted(glob.glob("artifacts/deployment/qnn_runs/text_altreal/Result_*/*.raw"))
-xs=sorted(glob.glob("artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/Result_*/*.raw"))
-d=[float(np.abs(np.fromfile(y,np.float32)-np.fromfile(x,np.float32)).max()) for y,x in zip(ys,xs)]
-print("max_abs(Y-X):",[round(v,4) for v in d], "=> IGNORES ids (loại H4)" if max(d)==0 else "=> H4 binding")
+def load(d):
+    fs=sorted(glob.glob(f"artifacts/deployment/qnn_runs/{d}/Result_*/output_0.raw"),
+              key=lambda p:int(p.split("Result_")[1].split("/")[0]))
+    return [np.fromfile(f,np.float32) for f in fs]
+X=load("text_w8a8_learned_qat_v8_i32_f32mask"); Z=load("text_w8a8_learned_qat_v8_i32_zero_ids")
+d=[float(np.abs(X[i]-Z[i]).max()) for i in range(len(X))]
+print("max_abs(real-zero):",[round(v,4) for v in d],
+      "=> IGNORES ids (loại H4, board=f(mask))" if max(d)==0 else "=> ids CÓ tác động")
+# alt-real (Y) chỉ tham khảo: diff khớp mask, KHÔNG phải bằng chứng ids.
 PY
 
 # ─────────────────────────────────────────────────────────────
@@ -1726,8 +1735,16 @@ qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" \
   --input_list artifacts/deployment/qnn_inputs/vn3k_text_10_split_embeds/input_list.txt \
   --output_dir artifacts/deployment/qnn_runs/split_text_w8a8 \
   --profiling_level basic --perf_profile high_performance
-# [BOARD] control: feed embeds đã zero để kiểm output có phụ thuộc embeds (phải KHÁC, không như full-graph)
-#   (tạo bản zero embeds: copy vn3k_text_10_split_embeds, zero các *_inputs_embeds.raw, giữ mask)
+# [BOARD] control (zero-embeds ĐÃ tạo + ORT-verified depends_on_embeds: real-vs-zero max_abs 2.33/cos 0.55):
+#   chạy thêm input_list của vn3k_text_10_split_embeds_zero rồi so real-embeds vs zero-embeds.
+#   PHẢI KHÁC (ngược full-graph nơi real-vs-zero-ids identical) => split graph dùng embeds đúng.
+qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" \
+  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/runtime/split_text_w8a8/text_encoder_split.bin \
+  --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_text_i32.json \
+  --input_list input_list.txt \
+  --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/split_text_w8a8_zero \
+  --profiling_level basic --perf_profile high_performance
+#   (cwd = .../qnn_inputs/vn3k_text_10_split_embeds_zero khi chạy lệnh trên)
 # [LOCAL] fidelity board vs PyTorch (split wrapper): so output_0.raw vs encode_text(input_ids gốc)
 
 # ─────────────────────────────────────────────────────────────
@@ -1758,6 +1775,7 @@ qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" \
 | B1 sanity toán | torch-split vs torch-full (inline check) | cosine **1.0**, max abs diff **0.0** → wrapper đúng tuyệt đối; gap 0.9997 chỉ là noise fused-op ONNX, lành tính | — |
 | A1/A2 build | `build_gather_microbench.py` | small (vocab1000, ~1MB) + big (250k, ~192MB INT8) ONNX; ORT real-vs-zero depends_on_ids=True cả hai | `exports/gather_microbench/{small,big}/` (+ input_list_real/zero.txt) |
 | B2 calib prep | host token-lookup trên 500 calib caption | 500 `inputs_embeds` [1,64,768] f32 + mask f32 | `qnn_inputs/vn3k_text_calib_500_split_embeds` |
+| B2 zero-embeds control | zero `inputs_embeds`, giữ mask; ORT verify real-vs-zero KHÁC (max_abs 2.33/cos 0.55) | control board: split graph phải phụ thuộc embeds | `qnn_inputs/vn3k_text_10_split_embeds_zero` |
 | Uploader mở rộng | `upload_qaihub_calibration_dataset.py` + `--modality raw --keys name:dtype:shape` | hỗ trợ calib generic (microbench input_ids, split-text inputs_embeds) | — |
 
 > Lệnh đầy đủ (upload calib → submit AI Hub → board → so sánh) cho A0/A1/A2/B2/B3 nằm ở §12.6; chỉ cần thay `<DS_*>` bằng dataset ID in ra khi upload.
@@ -1765,6 +1783,76 @@ qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" \
 **Phát hiện phụ:** model `exported_model_text_rotated_learned_qat_v8` **không có `text_projection`** → `encode_text` trả thẳng `pooler_output` (head). Split wrapper đã guard `hasattr` nên khớp; lưu ý nếu port sang model có projection.
 
 **Sẵn sàng cho user (board/AI Hub):**
-1. **A0**: board-run **`text_encoder_i32.bin`** (+ `htp_config_text_i32.json`, đúng binary đã FAIL ở §11) trên `vn3k_text_10_altreal_i32`, so output Y vs X (`vn3k_text_10_f32mask_i32`). X≡Y ⇒ ids bị bỏ qua (loại H4); X≠Y ⇒ H4 binding.
+1. **A0**: ✅ ĐÃ XONG (xem §12.9). Control sạch là **zero-ids** (giữ mask, chỉ đổi ids), KHÔNG phải alt-real (đổi cả ids+mask → confounded).
 2. **A1/A2**: AI Hub quantize/compile/link `gather_microbench/{small,big}` (input_ids INT32 index, KHÔNG quantize); board-run `input_list_real.txt` vs `input_list_zero.txt`. small PASS & big FAIL ⇒ H2; small FAIL ⇒ H1/H3; both PASS ⇒ Gather không phải thủ phạm.
 3. **B2**: AI Hub W8A8 split-text (`text_onnx_split`, input `inputs_embeds` f32 + `attention_mask` f32), board-run với `vn3k_text_10_split_embeds`.
+
+### 12.10 2026-06-20 - B2 split-text link FAIL `/Cast_output_0_updated` → fix mask link-safe inline
+
+**Job:** submit split-text W8A8 (calib `inputs_embeds`). Quantize + compile SUCCESS; **link `jglo3qz8g` FAILED**: `Tensor '/Cast_output_0_updated' has a floating-point type which is not supported by the targeted device.` — đúng lớp lỗi §9 (full-graph text).
+
+**Nguyên nhân (2 nguồn float island trong split ONNX):**
+1. `export_split_text_onnx.py` replicate `SiglipTextTransformer.forward` → gọi `_prepare_4d_attention_mask` → sinh island `Expand→Cast(FLOAT)→Sub→Cast(BOOL)→Where` + sentinel `-FLT_MAX`. AI Hub vật hóa cast thành `/Cast_output_0_updated`, HTP v68 reject.
+2. `attention_mask.to(hidden_states.dtype)` là Cast `float32→float32` **no-op nhưng vẫn xuất node** `/Cast_output_0` → cũng thành island.
+
+**Fix (sửa tại nguồn, không vá sau-export):** dựng mask link-safe finite **trực tiếp trong `SplitTextWrapper`**, không gọi `_prepare_4d_attention_mask`, không `.to()`:
+
+```text
+M = (1 - attention_mask) * (-32),  expand [B,1,L,L]   # exp(-32)~1.3e-14, no Cast/Where/-FLT_MAX
+```
+
+Đây là cùng dạng đại số đã link thành công cho full-graph (§10), nhưng build sẵn lúc export nên độc lập tên node (patch link-safe cũ hardcode `/text_model/Cast_output_0`, không khớp split graph).
+
+**2 bug phụ phát hiện khi sửa (đều đã fix trong `export_split_text_onnx.py`):**
+- Static gate đọc `attention_mask` float32 bằng `_read_raw` đoán-theo-bytes → nhầm thành int32 (cùng 256 bytes/seq64) → mask rác → gate giả 0.94. Sửa: đọc tường minh `np.fromfile(..., float32)`.
+- `torch.onnx.export` **làm bẩn state model trong process** (encode_text sau export lệch, cos `0.9978`). Gate tính `ref` từ model bẩn → giả 0.9887. Sửa: reload model tươi cho gate.
+
+**Kết quả sau fix:**
+
+| Gate | Kết quả |
+|---|---|
+| B1 static (split ONNX vs full encode_text, model tươi) | **PASS — cosine mean `0.99999999`, min `0.99999976`** |
+| ONNX consume `attention_mask` | `Sub`/`Shape` trực tiếp, KHÔNG còn Cast; không node `/Cast_output_0` |
+| Manual per-sample ORT cos | `1.0` cả 10/10 |
+| Zero-embeds control (ORT) | real-vs-zero max_abs `7.79` → split graph phụ thuộc embeds (control hợp lệ) |
+
+**Re-submit lần 1 → link `j56rn6ry5` FAILED:** `/Cast_output_0` hết, nhưng island MỚI `/Expand_coef` — chính là mask `[B,1,L,L]` được materialize bằng `Expand`; AI Hub coi nó là floating coefficient. (Patch full-graph link-safe đã ghi rõ: feed `[B,1,1,L]` và để attention `Add` broadcast, KHÔNG materialize Expand.)
+
+**Fix lần 2 (Expand strip):** `SiglipAttention` ép shape `[B,1,L,L]` nên PyTorch trace buộc tạo Expand; vì vậy thêm `_strip_mask_expand()` chạy sau export — nối 12 `self_attn/Add` thẳng vào tensor `[B,1,1,L]` trước Expand rồi xóa Expand. Đồng thời reshape mask `[B,1,1,L]` TRƯỚC Sub/Mul để topology cuối là `attention_mask → Reshape → Sub → Mul(-32) → Add`, **khớp đúng graph full-graph link-safe đã link được** (`Add ← Mul ← Sub ← Const`).
+
+**Kết quả sau fix lần 2:**
+
+| Kiểm tra | Kết quả |
+|---|---|
+| B1 static gate (model tươi) | **PASS — mean `0.99999999`, min `0.99999976`** |
+| Expand trong graph | **0** |
+| attention_mask consumers | `Shape`/`Reshape` (KHÔNG Cast); không node `/Cast_output*` hay `/Expand*` island |
+| Mask path layer0 | `Add ← Mul ← Sub ← Const` (khớp known-good) |
+| `Cast:24`, `Where:1` còn lại | KHÔNG trên mask path (position_ids int + upcast LN/softmax chuẩn — có trong vision & full-graph đã link) |
+| Zero-embeds control (ORT) | real-vs-zero max_abs `7.79` |
+
+**Bước tiếp:** re-submit lần nữa với ONNX đã strip Expand; mask path giờ giống hệt full-graph đã link nên kỳ vọng link PASS. Re-export tự động strip (đã tích hợp `_strip_mask_expand` vào `export_split_text_onnx.py`).
+
+### 12.9 2026-06-20 - A0 kết quả: board output = f(attention_mask), input_ids bị bỏ qua hoàn toàn (xác nhận §11, LOẠI H4)
+
+Forensic local (output board của X-run và zero-run đã sync về máy; binary `text_encoder_i32.bin`):
+
+| So sánh | Khác biệt | Ý nghĩa |
+|---|---|---|
+| X-run (real ids) vs Z-run (zero ids), **cùng caption/mask, chỉ khác ids** | **bit-identical 10/10** (maxabs `0`, cos `1.0`) | tái lập đúng §11 — input_ids KHÔNG ảnh hưởng |
+| Phân bố output X-run | **4 giá trị phân biệt /10** (mean pairwise cos `0.9361`) | output KHÔNG hằng số → có biến điều khiển khác |
+| A0 alt-real (X vs Y, khác **cả ids lẫn mask**) | diff khớp HOÀN HẢO mask: `diff==0 ⟺ mask_X==mask_Y` (chỉ idx 1,4 trùng mask=64 → trùng output) | mọi khác biệt X-vs-Y là do **mask**, không do ids |
+
+**Kết luận chốt:** board text output là hàm **CHỈ của `attention_mask`** (độ dài/pattern token hợp lệ); embedding lookup `Gather(token_embedding.weight, input_ids)` không đóng góp tín hiệu nào.
+
+- **H4 (binding) bị LOẠI**: `attention_mask` rõ ràng được bind đúng (output đổi theo mask); `input_ids` cũng được feed nhưng tác động biến mất *bên trong* graph. Không phải lỗi feed/`input_list` của `qnn-net-run`.
+- **Đính chính:** cảnh báo ban đầu "A0 mâu thuẫn §11 / H4 binding" là SAI. Control alt-real đổi cả ids+mask nên diff thô vô nghĩa; control cô lập ids đúng là **zero-ids** (giữ mask cố định) — đã có và conclusive. A0 thực chất **củng cố** §11.
+- **Hệ quả:** chỉ còn H1/H2/H3 trong subgraph embedding. Microbench A1/A2 để chốt cái nào. Split-text (B2) vẫn là fix đúng vì nó bỏ hẳn Gather động khỏi HTP, đưa lookup về host FP — sửa được bất kể H1/H2/H3.
+- **Ưu tiên:** B2 (giải pháp) trước; A1/A2 (root-cause depth cho writeup) sau.
+
+**Snippet so sánh đúng cách** (mask-aware, thay cho logic "diff>0 ⇒ H4" sai):
+
+```python
+# Cô lập ids: chỉ tin diff khi mask GIỐNG nhau. Hoặc đơn giản dùng zero-ids (giữ mask):
+#   X-run vs Z(zero)-run cùng mask => khác biệt = tác động THỰC của ids. Ở đây = 0 trên 10/10.
+```

@@ -22,6 +22,8 @@
 | `TEXT_QDQ` | thư mục QDQ text v8 f32-mask finite-mask | `artifacts/deployment/runtime/text_w8a8_learned_qat_v8_f32mask/job_<ID>_qdq_onnx` |
 | `BOARD` | host board | `qc-rb3g2` |
 
+new text data ID: `d9vpnzz09` - vn3k_text_calib_500_split_embeds
+
 ## Gates chấp nhận (áp cho cả vision và text)
 
 | Gate | Ngưỡng | Khi nào |
@@ -450,3 +452,40 @@ Deploy target áp cho both-INT8 board: **T2I R@1 ≥ 50** (kết quả < 50 là 
 - **Mỗi job AI Hub** (A5, A8, B6, B7, B11): append vào `deployment/docs/journal/[deploy-master].md` — mục tiêu, job id, input, output/error, fidelity/R@1, quyết định.
 - **Số v8 vision** (A7) và **both-INT8** (C1 off-board, C2 board): điền vào bảng `[deploy-master].md` §11 + §6.
 - Board fidelity/latency (A9, B12) và board both-INT8 R@1 (C2): vào `[deploy-master].md`.
+
+---
+
+# Appendix — lỗi lệnh đã gặp và cách tránh
+
+Mục này ghi các lỗi thao tác thực tế đã gặp khi chạy AI Hub/QNN/RB3. Khi có lỗi lạ, kiểm các dòng dưới trước khi debug model.
+
+| Triệu chứng/log | Nguyên nhân thường gặp | Cách sửa/kiểm tra nhanh |
+|---|---|---|
+| `Unable to load backend... /libQnnHtp.so: No such file or directory` | `QNN_LIB` rỗng hoặc chưa export, nên `"$QNN_LIB/libQnnHtp.so"` thành `/libQnnHtp.so` | `echo "$QNN_LIB"` và `ls "$QNN_LIB/libQnnHtp.so"` trước khi chạy |
+| `Unable to find a valid interface` | Trộn version `qnn-net-run` và backend `.so` khác nhau, ví dụ runner 2.45 nhưng lib 2.44 | Luôn set cùng một root: `QAIRT=/opt/qcom/qairt/2.45.40.260406`, rồi `QNN_BIN=$QAIRT/bin/...`, `QNN_LIB=$QAIRT/lib/...` |
+| `Backend version mismatch` hoặc extension init fail | `htp_config_*.json` trỏ sai `libQnnHtpNetRunExtensions.so`, hoặc dùng config 2.45 với runtime 2.44 | Dùng config đúng version; `shared_library_path` nên là path tuyệt đối, không để literal `$QNN_LIB/...` trong JSON |
+| `Skel lib id mismatch: expected 2.45..., detected 2.43...` | FastRPC/ADSP đang load skel cũ trước skel 2.45; lỗi này cũng xảy ra nếu dùng sai dấu phân cách path | `LD_LIBRARY_PATH` dùng dấu `:`, nhưng `ADSP_LIBRARY_PATH` phải dùng dấu `;`: `export ADSP_LIBRARY_PATH="$QAIRT/lib/hexagon-v68/unsigned;$QAIRT/lib/hexagon-v68;/usr/lib/rfsa/adsp;/dsp"` |
+| Reboot rồi vẫn `Skel lib id mismatch` | Không phải do tiến trình cũ; thường là `ADSP_LIBRARY_PATH` vẫn sai hoặc có path skel cũ đứng trước | `echo "$ADSP_LIBRARY_PATH"`; đảm bảo path 2.45 đứng đầu và dùng `;`, không dùng `:` |
+| `Failed to open input file: raw/...` | `input_list.txt` dùng path tương đối `raw/...` nhưng đang chạy `qnn-net-run` từ cwd khác | `cd` vào đúng thư mục input rồi chạy `--input_list input_list.txt`, hoặc regenerate input list bằng path tuyệt đối |
+| `file size 512 bytes... expected 256 bytes` cho `input_ids` | File raw là `int64` (`64 * 8 = 512`) nhưng graph/context nhận `int32` (`64 * 4 = 256`) | Tạo lại text input với `--id-dtype int32`; kiểm `wc -c raw/*_input_ids.raw` phải là `256` cho seq-len 64 |
+| `attention_mask` đúng tên nhưng link/run bất thường | Lẫn mask int64/int32 với f32-mask path | Với text f32-mask/i32 path hiện tại: `input_ids=int32`, `attention_mask=float32`; mỗi file đều `256` bytes cho seq-len 64 |
+| `argument --compile-options: expected one argument` khi giá trị bắt đầu bằng `--` | `argparse` hiểu `--quantize_io` là option mới thay vì value | Dùng dạng có dấu bằng: `--compile-options=--quantize_io` hoặc `--compile-options='--truncate_64bit_io --quantize_io'` |
+| Lệnh nhiều dòng chạy lệch option | Có khoảng trắng sau dấu `\`, hoặc copy/paste làm backslash không còn là ký tự cuối dòng | Dấu `\` phải là ký tự cuối cùng của dòng; nếu nghi ngờ, chạy lại command một dòng |
+| Link fail `Tensor ... has a floating-point type... Please quantize the model including its I/O` | HTP v68 không chấp nhận float island nội bộ trong graph context | Với text mask, dùng finite f32-mask + link-safe rewrite; với output float, compile/link phải có `--quantize_io` nếu device yêu cầu I/O quantized |
+| Compile fail `Must use --truncate_64bit_io when input tensors have type int64` | Graph input vẫn là `int64` | Hoặc thêm `--compile-options='--truncate_64bit_io --quantize_io'`, hoặc tốt hơn patch/export graph `input_ids=int32` và dùng raw int32 |
+| `qnn-net-run` execute thành công nhưng text cosine rất thấp | Không nhất thiết là raw sai; với full text context, HTP path hiện cho output không đổi giữa `input_ids` thật và zero `input_ids` | Chạy zero-token ablation trước khi debug QAT. Nếu real-vs-zero output giống hệt, dừng full-context text path và chuyển sang split-text `inputs_embeds` |
+| Board output dir có file nhưng compare script báo thiếu/sai thứ tự | Script kỳ vọng layout `Result_*/output_0.raw`; có thể đang trỏ nhầm run cũ hoặc output hậu tố khác | `find <output_dir> -maxdepth 2 -name 'output_0.raw' | sort | head`; xóa/trỏ đúng run mới trước khi compare |
+| `.bin` lớn bị commit/push fail | Context binary là artifact deploy nặng, không nên track Git | `git rm --cached artifacts/deployment/bin/*.bin` nếu đã track nhầm; giữ `.gitignore` chặn `artifacts/deployment/bin/*.bin` và runtime `.bin` |
+
+Checklist trước mọi board run:
+
+```bash
+echo "$QAIRT"
+echo "$QNN_BIN"
+echo "$QNN_LIB"
+echo "$LD_LIBRARY_PATH"
+echo "$ADSP_LIBRARY_PATH"
+ls "$QNN_BIN/qnn-net-run"
+ls "$QNN_LIB/libQnnHtp.so"
+ls "$QNN_LIB/libQnnHtpNetRunExtensions.so"
+```

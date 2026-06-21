@@ -54,9 +54,12 @@ for _p in (str(PROJECT_ROOT / "src"), str(SCRIPT_DIR)):
         sys.path.insert(0, _p)
 
 import onnx  # noqa: E402
-from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask  # noqa: E402
 
 from compare_qnn_with_pytorch import _load_pytorch_model, _vector_stats, _write_json  # noqa: E402
+
+# Finite additive-mask constant (matches the full-graph link-safe deploy form, §12A.4-5).
+# exp(-32) ~ 1.3e-14, so masked-position leakage is negligible vs FP32/INT8 noise.
+MASK_VALUE = -32.0
 
 
 class SplitTextWrapper(nn.Module):
@@ -76,7 +79,21 @@ class SplitTextWrapper(nn.Module):
         tm = self.text_model
         # inputs_embeds: [B, L, 768] = token_embedding[input_ids] (host side, no position).
         hidden_states = tm.embeddings(inputs_embeds=inputs_embeds)  # + position internally
-        mask4d = _prepare_4d_attention_mask(attention_mask, hidden_states.dtype)  # [B,1,L,L]
+        # Link-safe finite additive mask built directly (NOT _prepare_4d_attention_mask):
+        # the HF helper emits an Expand->Cast(FLOAT)->Sub->Cast(BOOL)->Where island plus a
+        # -FLT_MAX sentinel; AI Hub materializes the cast as an internal float tensor that
+        # HTP v68 rejects at link (/Cast_output_0_updated). Building M = (1-mask)*(-32)
+        # expanded to [B,1,L,L] gives the same attention semantics with no Cast/Where/-FLT_MAX.
+        # attention_mask is a float32 graph input already — do NOT add a `.to(dtype)` cast:
+        # a redundant float32->float32 Cast materializes as /Cast_output_0, which AI Hub turns
+        # into an internal float tensor (/Cast_output_0_updated) that HTP v68 rejects at link.
+        bsz, seq_len = attention_mask.shape[0], attention_mask.shape[1]
+        # Reshape the input mask to [B,1,1,L] FIRST, then Sub/Mul, so after the Expand is
+        # stripped (_strip_mask_expand) the graph is Reshape->Sub->Mul->Add — structurally
+        # identical to the proven full-graph link-safe form (no float op between Mul and Add).
+        m = attention_mask.view(bsz, 1, 1, seq_len)  # [B,1,1,L]
+        add = (1.0 - m) * MASK_VALUE  # [B,1,1,L]: 0 where valid, -32 where padded
+        mask4d = add.expand(bsz, 1, seq_len, seq_len)  # [B,1,L,L] (Expand stripped post-export)
         encoder_outputs = tm.encoder(
             inputs_embeds=hidden_states,
             attention_mask=mask4d,
@@ -93,6 +110,46 @@ class SplitTextWrapper(nn.Module):
 def _token_lookup(model: nn.Module, input_ids: torch.Tensor) -> torch.Tensor:
     """Host-side raw token embedding (no position add): [1, L, 768]."""
     return model.text_model.embeddings.token_embedding(input_ids)
+
+
+def _strip_mask_expand(onnx_path: Path) -> dict[str, object]:
+    """Remove the additive-mask Expand so the [B,1,1,L] mask broadcasts inside attention.
+
+    PyTorch's SiglipAttention asserts the mask is [B,1,L,L], so the wrapper must build
+    (and the trace must materialize) an Expand to [B,1,L,L]. But AI Hub treats that
+    materialized float mask as a floating coefficient tensor (`/Expand_coef`) that HTP v68
+    rejects at link. The non-causal text attention `attn_weights[B,H,L,L] + mask` broadcasts
+    a [B,1,1,L] mask natively, so we rewire the 12 self-attn Add nodes to consume the
+    pre-Expand [B,1,1,L] tensor and drop the Expand. (Same idea as patch_text_qnn_link_safe_mask.)
+    """
+    model = onnx.load(str(onnx_path), load_external_data=False)
+    graph = model.graph
+    consumers: dict[str, list] = {}
+    for n in graph.node:
+        for i in n.input:
+            consumers.setdefault(i, []).append(n)
+
+    stripped = []
+    for node in list(graph.node):
+        if node.op_type != "Expand":
+            continue
+        out = node.output[0]
+        cons = consumers.get(out, [])
+        # Only the additive-mask Expand feeds the self-attention Add nodes.
+        if not cons or not all(c.op_type == "Add" and "self_attn/Add" in c.name for c in cons):
+            continue
+        pre_expand = node.input[0]  # [B,1,1,L] reshaped mask
+        for c in cons:
+            for k, name in enumerate(c.input):
+                if name == out:
+                    c.input[k] = pre_expand
+        graph.node.remove(node)
+        stripped.append({"expand": node.name, "rewired_adds": len(cons), "feed": pre_expand})
+
+    if not stripped:
+        raise RuntimeError("No additive-mask Expand found feeding self_attn/Add — graph changed?")
+    onnx.save(model, str(onnx_path))
+    return {"stripped_expands": stripped}
 
 
 def _save_external(model: onnx.ModelProto, onnx_path: Path) -> None:
@@ -178,9 +235,11 @@ def _static_gate(
     with torch.no_grad():
         for idx, entry in enumerate(rows_in):
             ids_np, _ = _read_raw(entry["input_ids"], seq_len)
-            attn_np, attn_dt = _read_raw(entry["attention_mask"], seq_len)
+            # attention_mask is float32; read it explicitly. (int32 and float32 both occupy
+            # seq_len*4 bytes, so size-based dtype guessing would misread the mask.)
+            attn_np = np.fromfile(entry["attention_mask"], dtype=np.float32).reshape(1, seq_len).copy()
             ids_t = torch.from_numpy(ids_np.astype(np.int64))
-            attn_t = torch.from_numpy(attn_np.astype(np.float32))
+            attn_t = torch.from_numpy(attn_np)
 
             # PyTorch reference: the FULL encode_text path (token lookup in-model).
             ref = model.encode_text(
@@ -298,7 +357,11 @@ def main() -> None:
     )
     loaded = onnx.load(str(onnx_path), load_external_data=True)
     _save_external(loaded, onnx_path)
+    # Strip the materialized [B,1,L,L] mask Expand (HTP rejects it as /Expand_coef float island);
+    # the 12 self-attn Add nodes broadcast the [B,1,1,L] mask natively.
+    strip_summary = _strip_mask_expand(onnx_path)
     print(f"Saved: {onnx_path}")
+    print(f"Mask Expand stripped: {strip_summary['stripped_expands']}")
 
     counts = _print_op_counts(onnx_path)
     if counts.get("Gather", 0):
@@ -308,7 +371,12 @@ def main() -> None:
         )
 
     if args.check_input_dir is not None:
-        summary = _static_gate(args, model, onnx_path, args.seq_len)
+        # IMPORTANT: torch.onnx.export contaminates the in-process model state (its forward
+        # output drifts after a trace). Reload a FRESH model so the gate's PyTorch reference
+        # is the true encode_text, not the post-export drifted one.
+        gate_model, _ = _load_pytorch_model(model_dir, "fp32", args.device)
+        gate_model.eval()
+        summary = _static_gate(args, gate_model, onnx_path, args.seq_len)
         print("\n=== B1 static gate (split ONNX vs full encode_text) ===")
         print(json.dumps(summary, indent=2, ensure_ascii=False))
         if args.json is not None:
