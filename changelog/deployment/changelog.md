@@ -1,5 +1,14 @@
 # Deployment Changelog
 
+## [2026-06-22] Final board both-INT8 thesis result
+
+| # | Priority | Type | Action | Status |
+|---|----------|------|--------|--------|
+| 1 | HIGH | docs | Recorded the final direct RB3 board both-INT8 result: vision v9 board embeddings + split-text board embeddings reach T2I R@1 `50.35`, I2T R@1 `54.20` | COMPLETE |
+| 2 | HIGH | docs | Updated deployment docs with final board runtime: vision v9 `32.54 ms/image` (`24.29 FPS`) and split-text transformer `7.87 ms/query` (`74.75 IPS`) | COMPLETE |
+| 3 | HIGH | docs | Marked the earlier `50.25` both-INT8 QDQ result as an off-board proxy reference and the old v8 board `49.95` result as historical pre-v9 evidence | COMPLETE |
+| 4 | MED | bugfix | Updated `board_text_encode.py` to preserve query `pid`/caption metadata from source manifests, fixing retrieval evaluation for `query_onboard` | COMPLETE |
+
 ## [2026-06-19] Record QAT v8 board retrieval
 
 | # | Priority | Type | Action | Status |

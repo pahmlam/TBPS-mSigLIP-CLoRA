@@ -1,27 +1,26 @@
 {
   "vision_output_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000",
-  "text_output_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/qnn_runs/onboard_text",
   "gallery_input_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000",
-  "query_input_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/qnn_inputs/query_onboard",
+  "model_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/exports/exported_model",
   "num_gallery_images": 2000,
   "num_query_captions": 4000,
   "subset_smoke": false,
   "similarity": "raw_dot_product",
-  "combo": "board_both_int8",
+  "combo": "board_vision_int8_text_fp32",
   "metrics": {
     "t2i": {
       "R1": 50.349998474121094,
-      "R5": 77.82499694824219,
-      "R10": 86.5,
-      "mAP": 55.79981994628906,
-      "mINP": 49.27714538574219
+      "R5": 77.55000305175781,
+      "R10": 86.54999542236328,
+      "mAP": 55.72770690917969,
+      "mINP": 49.21427536010742
     },
     "i2t": {
-      "R1": 54.20000076293945,
-      "R5": 80.5,
-      "R10": 89.20000457763672,
-      "mAP": 50.257747650146484,
-      "mINP": 33.834808349609375
+      "R1": 54.54999923706055,
+      "R5": 82.0999984741211,
+      "R10": 89.3499984741211,
+      "mAP": 50.5783805847168,
+      "mINP": 33.65864181518555
     }
   },
   "gate_r1": 48.0,

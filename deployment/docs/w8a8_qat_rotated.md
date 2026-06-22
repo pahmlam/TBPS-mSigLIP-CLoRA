@@ -3,9 +3,9 @@
 > **Scope:** this is the **theory and method** document for the vision-encoder deployment branch and the matching text-encoder finite/f32/link-safe mask extension. It contains the mathematics of every transform and the reasoning behind every design choice. It contains **no commands, scripts, or code** — for the reproducible command sequence, AI Hub job IDs, and artifact paths, see the consolidated history in [`deployment/docs/journal/[deploy-master].md`](journal/[deploy-master].md).
 > **Source checkpoint:** LoRA + Curriculum Circle, seed 2400 (FP32 reference ≈ paper 52.28).
 > **Target device:** Qualcomm RB3 Gen2 / QCS6490 / Hexagon HTP **v68**.
-> **End-to-end result:** both-INT8 W8A8 QDQ proxy reaches **T2I Rank@1 = 50.25** and **I2T Rank@1 = 52.95**, passing the ≥50 deploy target with a `-2.03` T2I drop from the paper baseline `52.28`. **Both encoders are now board-verified INT8 on HTP v68**: board both-INT8 reaches **T2I R@1 = 49.95**, **I2T R@1 = 53.05** (`-0.30` T2I vs the QDQ proxy, within ~2 queries of the 50 target), with vision-only board **50.20** and text-only board **51.30** both passing.
-> **Vision status:** vision-only QDQ proxy reaches **T2I Rank@1 = 50.85** (learned rotation, QAT v8; `-1.43` vs paper baseline `52.28`), and the RB3 board context binary reaches **50.20** T2I R@1.
-> **Text status:** the *full-graph* text binary links but is **unusable on board** — its output ignores `input_ids` because HTP v68 breaks the dynamic 250k-row embedding `Gather` (§12A.8). The **deployable text path is the split-encoder**: host/RB3-side embedding lookup feeds `inputs_embeds` to an HTP transformer. It is board-verified — board fidelity **0.9951 / 0.9926** (matching the QDQ proxy), text-isolation board **T2I R@1 = 51.30**.
+> **End-to-end result:** the final direct RB3 board run is **both-INT8 W8A8**: vision v9 context binary + split-text context binary reach **T2I Rank@1 = 50.35** and **I2T Rank@1 = 54.20**, passing the ≥50 deploy target with a `-1.93` T2I drop from the paper baseline `52.28`. The older both-INT8 QDQ proxy remains a reference at **50.25 / 52.95**.
+> **Vision status:** vision-only QDQ proxy reaches **T2I Rank@1 = 50.85** (learned rotation, QAT v8; `-1.43` vs paper baseline `52.28`). The final RB3 board context binary is **v9**, reaching **50.35** T2I R@1 and **54.55** I2T R@1 with **32.54 ms/image** throughput.
+> **Text status:** the *full-graph* text binary links but is **unusable on board** — its output ignores `input_ids` because HTP v68 breaks the dynamic 250k-row embedding `Gather` (§12A.8). The **deployable text path is the split-encoder**: RB3-side embedding lookup feeds `inputs_embeds` to an HTP transformer. It is board-verified — board fidelity **0.9951 / 0.9926** (matching the QDQ proxy), text-isolation board **T2I R@1 = 51.30**, and runtime **7.87 ms/query**.
 
 This document explains the hardware constraints that *force* the pipeline, the mathematics of each transform (rotation, learned rotation, quantization-aware training, finite attention masking), why earlier candidates failed, and the acceptance gates that define success. The decisive acceptance metric throughout is **retrieval Rank@1**, not cosine — cosine is only a fidelity proxy (§8).
 
@@ -26,30 +26,34 @@ The journey from naive W8A8 (which collapses retrieval) to the deployable best:
 | QAT v5 | + per-linear fake-quant | 0.9437 / 0.9311 | 49.25 | FAIL |
 | QAT v6 | + attention-matmul fake-quant | 0.9491 / 0.9266 | 49.30 | FAIL (random-rotation ceiling) |
 | QAT v7 | v6 coverage + cosine LR + lr 2e-5 | 0.9485 / 0.9083 | 48.38 | FAIL (regress) |
-| **QAT v8** | **learned rotation + recipe v6** | **0.9606 / 0.9447** | **50.85** | **PASS (board-verified)** |
+| **QAT v8** | **learned rotation + recipe v6** | **0.9606 / 0.9447** | **50.85** | **PASS (QDQ; board v8 = 50.20)** |
 
 Two facts frame everything below:
 
 - **v6 is the ceiling of *random* rotation.** Widening fake-quant coverage (v3→v6) climbs from 48.20 to 49.30, then saturates — diminishing returns once every activation tensor is covered.
 - **v8 breaks that ceiling by changing the rotation itself**, not the QAT. Replacing the random mean-preserving `Q` with a *learned* one (same QAT recipe as v6) lifts T2I R@1 by **+1.55** to 50.85 and improves QDQ fidelity on both mean and min. Because only `Q` differs between v6 and v8, this is a clean ablation isolating "learned vs random rotation." (v7 is recorded as a cautionary regression: changing the LR schedule and doubling LR overshot the quantization minimum.)
+- **v9 is a final recipe refinement, not a new theory.** It keeps the same mean-preserving learned-rotation objective and the same QAT coverage, but uses a larger rotation calibration/search budget (512 calibration images, 8000 steps), folds the best observed rotation rather than the last optimizer step, and runs vision QAT longer (25 epochs). Its role is to lift the board deployment margin, not to introduce a separate mathematical method.
 
 Text follows the same v8 recipe but needs two graph-level fixes plus one link-safe graph rewrite:
 
 | Text branch | Mask handling | Link-safe mask graph | Attention QDQ scale | QDQ cosine (mean/min) | Text-isolation T2I R@1 | Target |
 |---|---|---|---:|---:|---:|:--:|
 | v8 text, original ONNX | `-FLT_MAX` mask in `scores+mask` | `attention_mask int64 -> Cast(FLOAT)` island | ~`1e32` | collapse | collapse | FAIL |
-| **v8 text, finite + f32 + linksafe mask** | **replace mask with `-32.0` before AI Hub quantize** | **`input_ids` integer, `attention_mask` float32 0/1, rewrite `(1-mask)*-32`** | **0.3523 max** | **0.9949 / 0.9912** | **51.65** | **Proxy PASS; link PASS; board pending** |
+| **v8 text, finite + f32 + linksafe mask** | **replace mask with `-32.0` before AI Hub quantize** | **`input_ids` integer, `attention_mask` float32 0/1, rewrite `(1-mask)*-32`** | **0.3523 max** | **0.9949 / 0.9912** | **51.65** | **Proxy PASS; full-graph board rejected; split-text board PASS** |
 
-The current end-to-end C1 deploy proxy uses both QDQ graphs together:
+The off-board C1 deploy proxy uses both QDQ graphs together and is retained as the reference before direct board execution:
 
 | Combo | T2I R@1 | I2T R@1 | Interpretation |
 |---|---:|---:|---|
 | Paper baseline | **52.28** | — | main reporting baseline |
 | Local FP32 sanity | 52.40 | 55.30 | pipeline reproduction only, not the reporting baseline |
 | Vision INT8 only | 50.85 | 52.90 | `-1.43` T2I vs paper baseline |
-| Vision INT8 board | 50.20 | 54.50 | full gallery RB3 run; `-0.65` T2I vs QDQ proxy |
+| Vision INT8 board v8 | 50.20 | 54.50 | full gallery RB3 run; `-0.65` T2I vs QDQ proxy |
+| Vision INT8 board v9 | 50.35 | 54.55 | final board-verified vision tower |
 | Text INT8 only | 51.65 | 55.55 | `-0.63` T2I vs paper baseline |
-| **Both INT8** | **50.25** | **52.95** | **PASS**, `-2.03` T2I vs paper baseline |
+| Text INT8 board | 51.30 | 54.80 | split-text RB3 lookup + HTP transformer |
+| Both INT8 QDQ proxy | 50.25 | 52.95 | off-board reference, `-2.03` T2I vs paper baseline |
+| **Both INT8 board** | **50.35** | **54.20** | **FINAL PASS**, `-1.93` T2I vs paper baseline |
 
 ---
 
@@ -97,7 +101,7 @@ The deployable path is a fixed sequence of mathematically motivated transforms. 
             │  x → Qx,  Q orthogonal,  Q·1 = 1             │   LN(Qx) = Q·LN(x)
             │  folded offline into weights (no runtime op) │   ⇒ FP32-invariant
             │   |                                          │   μ ↓ to ≈√(2 ln d)
-            │   └── learned Q  ◀ v8   (min Σ max|aQᵀ|²)    │   max|a|: 124 → 14.6
+            │   └── learned Q  ◀ v9   (min Σ max|aQᵀ|²)    │   max|a|: 124 → 14.6
             └─────────────────────┬─────────────────────--──┘
                                   │   (steps 1–3 change representation, not function)
             ┌─────────────────────▼───────────────────--────┐
@@ -113,21 +117,25 @@ The deployable path is a fixed sequence of mathematically motivated transforms. 
                                   │
             ┌─────────────────────▼───────────────────--────┐
    [6]      │  BOARD RUN + EVALUATE                        │   decisive metric:
-            │  retrieval Rank@1  (text kept FP32)          │   T2I R@1 ≥ 50 target
+            │  vision-isolation + final both-INT8          │   T2I R@1 ≥ 50 target
             └──────────────────────────────────────────--───┘
-                  v8 (learned rotation): T2I R@1 = 50.85
+                  v8 QDQ vision-only:        T2I R@1 = 50.85
+                  v9 board vision-only:      T2I R@1 = 50.35
+                  final board both-INT8:     T2I R@1 = 50.35
 ```
 
 In words:
 
 1. **Merge LoRA** into the base weights so the exported model is an ordinary inference network (§3).
 2. **Fuse GELU/LayerNorm via opset-20 export** so the tanh-GELU cubic and the normalization internals are never exposed as quantized tensors (§4).
-3. **Rotate the residual stream** by a mean-preserving orthogonal `Q`, folded offline into the weights, to remove channel outliers while keeping fused LayerNorm (§5–§6). The rotation is either *random* (v1–v7) or **learned** (v8, §6A).
+3. **Rotate the residual stream** by a mean-preserving orthogonal `Q`, folded offline into the weights, to remove channel outliers while keeping fused LayerNorm (§5–§6). The rotation is either *random* (v1–v7) or **learned** (v8/v9, §6A).
 4. **Quantization-aware finetune** (teacher–student distillation, per-tensor straight-through fake-quant, EMA observer) to train the weights to tolerate the deploy-faithful INT8 quantizer (§7).
 5. **Quantize to W8A8, compile, and link** a context binary with integer I/O for HTP v68 (§8).
-6. **Run on board and evaluate** by retrieval Rank@1 — the decisive metric, target ≥ 50 (§8).
+6. **Run on board and evaluate** by retrieval Rank@1 — first as a vision-isolation test with FP32 text, then as the final board both-INT8 path with text and image contexts (§8).
 
 Every transform in steps 1–3 is **output-invariant in FP32**: it changes the *representation*, not the function. Steps 4 is the only one that changes weight *values*. This invariance is what makes each stage independently checkable (§9).
+
+The vision diagram above is the current interpretation used for the final report: v8 is kept as the first successful learned-rotation/QDQ reference, while v9 is the final board recipe. The phrase "text kept FP32" applies only to the vision-isolation check, not to the final both-INT8 deployment number.
 
 ---
 
@@ -150,7 +158,7 @@ The literature offers two cures: **(i)** keep/migrate the outliers in higher pre
 - **SliceGPT** [8] established *computational invariance*: inserting $QQ^\top$ ($Q$ orthogonal) on the residual stream and folding $Q$ into adjacent weights leaves the network's function unchanged. Our offline weight folding (§6.4–§6.5) is exactly this.
 - **QuaRot** [9] uses randomized Hadamard rotations to remove outliers before low-bit inference, folding some rotations offline and others online via fast Hadamard. Our residual rotation is the **offline, fully-fused** variant (no runtime op — a hard requirement on v68).
 - **QuIP / QuIP#** [10, 11] formalize *incoherence processing*: random-orthogonal or Hadamard transforms make weights/Hessians incoherent, with provable error bounds. This supplies the mathematical "why" in §2A.3.
-- **SpinQuant** [12] *learns* the rotation instead of using a fixed random/Hadamard one. We **adopt this** for v8 (§6A): learning $Q$ against the encoder's own activation statistics is what broke the random-rotation ceiling and met the 50 target.
+- **SpinQuant** [12] *learns* the rotation instead of using a fixed random/Hadamard one. We **adopt this** for v8 and retain it in v9 (§6A): learning $Q$ against the encoder's own activation statistics is what broke the random-rotation ceiling and met the 50 target.
 
 ### 2A.3 Mathematical motivation — why a rotation lowers per-tensor error
 
@@ -283,9 +291,9 @@ The concentration drop is the quantization payoff: the signal is still present, 
 
 ---
 
-## 6A. Stage [3, learned variant] — Learned Rotation (SpinQuant-style, the v8 method)
+## 6A. Stage [3, learned variant] — Learned Rotation (SpinQuant-style, the v8/v9 method)
 
-A random orthogonal $R_c$ achieves the *expected* incoherence $\mu \approx \sqrt{2\ln d}$ (§2A.3), but it is blind to **this** encoder's actual activation distribution. SpinQuant [12] shows that *learning* the rotation against calibration statistics beats random/Hadamard. v8 adapts this to the mean-preserving constraint, and it is what broke the random-rotation ceiling (49.30 → 50.85).
+A random orthogonal $R_c$ achieves the *expected* incoherence $\mu \approx \sqrt{2\ln d}$ (§2A.3), but it is blind to **this** encoder's actual activation distribution. SpinQuant [12] shows that *learning* the rotation against calibration statistics beats random/Hadamard. v8 adapts this to the mean-preserving constraint, and it is what broke the random-rotation ceiling (49.30 → 50.85). v9 keeps the same objective and constraint manifold, but spends more calibration/search budget and selects the best rotation encountered during optimization.
 
 ### 6A.1 Objective: directly minimize the quantity that sets the INT8 scale
 
@@ -315,7 +323,7 @@ is orthogonal for *any* skew $S$ (the Cayley transform maps skew-symmetric matri
 
 1. **Phase A:** fold LayerNorm affine into the reader and set LN to identity (§5.4), so the rotation sites are clean.
 2. **Collect activations** at the rotation sites on a calibration subset of images.
-3. **Optimize $S$** with Adam against the objective in §6A.1. Numerical detail: optimize in float32 (float64 matmuls are throttled to $\sim\!1/32$–$1/64$ of float32 on consumer GPUs), then fold the *final* $Q$ in float64 for precision.
+3. **Optimize $S$** with Adam against the objective in §6A.1. Numerical detail: optimize in float32 (float64 matmuls are throttled to $\sim\!1/32$–$1/64$ of float32 on consumer GPUs), track the best objective value over the run, then fold the *best* $Q$ in float64 for precision. This best-$Q$ checkpointing matters because Adam at fixed learning rate can oscillate late in the run; folding the last step can accidentally choose a worse high-dynamic-range point.
 4. **Phase B:** fold the learned $Q$ into writers and $Q^\top$ into readers (§5.5). The output is a drop-in replacement for the randomly-rotated model — identical shapes, identical FP32 function — that flows through the same export/QAT/quantize/eval stages.
 
 ### 6A.5 Result and ablation
@@ -335,7 +343,29 @@ Under the **identical** QAT recipe v6 (so the only difference from v6 is $Q$):
 | QDQ cosine mean | 0.9491 | **0.9606** | +0.0115 |
 | QDQ cosine min | 0.9266 | **0.9447** | +0.0181 |
 
-This is a clean ablation: coverage, learning rate, epochs, and base FP32 model are all held fixed, so the **+1.55** T2I gain is attributable purely to learning $Q$. The QDQ fidelity rising on both mean and min confirms the max-abs² objective genuinely tightened the INT8 scale, as the theory predicts. The small I2T trade-off is acceptable because the primary deployment metric is **T2I R@1**; v8 is the deploy candidate, and the text encoder adopts the same learned-rotation method.
+This is a clean ablation: coverage, learning rate, epochs, and base FP32 model are all held fixed, so the **+1.55** T2I gain is attributable purely to learning $Q$. The QDQ fidelity rising on both mean and min confirms the max-abs² objective genuinely tightened the INT8 scale, as the theory predicts. The small I2T trade-off is acceptable because the primary deployment metric is **T2I R@1**. v8 is the first deployable learned-rotation candidate; v9 keeps the same method and becomes the final board recipe.
+
+### 6A.6 v9 refinement: same theory, larger search budget
+
+v9 should be interpreted as a **recipe refinement** of §6A, not as a new theoretical mechanism. The invariants are unchanged:
+
+- the rotation is still orthogonal and mean-preserving, so the FP32 function is preserved before QAT;
+- the objective is still calibration max-abs², i.e. the quantity that controls the per-tensor INT8 activation scale;
+- QAT still uses the deploy-faithful per-tensor EMA observer and the same fake-quant coverage (`head`, linears, attention sites).
+
+The practical differences are:
+
+| Item | v8 | v9 |
+|---|---:|---:|
+| Rotation calibration images | 256 | 512 |
+| Tokens per image | 32 | 32 |
+| Rotation optimization steps | 3000 | 8000 |
+| Rotation checkpoint | last/final $Q$ | best-objective $Q$ |
+| Vision QAT epochs | 15 | 25 |
+| Vision board T2I R@1 | 50.20 | **50.35** |
+| Vision board I2T R@1 | 54.50 | **54.55** |
+
+The mathematical lesson is modest but useful for deployment: when the learned-rotation objective is non-convex and the optimizer can oscillate, the *selection rule* for $Q$ is part of the deployment recipe. The final thesis result uses v9 because it increases the hardware-verified T2I margin while preserving the same theoretical argument as v8.
 
 ---
 
@@ -422,15 +452,15 @@ The deployable graph is produced by: rewriting input shape to static $1\times3\t
 
 ### 8.3 Board run and fidelity
 
-On board, graph I/O is unsigned-fixed-point-8 and the runtime dequantizes outputs to float. **Board fidelity** (board vs PyTorch cosine) for the verified v8 binary is $0.9585$ (mean) / $0.9399$ (min), closely matching its QDQ ONNX $0.9606 / 0.9447$. Full vision-isolation retrieval on RB3 reaches **T2I R@1 $50.20$** and **I2T R@1 $54.50$**, a small $-0.65$ T2I delta from the $50.85$ QDQ proxy while staying above the deploy target. HTP runtime is faithful to the quantized graph; the remaining error is *quantization*, not hardware drift. The runtime for v8 is $\approx 33.05$ ms / $22.77$ FPS.
+On board, graph I/O is unsigned-fixed-point-8 and the runtime dequantizes outputs to float. **Board fidelity** (board vs PyTorch cosine) for the verified v8 binary is $0.9585$ (mean) / $0.9399$ (min), closely matching its QDQ ONNX $0.9606 / 0.9447$. Full v8 vision-isolation retrieval on RB3 reaches **T2I R@1 $50.20$** and **I2T R@1 $54.50$**, a small $-0.65$ T2I delta from the $50.85$ QDQ proxy while staying above the deploy target. The final board vision tower is v9: **T2I R@1 $50.35$**, **I2T R@1 $54.55$**, and runtime $\approx 32.54$ ms / $24.29$ FPS. HTP runtime is faithful to the quantized graph; the remaining error is *quantization*, not hardware drift.
 
 ### 8.4 Why the retrieval number is trustworthy
 
 - **Vision-isolation:** image embedding = QDQ ONNX (rotated W8A8); text embedding = FP32 PyTorch. Text is kept FP32 for both baseline and quantized so the measurement isolates the vision quantization.
-- **Both-INT8 C1:** image embedding = vision QDQ ONNX and text embedding = finite/f32-mask text QDQ ONNX; this is the current end-to-end off-board deploy proxy.
+- **Both-INT8 C1:** image embedding = vision QDQ ONNX and text embedding = finite/f32-mask text QDQ ONNX; this is the end-to-end off-board deploy proxy.
 - Retrieval mirrors the training evaluator exactly: **raw (un-normalized) pooler features**, dot-product similarity, the same rank metric. (A generic normalize-then-rank evaluator does not reproduce the baseline.)
 - **Sanity:** the FP32 pipeline reproduces T2I R@1 $52.40 \approx 52.28$; reported drops use the paper baseline $52.28$.
-- **Current deploy proxy:** both-INT8 reaches T2I R@1 $50.25$, I2T R@1 $52.95$, passing the $\geq 50$ gate off-board. Board C2 remains the final hardware confirmation.
+- **Final deploy result:** direct RB3 board both-INT8 reaches T2I R@1 $50.35$, I2T R@1 $54.20$, passing the $\geq 50$ gate. The off-board QDQ proxy remains a reference at $50.25 / 52.95$.
 
 ---
 
@@ -472,10 +502,10 @@ On board, graph I/O is unsigned-fixed-point-8 and the runtime dequantizes output
 | Text-isolation retrieval | T2I R@1 ≥ 50.0 | **PASS — 51.65** |
 | Both-INT8 off-board retrieval | T2I R@1 ≥ 50.0 | **PASS — 50.25** |
 | QNN board vs PyTorch | mean ≥ 0.90 | **PASS — 0.9585 / 0.9399 (v8 vision)** |
-| Board execution | finite outputs, HTP profile | **PASS — v8 vision, 33.05 ms/image, 22.77 FPS** |
-| Vision board retrieval | T2I R@1 ≥ 50.0 | **PASS — 50.20** |
+| Board execution | finite outputs, HTP profile | **PASS — v9 vision, 32.54 ms/image, 24.29 FPS; split text, 7.87 ms/query, 74.75 IPS** |
+| Vision board retrieval | T2I R@1 ≥ 50.0 | **PASS — 50.35** |
 | Text QNN link | context binary created without internal float mask tensors | **PASS — finite/f32/link-safe binary links** |
-| **Full retrieval T2I R@1 (deploy target)** | **≥ 50.0** | **PASS — 50.25 (both-INT8 QDQ proxy)** |
+| **Full retrieval T2I R@1 (deploy target)** | **≥ 50.0** | **PASS — 50.35 (direct board both-INT8)** |
 
 Cosine is a conservative proxy; retrieval R@1 is the decisive metric. The deploy target is **T2I R@1 ≥ 50**; any candidate below 50 (v1–v7) is a FAIL on this target.
 
@@ -508,7 +538,8 @@ Cosine is a conservative proxy; retrieval R@1 is the decisive metric. The deploy
 6. ✅ **End-to-end both-INT8 C1 passes off-board:** vision QDQ + text QDQ gives T2I R@1 $50.25$, I2T R@1 $52.95$, a `-2.03` T2I drop vs paper baseline $52.28$.
 7. ✅ **Full-graph text board fails — diagnosed:** the finite/f32/link-safe text binary links but its board output ignores `input_ids` (HTP v68 breaks the dynamic 250k-row embedding `Gather`; §12A.8). Static ONNX and QDQ proxy stay faithful, so it is a graph-lowering limit, not a QAT/calibration failure.
 8. ✅ **Split-encoder text is board-verified:** moving the embedding lookup to the host/RB3 CPU and running the transformer on HTP via `inputs_embeds` fixes it — board fidelity $0.9951 / 0.9926$, text-isolation board T2I R@1 $51.30$.
-9. ✅ **End-to-end both-INT8 board:** vision board + split-text board gives T2I R@1 $49.95$, I2T R@1 $53.05$ — `-0.30` T2I vs the QDQ proxy, ~2 queries short of the 50 target. The off-board QDQ proxy ($50.25$) remains the passing deploy number; lifting the vision floor tower is the optional path to push the on-board number strictly over 50.
+9. ✅ **Board-verified vision v9:** tighter follow-up vision binary reaches T2I R@1 $50.35$ / I2T R@1 $54.55$, improving the deploy-critical T2I metric over v8 by `+0.15`; runtime is $\approx 32.54$ ms / $24.29$ FPS.
+10. ✅ **End-to-end both-INT8 board:** vision v9 board + split-text board gives T2I R@1 $50.35$, I2T R@1 $54.20$ — `+0.10` T2I vs the off-board QDQ proxy and `-1.93` vs the paper baseline. This is the final deploy number for the thesis.
 
 ---
 
@@ -529,7 +560,7 @@ The text inputs are `input_ids` and `attention_mask`. A token ID is an **index**
 
 ### 12A.2 Text pipeline overview (conceptual)
 
-The text branch mirrors the vision branch, with a finite-mask pass inserted between ONNX export and AI Hub quantization:
+The text branch has two related flows. The first is the **full-graph QDQ/proxy flow**, which is useful for off-board accuracy checks but was rejected as the board runtime path because HTP v68 did not correctly consume dynamic `input_ids` through the large token-embedding `Gather`. The second is the **split-encoder deployment flow**, which keeps the token lookup as a deterministic CPU table read and runs the rotated/QAT transformer on HTP.
 
 ```text
             ┌─────────────────────────────────────────────┐
@@ -552,7 +583,7 @@ The text branch mirrors the vision branch, with a finite-mask pass inserted betw
             ┌─────────────────────▼───────────────────────┐
    [3]      │  EXPORT OPS 20                              │
             │  fused Gelu + LayerNormalization            │   no Pow cubic
-            │  input_ids integer, attention_mask float32  │   link-safe mask I/O
+            │  full graph OR split transformer export     │
             └─────────────────────┬───────────────────────┘
                                   │
             ┌─────────────────────▼───────────────────────┐
@@ -561,20 +592,39 @@ The text branch mirrors the vision branch, with a finite-mask pass inserted betw
             │  Where/Cast mask  →  (1-mask)*(-32)         │   no float island
             └─────────────────────┬───────────────────────┘
                                   │
-            ┌─────────────────────▼───────────────────────┐
-   [5]      │  AI HUB W8A8 QDQ                            │
-            │  integer token IDs, f32 binary mask         │   QDQ scale gate:
-            │  QDQ may still wrap scores+mask             │   max < 10
-            └─────────────────────┬───────────────────────┘
-                                  │
-            ┌─────────────────────▼───────────────────────┐
-   [6]      │  TEXT-ISOLATION RETRIEVAL                   │   image FP32,
-            │  image FP32 + text QDQ                      │   text INT8 only
-            └─────────────────────────────────────────────┘
-                  finite/f32-mask text: T2I R@1 = 51.65
+          ┌───────────────────────┴────────────────────────┐
+          │                                                │
+          ▼                                                ▼
+┌───────────────────────────────┐              ┌───────────────────────────────┐
+│ FULL-GRAPH QDQ / PROXY        │              │ SPLIT-ENCODER BOARD PATH      │
+│ input_ids + attention_mask    │              │ inputs_embeds + attention_mask│
+│ stay in one ONNX graph        │              │ transformer/head only on HTP   │
+└───────────────┬───────────────┘              └───────────────┬───────────────┘
+                │                                              │
+┌───────────────▼───────────────┐              ┌───────────────▼───────────────┐
+│ AI HUB W8A8 QDQ               │              │ AI HUB W8A8 QUANTIZE/COMPILE  │
+│ QDQ proxy retrieval           │              │ LINK split text context binary│
+│ text-only proxy T2I = 51.65   │              └───────────────┬───────────────┘
+└───────────────┬───────────────┘                              │
+                │                              ┌───────────────▼───────────────┐
+┌───────────────▼───────────────┐              │ RB3 CPU token lookup          │
+│ FULL-GRAPH CONTEXT REJECTED   │              │ input_ids → INT8 embedding    │
+│ links, but board output can   │              │ table → inputs_embeds         │
+│ ignore token-id changes       │              └───────────────┬───────────────┘
+└───────────────────────────────┘                              │
+                                               ┌───────────────▼───────────────┐
+                                               │ RB3 HTP text encoder          │
+                                               │ board text-only T2I = 51.30   │
+                                               └───────────────┬───────────────┘
+                                                               │
+                                               ┌───────────────▼───────────────┐
+                                               │ FINAL BOARD BOTH-INT8         │
+                                               │ text board + vision v9 board  │
+                                               │ T2I R@1 = 50.35               │
+                                               └───────────────────────────────┘
 ```
 
-The key difference from the vision pipeline is step [4]. Vision has no padding mask, so its attention logits never contain a sentinel value. Text does, and the sentinel must be made compatible with per-tensor INT8.
+The key differences from the vision pipeline are the mask and the token lookup. Vision has no padding mask, so its attention logits never contain a sentinel value. Text does, and the sentinel must be made compatible with per-tensor INT8. In addition, token IDs are indices into a large embedding table. The final board path therefore splits the graph: the CPU performs an exact table lookup from the exported INT8 token table, and HTP runs the quantized transformer/head on `inputs_embeds`. This keeps the mathematical compression recipe intact while avoiding the HTP-v68 dynamic-`Gather` failure observed in the full-graph context.
 
 ### 12A.3 Rotation writer/reader mapping
 
@@ -696,7 +746,7 @@ The important diagnostic is the scale gate. A high cosine after local surgery is
 
 ### 12A.7 Why this is the real memory payoff
 
-The text encoder is $\sim$75\% of the model's parameters because the multilingual token embedding alone is $250{,}000 \times 768 \approx 768$ MB in FP32. Quantizing it to INT8 is the dominant lever for fitting both encoders into the 4 GB RB3 budget — far larger than the vision saving. The end-to-end C1 both-INT8 proxy now holds the deploy gate at T2I R@1 $50.25$; the remaining question is board confirmation.
+The text encoder is $\sim$75\% of the model's parameters because the multilingual token embedding alone is $250{,}000 \times 768 \approx 768$ MB in FP32. Quantizing it to INT8 is the dominant lever for fitting both encoders into the 4 GB RB3 budget — far larger than the vision saving. The end-to-end C1 both-INT8 proxy first cleared the gate at T2I R@1 $50.25$; the final direct board run with vision v9 and split-text confirms the deploy target at T2I R@1 $50.35$.
 
 ### 12A.8 The full-graph board failure and the split-encoder method (the deployable text path)
 
@@ -724,7 +774,7 @@ $$ M \;=\; (1 - \texttt{attention\_mask}) \cdot (-32), \qquad \texttt{attention\
 
 shaped $[B,1,1,L]$ and broadcast inside the attention $\mathrm{softmax}(S + M)$. Two HTP-v68 rejections were eliminated this way: a redundant `float32→float32` cast on the mask input (materialized as the float island `/Cast_output_0`), and the **materialized** $[B,1,L,L]$ mask from `Expand` (rejected as a floating coefficient `/Expand_coef`). Feeding the un-expanded $[B,1,1,L]$ mask and letting the attention `Add` broadcast keeps the graph free of internal float islands. The split graph reproduces the full `encode_text` to cosine $0.99999999$.
 
-**Result.** The split-text binary is board-faithful (cosine $0.9951 / 0.9926$, matching the QDQ proxy) and **does** depend on `inputs_embeds` (real-vs-zero embedding outputs differ by $3.7$–$5.3$), confirming the bug is fixed. Text-isolation board retrieval is T2I R@1 $51.30$; end-to-end both-INT8 board retrieval is T2I R@1 $49.95$ (§12 items 7–9). The memory payoff of §12A.7 is unchanged: the $\sim$192 MB INT8 token table still exists, it simply lives in host DRAM (read by the CPU) instead of inside the HTP context — and RB3's CPU and NPU share the same DRAM, so there is no extra memory cost.
+**Result.** The split-text binary is board-faithful (cosine $0.9951 / 0.9926$, matching the QDQ proxy) and **does** depend on `inputs_embeds` (real-vs-zero embedding outputs differ by $3.7$–$5.3$), confirming the bug is fixed. Text-isolation board retrieval is T2I R@1 $51.30$; end-to-end both-INT8 board retrieval with the final vision v9 tower is T2I R@1 $50.35$ (§12 items 7–10). The memory payoff of §12A.7 is unchanged: the $\sim$192 MB INT8 token table still exists, it simply lives in host/RB3 DRAM (read by the CPU) instead of inside the HTP context — and RB3's CPU and NPU share the same DRAM, so there is no extra memory cost.
 
 ---
 

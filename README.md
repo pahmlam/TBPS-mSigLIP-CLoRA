@@ -42,8 +42,8 @@
     </td>
     <td width="33%" align="center">
       <strong>RB3 Gen2 / HTP v68</strong><br>
-      <span style="font-size:24px"><strong>50.25</strong></span><br>
-      Both-INT8 W8A8 QDQ proxy T2I Rank@1
+      <span style="font-size:24px"><strong>50.35</strong></span><br>
+      Board both-INT8 W8A8 T2I Rank@1
     </td>
   </tr>
 </table>
@@ -52,7 +52,7 @@
 |---|---|---|
 | **Training** | LoRA + Curriculum Circle Loss is the main reported method. It trains **5.9M parameters, about 1.57% of the 376M-parameter base model**. | Keep the paper recipe as the clean deployment baseline. |
 | **Multilingual evaluation** | VN3K, 10% CUHK-PEDES, and PRW-TPS-CN results are reported below. | Extend full multilingual ablations only when needed. |
-| **Edge deployment** | Both encoders now pass the W8A8 QDQ retrieval gate off-board: both-INT8 reaches **50.25** T2I R@1, a `-2.03` drop from the paper baseline `52.28`. QAT v8 vision is board-verified at **50.20** T2I R@1. | Board-verify finite-mask text, and both-INT8 retrieval on RB3. |
+| **Edge deployment** | Both encoders now pass directly on RB3: board both-INT8 reaches **50.35** T2I R@1 and **54.20** I2T R@1, a `-1.93` T2I drop from the paper baseline `52.28`. Vision v9 is board-verified at **50.35** T2I R@1. | Use this as the final thesis deployment result. |
 
 ## What This Repository Contains
 
@@ -259,30 +259,31 @@ The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN
 |---|---|
 | Source checkpoint | `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` |
 | Paper baseline | VN3K T2I R@1 `52.28`; local FP32 sanity reproduction is `52.40` |
-| Best end-to-end deploy proxy | Both-INT8 W8A8 QDQ on the full VN3K test set; T2I R@1 `50.25` (`-2.03` vs `52.28`) and I2T R@1 `52.95` |
+| Final end-to-end board deploy | Board both-INT8 W8A8 on the full VN3K test set; T2I R@1 `50.35` (`-1.93` vs `52.28`) and I2T R@1 `54.20` |
+| Off-board both-INT8 proxy | Both-INT8 W8A8 QDQ; T2I R@1 `50.25`, I2T R@1 `52.95` |
 | Vision-only QDQ proxy | QAT v8 learned rotation, `50.85` T2I R@1, `52.90` I2T R@1 |
-| Vision-only board retrieval | QAT v8 W8A8 context binary on RB3, `50.20` T2I R@1, `54.50` I2T R@1 |
-| Text-only isolation | Learned rotation + finite mask, `51.65` T2I R@1, `55.55` I2T R@1 |
-| Board-verified binary | QAT v8 W8A8 vision context binary (`50.20` T2I R@1, passes the `50` target; text/both-INT8 board-verify pending) |
-| Board runtime | `33.05 ms/img`, `22.77 FPS` |
+| Vision-only board retrieval | QAT v9 W8A8 context binary on RB3, `50.35` T2I R@1, `54.55` I2T R@1 |
+| Text-only board retrieval | Split-text W8A8 context binary on RB3, `51.30` T2I R@1, `54.80` I2T R@1 |
+| Board-verified binary | Vision v9 + split-text W8A8 context binaries; direct board both-INT8 reaches `50.35` T2I R@1 |
+| Board runtime | vision v9 `32.54 ms/image`, `24.29 FPS`; split-text transformer `7.87 ms/query`, `74.75 IPS` |
 | Context size | about `90 MB` for vision encoder |
-| Text encoder | W8A8 QDQ passes off-board; compile/link and board verification pending |
+| Text encoder | Split-encoder deploy path: RB3 CPU embedding lookup + HTP transformer/head |
 
 *NOTE: ckpt can be download at: https://drive.google.com/file/d/1Mo8OnjVhrIGhMp8Og5x99GSwBCzPQ7Bn/view?usp=sharing*
 
-Current end-to-end deploy retrieval, measured off-board with both QDQ graphs on the full VN3K test set:
+Final end-to-end deploy retrieval, measured directly on RB3 with board vision embeddings and board split-text embeddings:
 
 | Direction | R@1 | R@5 | R@10 | mAP | mINP |
 |---|---:|---:|---:|---:|---:|
-| **T2I** | **50.25** | **77.72** | **86.68** | **55.53** | **48.91** |
-| **I2T** | **52.95** | **79.45** | **87.60** | **49.40** | **33.09** |
+| **T2I** | **50.35** | **77.82** | **86.50** | **55.80** | **49.28** |
+| **I2T** | **54.20** | **80.50** | **89.20** | **50.26** | **33.83** |
 
-Board-verified vision-only retrieval on RB3:
+Board-verified vision-only retrieval on RB3 (v9):
 
 | Direction | R@1 | R@5 | R@10 | mAP | mINP |
 |---|---:|---:|---:|---:|---:|
-| **T2I** | **50.20** | **77.62** | **86.73** | **55.84** | **49.51** |
-| **I2T** | **54.50** | **81.65** | **90.00** | **50.22** | **33.25** |
+| **T2I** | **50.35** | **77.55** | **86.55** | **55.73** | **49.21** |
+| **I2T** | **54.55** | **82.10** | **89.35** | **50.58** | **33.66** |
 
 Canonical references:
 
@@ -313,8 +314,8 @@ Canonical references:
 
 Text is 75% of parameters because the multilingual token embedding has `250000 x 768` entries. This is why text INT8 is required for the final 4 GB RB3 deployment path.
 
-> **All deployment commands live in one place.** The full reproducible v8 pipeline —
-> LoRA merge → learned rotation → QAT v8 → opset-20 ONNX export → AI Hub W8A8
+> **All deployment commands live in one place.** The final reproducible deployment pipeline —
+> LoRA merge → learned rotation → vision QAT v9 / split-text QAT v8 → opset-20 ONNX export → AI Hub W8A8
 > quantize/compile/link → on-board `qnn-net-run` → and direct **INT8×INT8 retrieval on
 > the board** (vision + text) — is documented end-to-end in the runbook:
 >
@@ -334,7 +335,8 @@ Text is 75% of parameters because the multilingual token embedding has `250000 x
 | QAT v5 | QDQ `0.9437 / 0.9311`, T2I R@1 `49.25`, I2T R@1 `53.40` | Below `50` target |
 | QAT v6 | QDQ `0.9491 / 0.9266`, T2I R@1 `49.30`, I2T R@1 `53.85` | Random-rotation ceiling, below `50` target |
 | QAT v7 | QDQ `0.9485 / 0.9083`, T2I R@1 `48.38`, I2T R@1 `53.05` | Regressed vs v6 |
-| **QAT v8** | QDQ `0.9606 / 0.9447`, T2I R@1 `50.85`, I2T R@1 `52.90`; board `0.9585 / 0.9399`, T2I R@1 `50.20`, I2T R@1 `54.50` | **Learned rotation — PASS (board-verified)** |
+| **QAT v8** | QDQ `0.9606 / 0.9447`, T2I R@1 `50.85`, I2T R@1 `52.90`; board T2I R@1 `50.20`, I2T R@1 `54.50` | Learned rotation — PASS (board-verified) |
+| **QAT v9** | tighter rotation/QAT follow-up; board T2I R@1 `50.35`, I2T R@1 `54.55`; both-INT8 board T2I R@1 `50.35` | **Final thesis deploy result** |
 
 </details>
 

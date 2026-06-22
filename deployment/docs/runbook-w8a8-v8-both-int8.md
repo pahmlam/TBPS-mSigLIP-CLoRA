@@ -1,14 +1,14 @@
-# Runbook — W8A8 v8 Both-INT8 (Vision + Text) trên RB3 Gen2 (HTP v68)
+# Runbook — W8A8 v8/v9 Both-INT8 (Vision + Text) trên RB3 Gen2 (HTP v68)
 
 > Hướng dẫn **trọn vẹn từ đầu đến cuối**, theo thứ tự: LoRA merge → chuẩn bị data →
-> learned rotation → QAT v8 → AI Hub W8A8 → gate fidelity → retrieval R@1 →
+> learned rotation → QAT → AI Hub W8A8 → gate fidelity → retrieval R@1 →
 > compile/link `.bin` → chạy trên board → **retrieval INT8×INT8 trực tiếp trên board**,
 > cho **cả vision và text**, rồi **both-INT8** end-to-end.
 >
 > Quy ước: mọi bước "local/free" chạy trên máy/cuda box; bước **AI Hub** và **board**
 > tốn tài nguyên. Mọi job AI Hub PHẢI log vào `deployment/docs/journal/[deploy-master].md`.
 >
-> **Toàn bộ runbook chạy path v8 (learned rotation)** — đã thắng v6/v7 (vision T2I R@1 `50.85`). Không còn nhánh random.
+> **Runbook này dùng text path v8 split-encoder và vision path v9 cho số chốt**. v8 learned rotation là mốc phương pháp đã thắng v6/v7 (vision QDQ T2I R@1 `50.85`); v9 là cùng phương pháp nhưng tăng calibration/steps rotation và QAT epochs để nâng số board cuối.
 
 ---
 
@@ -18,11 +18,61 @@
 |---|---|---|
 | `VISION_CALIB_ID` | AI Hub dataset id calib **vision** (đã có) | `d7jzjy1m2` |
 | `TEXT_SPLIT_CALIB` | AI Hub dataset id calib **split-text `inputs_embeds`** (tạo ở B4) | `d9vpnzz09` |
-| `VISION_QDQ` | thư mục QDQ vision v8 (learned rotation) | `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_<ID>_qdq_onnx` |
+| `VISION_QDQ` | thư mục QDQ vision learned rotation | `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/job_<ID>_qdq_onnx` |
 | `TEXT_QDQ` | thư mục QDQ **split-text** v8 | `artifacts/deployment/runtime/split_text_w8a8/job_<ID>_qdq_onnx` |
 | `BOARD` | host board | `qc-rb3g2` |
 
 Split-text calib dataset IDs (đã upload): `d9vpnzz09` = `vn3k_text_calib_500_split_embeds`; `d9pg6dpd9` = 2000-sample (calib bão hòa — 500 và 2000 cho QDQ byte-identical, dùng 500 là đủ).
+
+## 0A. Setup kết nối Qualcomm AI Hub (local, làm 1 lần)
+
+Làm bước này trên máy submit job (Mac/cuda box), **không làm trên RB3**. Các script trong runbook dùng Python SDK `qai_hub`, nên cấu hình token phải nằm ở default profile mà SDK đọc được.
+
+### 0A.1 Kích hoạt venv và kiểm tra SDK
+```bash
+source venv/bin/activate
+python - <<'PY'
+import qai_hub as hub
+print("qai_hub", getattr(hub, "__version__", "unknown"))
+PY
+```
+
+Nếu thiếu package:
+```bash
+python -m pip install "qai-hub==0.48.0"
+```
+
+Phiên bản đang dùng ổn trong repo này: `qai_hub 0.48.0`.
+
+### 0A.2 Lấy API token và cấu hình default profile
+
+Vào Qualcomm AI Hub / Workbench → Settings / Account → API token, rồi cấu hình:
+
+```bash
+read -s QAI_HUB_API_TOKEN
+qai-hub configure --api_token "$QAI_HUB_API_TOKEN"
+unset QAI_HUB_API_TOKEN
+```
+
+Không dùng `--profile` phụ cho runbook này, trừ khi bạn cũng sửa mọi script submit để dùng profile đó. Các lệnh Python như `submit_qaihub_quantize_compile.py` mặc định đọc profile mặc định.
+
+### 0A.3 Smoke test kết nối
+```bash
+qai-hub list-devices --device "Dragonwing RB3 Gen 2 Vision Kit" --format details
+python deployment/scripts/qnn/list_qaihub_datasets.py --limit 20
+```
+
+Kỳ vọng:
+
+- `list-devices` thấy đúng device `Dragonwing RB3 Gen 2 Vision Kit`.
+- `list_qaihub_datasets.py` in được các dataset gần đây, ví dụ calib vision/text nếu đã upload.
+- Nếu dataset ID trong runbook không resolve được, kiểm bằng `list_qaihub_datasets.py` trước khi submit job. Lỗi dataset thường là token/profile sai hoặc dataset đã hết hạn.
+
+### 0A.4 Nguyên tắc khi submit job
+
+- Mỗi job AI Hub phải ghi vào `deployment/docs/journal/[deploy-master].md`: command, job id, URL, input model/calib, kết quả, artifact download.
+- Dùng script Python của repo (`submit_qaihub_quantize_compile.py`) thay vì CLI cũ `submit-compile-job --quantize_full_type`, vì flow hiện tại cần `submit_quantize_job` → `submit_compile_and_link_jobs`.
+- Với text split, calib data phải là raw dataset `inputs_embeds:float32:1,64,768` + `attention_mask:float32:1,64`, không phải dataset `input_ids`.
 
 ## Gates chấp nhận (áp cho cả vision và text)
 
@@ -77,53 +127,54 @@ python deployment/scripts/qnn/prepare_vn3k_text_inputs.py --split train --num-sa
 
 ---
 
-# PART A — VISION v8 (learned rotation + QAT)
+# PART A — VISION v9 (learned rotation + QAT)
 
-> Path v8 cố định: learned rotation → `VISION_BASE=exported_model_rotated_learned`.
+> Path mặc định cho số luận văn: learned rotation v9 → `VISION_BASE=exported_model_rotated_learned_v9` → QAT v9. v8 vẫn là mốc ablation quan trọng, nhưng không còn là path mặc định của runbook.
 
-### A1. Learned rotation (local/free) — bắt buộc cho v8
+### A1. Learned rotation (local/free) — v9 final
 ```bash
-PYTHONUNBUFFERED=1 python deployment/scripts/qnn/learn_rotation.py --model-dir artifacts/deployment/exports/exported_model --output-dir artifacts/deployment/exports/exported_model_rotated_learned --calib-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_2000 --gate-input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --num-calib 256 --tokens-per-image 32 --steps 3000 --lr 2e-3 --device cuda
+PYTHONUNBUFFERED=1 python deployment/scripts/qnn/learn_rotation.py --model-dir artifacts/deployment/exports/exported_model --output-dir artifacts/deployment/exports/exported_model_rotated_learned_v9 --calib-dir artifacts/deployment/qnn_inputs/vn3k_train_calib_2000 --gate-input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --num-calib 512 --tokens-per-image 32 --steps 8000 --lr 2e-3 --device cuda
 ```
-**GATE**: in `GATE PASS` (cosine min ≥ 0.9999) thì mới lưu `model_fp32.pt`. → `VISION_BASE=exported_model_rotated_learned`.
+**GATE**: in `GATE PASS` (cosine min ≥ 0.9999) thì mới lưu `model_fp32.pt`. → `VISION_BASE=exported_model_rotated_learned_v9`.
 
-### A2. QAT v8 (local/free, cuda) — recipe **v6** (const lr 1e-5, 15 ep)
+### A2. QAT v9 (local/free, cuda) — recipe v6 coverage, 25 epochs
 
 ```bash
-PYTHONUNBUFFERED=1 python deployment/scripts/qnn/train_vision_quant_robust.py --model-dir artifacts/deployment/exports/exported_model_rotated_learned --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 --val-input-dir artifacts/deployment/qnn_inputs/vn3k_test_100 --output-dir artifacts/deployment/exports/exported_model_rotated_learned_qat_v8 --device cuda --batch-size 16 --epochs 15 --lr 1e-5 --fake-quant-observer ema --quant-head --quant-linears --quant-attention --start-layer 0 --end-layer 11 --num-workers 4
+PYTHONUNBUFFERED=1 python deployment/scripts/qnn/train_vision_quant_robust.py --model-dir artifacts/deployment/exports/exported_model_rotated_learned_v9 --train-input-dir artifacts/deployment/qnn_inputs/vn3k_train_all_4302 --val-input-dir artifacts/deployment/qnn_inputs/vn3k_test_100 --output-dir artifacts/deployment/exports/exported_model_rotated_learned_qat_v9 --device cuda --batch-size 16 --epochs 25 --lr 1e-5 --fake-quant-observer ema --quant-head --quant-linears --quant-attention --start-layer 0 --end-layer 11 --num-workers 4
 ```
+> Lưu ý: `--num-workers` cần giá trị, ví dụ `4`; nếu copy thiếu số sau option này thì `argparse` sẽ fail.
 
 ### A3. Export ONNX opset-20 (local/free)
 ```bash
-python deployment/scripts/qnn/export_rotated_vision_onnx.py --model-dir artifacts/deployment/exports/exported_model_rotated_learned_qat_v8 --opset 20
+python deployment/scripts/qnn/export_rotated_vision_onnx.py --model-dir artifacts/deployment/exports/exported_model_rotated_learned_qat_v9 --opset 20
 ```
 
 ### A4. GATE static ONNX vs PyTorch (local/free)
 ```bash
-python3 deployment/scripts/qnn/compare_onnx_with_pytorch.py --onnx-model artifacts/deployment/exports/exported_model_rotated_learned_qat_v8/vision_onnx --model-dir artifacts/deployment/exports/exported_model_rotated_learned_qat_v8 --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --precision fp32 --json artifacts/deployment/exports/exported_model_rotated_learned_qat_v8/static_vs_pytorch_summary.json --csv artifacts/deployment/exports/exported_model_rotated_learned_qat_v8/static_vs_pytorch.csv
+python3 deployment/scripts/qnn/compare_onnx_with_pytorch.py --onnx-model artifacts/deployment/exports/exported_model_rotated_learned_qat_v9/vision_onnx --model-dir artifacts/deployment/exports/exported_model_rotated_learned_qat_v9 --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --precision fp32 --json artifacts/deployment/exports/exported_model_rotated_learned_qat_v9/static_vs_pytorch_summary.json --csv artifacts/deployment/exports/exported_model_rotated_learned_qat_v9/static_vs_pytorch.csv
 ```
 Kỳ vọng cosine ~1.0. **Fail thì dừng** — lỗi export, đừng tốn job AI Hub.
 
 ### A5. AI Hub quantize-only → QDQ (TỐN JOB — log journal)
 ```bash
-python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py --model artifacts/deployment/exports/exported_model_rotated_learned_qat_v8/vision_onnx --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 --quantize-only --wait --download-quantized artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_qdq_onnx
+python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py --model artifacts/deployment/exports/exported_model_rotated_learned_qat_v9/vision_onnx --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 --quantize-only --wait --download-quantized artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/job_qdq_onnx
 ```
-Ghi lại `<JOB_ID>` từ output → `VISION_QDQ=artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_jp24xxn65_qdq_onnx`.
+Ghi lại `<JOB_ID>` từ output → `VISION_QDQ=artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/job_<JOB_ID>_qdq_onnx`.
 
 ### A6. GATE QDQ fidelity (local/free)
 ```bash
-python3 deployment/scripts/qnn/compare_onnx_with_pytorch.py --onnx-model $VISION_QDQ --model-dir artifacts/deployment/exports/exported_model --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --precision fp32 --json artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/qdq_vs_pytorch_summary.json --csv artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/qdq_vs_pytorch.csv
+python3 deployment/scripts/qnn/compare_onnx_with_pytorch.py --onnx-model $VISION_QDQ --model-dir artifacts/deployment/exports/exported_model --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --precision fp32 --json artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/qdq_vs_pytorch_summary.json --csv artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/qdq_vs_pytorch.csv
 ```
 Kỳ vọng mean ≥ 0.95, min ≥ 0.90.
 
 ### A7. GATE retrieval R@1 — vision-isolation (local/free, FULL set)
 ```bash
-python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py --qdq-onnx $VISION_QDQ --model-dir artifacts/deployment/exports/exported_model --json artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/retrieval_r1.json
+python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py --qdq-onnx $VISION_QDQ --model-dir artifacts/deployment/exports/exported_model --json artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/retrieval_r1.json
 ```
 
 ### A8. Compile/link → `.bin` (TỐN JOB — chỉ khi A6+A7 pass — log journal)
 ```bash
-python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py --model artifacts/deployment/exports/exported_model_rotated_learned_qat_v8/vision_onnx --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 --wait --download artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/vision_encoder.bin
+python3 deployment/scripts/qnn/submit_qaihub_quantize_compile.py --model artifacts/deployment/exports/exported_model_rotated_learned_qat_v9/vision_onnx --calibration-data d7jzjy1m2 --weights-dtype int8 --activations-dtype int8 --wait --download artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/vision_encoder_v9.bin
 ```
 
 ### A9. Board run + fidelity (TRÊN BOARD — xem §Board)
@@ -143,19 +194,19 @@ cd artifacts/deployment/qnn_inputs/vn3k_test_10
 
 "$QNN_BIN/qnn-net-run" \
   --backend "$QNN_LIB/libQnnHtp.so" \
-  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/vision_encoder.bin \
+  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/vision_encoder_v9.bin \
   --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_245.json \
   --input_list input_list.txt \
-  --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8 \
+  --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9 \
   --profiling_level basic \
   --perf_profile high_performance
 
 "$QNN_BIN/qnn-profile-viewer" \
-  --input_log artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn-profiling-data_4.log \
-  > artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/profile.txt
+  --input_log /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9/qnn-profiling-data_0.log \
+  > /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9/profile.txt
 
 # về máy: board fidelity vs PyTorch
-python3 deployment/scripts/qnn/compare_qnn_with_pytorch.py --qnn-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8 --model-dir artifacts/deployment/exports/exported_model --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --precision fp32 --json artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch_summary.json --csv artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch.csv
+python3 deployment/scripts/qnn/compare_qnn_with_pytorch.py --qnn-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9 --model-dir artifacts/deployment/exports/exported_model --input-dir artifacts/deployment/qnn_inputs/vn3k_test_10 --precision fp32 --json artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9/qnn_vs_pytorch_summary.json --csv artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9/qnn_vs_pytorch.csv
 ```
 
 ### A10. Board retrieval R@1 — vision-isolation FULL gallery (TRÊN BOARD + local)
@@ -168,20 +219,24 @@ cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000
 
 "$QNN_BIN/qnn-net-run" \
   --backend "$QNN_LIB/libQnnHtp.so" \
-  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/vision_encoder.bin \
+  --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/vision_encoder_v9.bin \
   --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_245.json \
   --input_list input_list.txt \
-  --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000 \
+  --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000 \
   --profiling_level basic \
   --perf_profile high_performance
 
+"$QNN_BIN/qnn-profile-viewer" \
+  --input_log /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/qnn-profiling-data_4.log \
+  > /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/profile.txt
+
 # trên host sau khi rsync/scp output về
 python3 deployment/scripts/qnn/eval_retrieval_board_vision.py \
-  --vision-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000 \
+  --vision-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000 \
   --gallery-input-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000 \
   --model-dir artifacts/deployment/exports/exported_model \
   --dataset-root . \
-  --json artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/board_vision_r1.json
+  --json artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/board_vision_r1.json
 ```
 
 ---
@@ -332,7 +387,7 @@ python3 deployment/scripts/qnn/eval_retrieval_board_text.py \
 
 ### C1. Off-board both-INT8 R@1 (local/free, FULL set)
 
-> `eval_retrieval_quantized_vision.py --text-qdq-onnx` feed `input_ids`, nên off-board proxy này dùng **full-graph text QDQ** (đường full-graph faithful off-board, chỉ FAIL khi chạy board). Số proxy `50.25` là mốc deploy off-board. Số board thật của đường split-text là **C2**.
+> `eval_retrieval_quantized_vision.py --text-qdq-onnx` feed `input_ids`, nên off-board proxy này dùng **full-graph text QDQ** (đường full-graph faithful off-board, chỉ FAIL khi chạy board). Số proxy `50.25` là mốc tham chiếu off-board. Số deploy cuối của đường split-text + vision v9 là **C2**.
 ```bash
 python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py --qdq-onnx $VISION_QDQ --text-qdq-onnx <FULL_GRAPH_TEXT_QDQ> --model-dir artifacts/deployment/exports/exported_model --json artifacts/deployment/runtime/both_int8/both_int8_r1.json
 ```
@@ -347,27 +402,32 @@ python3 deployment/scripts/qnn/prepare_vn3k_vision_inputs.py --dataset-root VN3K
 # text query: vn3k_test_query_full_split_embeds (inputs_embeds + attention_mask + manifest, 4000 caption) — xem B7
 ```
 
-**C2.2. Board: vision `.bin` chạy FULL gallery → image embeddings** (tái dùng output gallery của A10 nếu đã chạy).
+**C2.2. Board: vision v9 `.bin` chạy FULL gallery → image embeddings** (tái dùng output gallery của A10 nếu đã chạy).
 ```bash
 cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000
-qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/vision_encoder.bin --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_245.json --input_list input_list.txt --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000 --profiling_level basic --perf_profile high_performance
+qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/bin/vision_encoder_v9.bin --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_245.json --input_list input_list.txt --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000 --profiling_level basic --perf_profile high_performance
 ```
 
-**C2.3. Board: split text `.bin` chạy FULL query (`inputs_embeds`) → text embeddings.** (cwd = thư mục query split-embeds; config text-family)
+**C2.3. Board: split text `.bin` chạy FULL query (`inputs_embeds`) → text embeddings.** Cách chốt luận văn dùng `query_onboard`, tức lookup bảng embedding đã chạy trên chính RB3 trước đó bằng `board_text_encode.py`.
 ```bash
-cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/vn3k_test_query_full_split_embeds
-qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/runtime/split_text_w8a8/text_encoder_split.bin --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_text_i32.json --input_list input_list.txt --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/split_text_query_full --profiling_level basic --perf_profile high_performance
+cd /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_inputs/query_onboard
+qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" --retrieve_context /home/ubuntu/sigm/Lam/artifacts/deployment/runtime/split_text_w8a8/text_encoder_split.bin --config_file /home/ubuntu/sigm/Lam/deployment/config/qnn/htp_config_text_i32.json --input_list input_list.txt --output_dir /home/ubuntu/sigm/Lam/artifacts/deployment/qnn_runs/onboard_text --profiling_level basic --perf_profile high_performance
 ```
 
-**C2.4. Kéo embedding board về host** (`adb pull`/`scp` thư mục vision (`..._gallery_2000`) và text (`split_text_query_full`) chứa `Result_*/output_0.raw` đã dequantize sang float).
+**C2.4. Kéo embedding board về host** (`adb pull`/`scp` thư mục vision (`...v9_gallery_2000`) và text (`onboard_text`) chứa `Result_*/output_0.raw` đã dequantize sang float).
 
 **C2.5. Tính R@1 từ embedding board** (local/free) — raw dot product, đúng `LitTBPS._compute_metrics`. **Không có `--model-dir`** (cả hai embedding đều từ board).
 ```bash
-python3 deployment/scripts/qnn/eval_retrieval_board_embeddings.py --vision-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000 --text-output-dir artifacts/deployment/qnn_runs/split_text_query_full --gallery-input-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000 --query-input-dir artifacts/deployment/qnn_inputs/vn3k_test_query_full_split_embeds --json artifacts/deployment/qnn_runs/both_int8_board_r1.json
+python3 deployment/scripts/qnn/eval_retrieval_board_embeddings.py \
+  --text-output-dir artifacts/deployment/qnn_runs/onboard_text \
+  --query-input-dir artifacts/deployment/qnn_inputs/query_onboard \
+  --vision-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000 \
+  --gallery-input-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000 \
+  --json artifacts/deployment/qnn_runs/both_int8_board_r1.json
 ```
 > `eval_retrieval_board_embeddings.py` đọc `Result_*/output_0.raw` board của cả 2 encoder, map pid theo `manifest.csv` của input dirs, và tính retrieval raw dot product như `eval_retrieval_quantized_vision.py`.
 
-Deploy target áp cho both-INT8: **T2I R@1 ≥ 50**. Kết quả thực tế: off-board QDQ proxy `50.25` (PASS); board both-INT8 `49.95` (T2I) / `53.05` (I2T) — thiếu `0.05` (~2 query, trong nhiễu). Vision là tower sàn; nâng vision (v9) là hướng tùy chọn để đẩy board qua 50.
+Deploy target áp cho both-INT8: **T2I R@1 ≥ 50**. Kết quả chốt luận văn: board both-INT8 trực tiếp `50.35` (T2I) / `54.20` (I2T) — PASS. Off-board QDQ proxy `50.25` / `52.95` chỉ còn là mốc tham chiếu. Runtime quan trọng: vision v9 `32.54 ms/image` (`24.29 FPS`), split-text transformer `7.87 ms/query` (`74.75 IPS`).
 
 ---
 
@@ -433,7 +493,7 @@ qnn-net-run --backend "$QNN_LIB/libQnnHtp.so" \
 # Logging bắt buộc
 
 - **Mỗi job AI Hub** (A5, A8 vision; B4 upload calib, B5 quantize, B6 compile/link split-text): append vào `deployment/docs/journal/[deploy-master].md` — mục tiêu, job id, input, output/error, fidelity/R@1, quyết định.
-- **Số v8 vision** (A7) và **both-INT8** (C1 off-board, C2 board): điền vào bảng `[deploy-master].md` §0 + §12.
+- **Số v8/v9 vision** (A7/A10) và **both-INT8** (C1 off-board, C2 board): điền vào bảng `[deploy-master].md` §0 + §12.
 - Board fidelity/latency (A9, B8) và board both-INT8 R@1 (C2): vào `[deploy-master].md`.
 
 ---

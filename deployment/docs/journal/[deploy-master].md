@@ -1,6 +1,6 @@
 # [Deploy Master] Nhật ký nén vision mSigLIP lên RB3/QNN
 
-> **Cập nhật hợp nhất cuối:** 2026-06-20
+> **Cập nhật hợp nhất cuối:** 2026-06-22
 > **Phạm vi:** RB3 Gen2 / QNN / AI Hub / ONNX / nén mô hình cho deployment mSigLIP.
 > **Nguồn trạng thái chuẩn:** file này.
 > **Nhật ký deploy duy nhất:** toàn bộ lịch sử deployment/model-compression và kết quả mới nằm ở đây.
@@ -19,28 +19,31 @@ File master này hợp nhất toàn bộ lịch sử deployment/model-compressio
 | Checkpoint nguồn | `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` |
 | Baseline báo cáo chính | VN3K T2I R@1 `52.28` (paper/historical baseline) |
 | FP32 sanity local | VN3K T2I R@1 `52.40` tái lập local; chỉ dùng để kiểm pipeline, không làm mốc drop báo cáo |
-| Best end-to-end deploy proxy | **Both-INT8 W8A8 QDQ**: T2I R@1 `50.25`, I2T R@1 `52.95`; drop T2I `-2.03` so với `52.28`, PASS target `50` |
-| Artifact both-INT8 C1 | `artifacts/deployment/runtime/both_int8/both_int8_r1.json` |
+| Best end-to-end deploy result | **Board both-INT8 W8A8**: T2I R@1 `50.35`, I2T R@1 `54.20`; drop T2I `-1.93` so với `52.28`, PASS target `50` |
+| Artifact both-INT8 final | `artifacts/deployment/qnn_runs/both_int8_board_r1.json` |
+| Off-board both-INT8 proxy | QDQ proxy: T2I R@1 `50.25`, I2T R@1 `52.95`; giữ làm mốc tham chiếu |
 | Ứng viên QDQ/retrieval tốt nhất hiện tại | **QAT v8 (learned rotation)**: SpinQuant-style Q + recipe v6 `--quant-head --quant-linears --quant-attention` |
 | Job AI Hub QAT v8 | `jp24xxn65` quantize-only W8A8 |
 | Artifact QDQ QAT v8 | `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_jp24xxn65_qdq_onnx` |
 | Cosine QDQ QAT v8 | **`0.9606 / 0.9447`** mean/min |
 | Retrieval QAT v8 vision-isolation | **T2I R@1 `50.85`** (đạt deploy target 50), I2T R@1 `52.90`; drop T2I `-1.43` so với `52.28` |
 | Board retrieval QAT v8 vision-isolation | **T2I R@1 `50.20`**, I2T R@1 `54.50`; drop T2I `-0.65` so với QDQ proxy `50.85`, vẫn PASS target `50` |
-| Text finite/f32/link-safe path | QDQ proxy `0.9949 / 0.9912`; text-isolation T2I R@1 `51.65`, I2T R@1 `55.55`; link-safe ONNX local gate `0.99999999 / 0.99999976`; AI Hub link PASS, nhưng full text context trên board FAIL fidelity |
+| Board retrieval QAT v9 vision-isolation | **T2I R@1 `50.35`**, I2T R@1 `54.55`; final vision tower cho luận văn |
+| Text finite/f32/link-safe path | QDQ proxy `0.9949 / 0.9912`; text-isolation proxy T2I R@1 `51.65`, I2T R@1 `55.55`; full text context trên board FAIL fidelity, split-text board PASS |
 | Text board diagnosis | `input_ids` thật và all-zero `input_ids` cho output board giống hệt (`cos=1.0`, `max_abs=0.0` trên 10/10 mẫu); HTP context hiện không dùng dynamic token IDs đúng cách |
+| Split-text board result | image FP32 + text board: T2I R@1 `51.30`, I2T R@1 `54.80`; board fidelity `0.9951 / 0.9926` |
 | Ứng viên trước đó | QAT v6 (random rotation): T2I R@1 `49.30`, QDQ `0.9491 / 0.9266` — v8 hơn `+1.55` T2I |
-| Binary deploy đã verify trên board | **QAT v8** W8A8 context binary (vision-only); text full-context board bị chặn bởi dynamic embedding lookup |
+| Binary deploy đã verify trên board | **Vision v9** W8A8 context binary + **split-text v8** W8A8 context binary |
 | Fidelity QAT v8 trên board | `0.9585 / 0.9399` mean/min, khớp QDQ `0.9606 / 0.9447` |
-| Runtime QAT v8 trên board | `33.05 ms/image`, `22.77 FPS`, context binary khoảng `90 MB` |
-| Hướng tiếp theo | Không tiếp tục coi full text `.bin` nhận `input_ids` là đáng tin; thử microbenchmark `Gather`, rồi export split-text: CPU board làm embedding lookup, QNN HTP chạy transformer/head nhận `inputs_embeds` |
+| Runtime board final | Vision v9 `32.54 ms/image`, `24.29 FPS`; split-text transformer `7.87 ms/query`, `74.75 IPS` |
+| Hướng tiếp theo | Dùng `50.35/54.20` làm số chốt luận văn; nếu cần demo, đóng gói flow RB3 CPU lookup + HTP transformer + HTP vision |
 
 Cách hiểu:
 
-- **C1 both-INT8 là số deploy proxy chính hiện tại**: vision QDQ + text QDQ đạt T2I R@1 `50.25`, vượt target `50` và giảm `-2.03` so với paper baseline `52.28`.
+- **Board both-INT8 là số deploy chính hiện tại**: vision v9 board + split-text board đạt T2I R@1 `50.35`, vượt target `50` và giảm `-1.93` so với paper baseline `52.28`.
 - **v8 vision là ablation accuracy quan trọng**: learned rotation nâng vision-isolation T2I R@1 lên `50.85`, cosine QDQ mean/min đều vượt v6. Delta `+1.55` so v6 là ablation sạch "learned vs random" (recipe v6 giữ nguyên).
-- **v8 là binary deploy đã verify trên board hiện tại**: link và chạy thành công trên HTP v68, fidelity mean trên board đạt `0.9585` (rất sát với QDQ `0.9606`), full board vision retrieval đạt T2I R@1 `50.20`.
-- **Text QDQ đúng nhưng full text HTP context không đáng tin**: static ONNX và QDQ đều giữ fidelity tốt, nhưng board output không đổi khi zero toàn bộ `input_ids`; do đó vấn đề nằm ở compile/link/runtime HTP cho dynamic `Gather(token_embedding.weight, input_ids)`, không phải do QAT hay calibration.
+- **v9 là binary vision final trên board**: full gallery board retrieval đạt T2I R@1 `50.35`, I2T R@1 `54.55`, runtime `32.54 ms/image`.
+- **Text QDQ đúng nhưng full text HTP context không đáng tin**: static ONNX và QDQ đều giữ fidelity tốt, nhưng board output không đổi khi zero toàn bộ `input_ids`; split-text đưa embedding lookup sang RB3 CPU và HTP chạy transformer, đạt text-isolation `51.30` T2I.
 
 ### Pipeline Vision Chuẩn
 
@@ -1902,7 +1905,7 @@ Kết quả này xác nhận đường **RB3 CPU lookup → HTP split transforme
 
 **v9a run 1 (8000 step, 512 calib, lr 2e-3) — phát hiện bug optimizer:** objective DAO ĐỘNG dưới Adam lr cố định (obj 662↔878, max|Qa| 9.5↔18.4); script cũ fold **Q ở step cuối** = đúng đỉnh dao động (`max|a| 18.43`, tệ hơn vẻ ngoài). Run đã CHẠM `obj 662 / max|Qa| 9.54` ở step 6400 → rotation chặt hơn khả thi. **Fix:** patch `learn_rotation.py` theo dõi + fold **Q có objective thấp nhất** (best-Q), không phải step cuối. Re-run cùng lệnh sẽ fold điểm trough. (Lưu ý: `max|a|` của 512-calib không so thẳng v8 256-calib — nhiều mẫu thì max cao hơn; quyết định thật là cổng QDQ.)
 
-**Pha 3 — C2 both-INT8 board (số deploy cuối):** `eval_retrieval_board_embeddings.py` ghép board vision (`rotated_w8a8_learned_qat_v8_gallery_2000`) + board text split. **KHÔNG có `--model-dir`** (script dùng embeddings board cho cả hai tower):
+**Pha 3 — C2 both-INT8 board trước v9 (kết quả lịch sử):** `eval_retrieval_board_embeddings.py` ghép board vision v8 (`rotated_w8a8_learned_qat_v8_gallery_2000`) + board text split. Kết quả này sau đó được thay bằng số final v9 ở §12.14. **KHÔNG có `--model-dir`** (script dùng embeddings board cho cả hai tower):
 
 ```bash
 venv/bin/python deployment/scripts/qnn/eval_retrieval_board_embeddings.py \
@@ -1951,3 +1954,55 @@ Forensic local (output board của X-run và zero-run đã sync về máy; binar
 **Bảng = weight, không phải data:** là `token_embedding.weight` đã fold Q, đóng băng; sinh 1 lần build-time, nạp 1 lần runtime, tái dùng mọi query; chỉ regen khi đổi model text. Lý thuyết: `w8a8_qat_rotated.md` §12A.8. Runbook: PART D.
 
 **Trạng thái:** bảng + script đã tạo & verify trên host (`token_embedding_v8/` git-ignored). Bước on-board (push + chạy D3/D4 trên RB3) là việc của user.
+
+### 12.14 2026-06-22 - Final board both-INT8 PASS: vision v9 + onboard split-text
+
+**Mục tiêu:** chốt số deploy cuối cho luận văn bằng embeddings sinh trực tiếp trên RB3: vision v9 QNN context binary cho 2000 ảnh gallery và split-text QNN context binary cho 4000 caption query, với embedding lookup chạy trên RB3.
+
+**Command eval host:**
+
+```bash
+python3 deployment/scripts/qnn/eval_retrieval_board_embeddings.py \
+    --text-output-dir artifacts/deployment/qnn_runs/onboard_text \
+    --query-input-dir artifacts/deployment/qnn_inputs/query_onboard \
+    --vision-output-dir artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000 \
+    --gallery-input-dir artifacts/deployment/qnn_inputs/vn3k_test_gallery_2000
+```
+
+**Vision v9 board-isolation** (`text FP32 + image QNN board`):
+
+| Task | R@1 | R@5 | R@10 | mAP | mINP |
+|---|---:|---:|---:|---:|---:|
+| T2I | `50.35` | `77.55` | `86.55` | `55.73` | `49.21` |
+| I2T | `54.55` | `82.10` | `89.35` | `50.58` | `33.66` |
+
+**Text board-isolation** (`image FP32 + text QNN board`):
+
+| Task | R@1 | R@5 | R@10 | mAP | mINP |
+|---|---:|---:|---:|---:|---:|
+| T2I | `51.30` | `79.43` | `87.90` | `56.97` | `50.46` |
+| I2T | `54.80` | `81.00` | `88.60` | `51.14` | `34.72` |
+
+**Final board both-INT8** (`image QNN board + text QNN board`):
+
+| Task | R@1 | R@5 | R@10 | mAP | mINP |
+|---|---:|---:|---:|---:|---:|
+| **T2I** | **`50.35`** | **`77.82`** | **`86.50`** | **`55.80`** | **`49.28`** |
+| I2T | `54.20` | `80.50` | `89.20` | `50.26` | `33.83` |
+
+**Runtime board profile:**
+
+| Tower | Profile artifact | NetRun avg | QNN execute avg | Accelerator avg | Min / Max NetRun | Throughput |
+|---|---|---:|---:|---:|---:|---:|
+| Vision v9 | `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/profile.txt` | `32.54 ms/image` | `32.49 ms` | `30.97 ms` | `30.37 / 36.21 ms` | `24.29 FPS` |
+| Split-text | `artifacts/deployment/qnn_runs/onboard_text/profile.txt` | `7.87 ms/query` | `7.83 ms` | `6.76 ms` | `7.13 / 12.47 ms` | `74.75 IPS` |
+
+**Artifacts:**
+
+| Artifact | Ý nghĩa |
+|---|---|
+| `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/board_vision_r1.json` | Vision v9 board-isolation full VN3K gallery |
+| `artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask/board_text_r1.json` | Text board-isolation full 4000-caption query |
+| `artifacts/deployment/qnn_runs/both_int8_board_r1.json` | Final board both-INT8 retrieval |
+
+**Kết luận:** final board both-INT8 đạt T2I R@1 **`50.35`**, vượt deploy gate `>=50.0` và giảm **`-1.93`** so với paper baseline `52.28`. Đây là số deploy chính cho luận văn. Off-board both-INT8 QDQ proxy `50.25/52.95` chỉ còn là mốc tham chiếu; v8 board `49.95/53.05` là kết quả lịch sử trước khi thay vision tower bằng v9.
