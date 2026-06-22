@@ -21,18 +21,16 @@ File master này hợp nhất toàn bộ lịch sử deployment/model-compressio
 | FP32 sanity local | VN3K T2I R@1 `52.40` tái lập local; chỉ dùng để kiểm pipeline, không làm mốc drop báo cáo |
 | Best end-to-end deploy result | **Board both-INT8 W8A8**: T2I R@1 `50.35`, I2T R@1 `54.20`; drop T2I `-1.93` so với `52.28`, PASS target `50` |
 | Artifact both-INT8 final | `artifacts/deployment/qnn_runs/both_int8_board_r1.json` |
-| Off-board both-INT8 proxy | QDQ proxy: T2I R@1 `50.25`, I2T R@1 `52.95`; giữ làm mốc tham chiếu |
-| Ứng viên QDQ/retrieval tốt nhất hiện tại | **QAT v8 (learned rotation)**: SpinQuant-style Q + recipe v6 `--quant-head --quant-linears --quant-attention` |
-| Job AI Hub QAT v8 | `jp24xxn65` quantize-only W8A8 |
-| Artifact QDQ QAT v8 | `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_jp24xxn65_qdq_onnx` |
-| Cosine QDQ QAT v8 | **`0.9606 / 0.9447`** mean/min |
-| Retrieval QAT v8 vision-isolation | **T2I R@1 `50.85`** (đạt deploy target 50), I2T R@1 `52.90`; drop T2I `-1.43` so với `52.28` |
-| Board retrieval QAT v8 vision-isolation | **T2I R@1 `50.20`**, I2T R@1 `54.50`; drop T2I `-0.65` so với QDQ proxy `50.85`, vẫn PASS target `50` |
-| Board retrieval QAT v9 vision-isolation | **T2I R@1 `50.35`**, I2T R@1 `54.55`; final vision tower cho luận văn |
+| Off-board both-INT8 proxy hiện tại | QDQ proxy mới nhất: T2I R@1 `50.63`, I2T R@1 `53.90`; dùng final refined vision encoder + split-text QDQ |
+| Off-board both-INT8 proxy lịch sử | QDQ proxy trước final refined vision encoder: T2I R@1 `50.25`, I2T R@1 `52.95`; chỉ giữ làm mốc lịch sử |
+| Final vision off-board proxy | Refined learned-rotation vision: T2I R@1 `50.98`, I2T R@1 `54.20`; cosine `0.9648 / 0.9549` |
+| Learned-rotation ablation (vision) | QAT v8 learned-rotation configuration: T2I R@1 `50.85`, I2T R@1 `52.90`; cosine `0.9606 / 0.9447`; hơn random-rotation QAT v6 `+1.55` T2I |
+| Board retrieval learned-rotation ablation | T2I R@1 `50.20`, I2T R@1 `54.50`; kết quả lịch sử trước final refined vision |
+| Board retrieval final vision-isolation | **T2I R@1 `50.35`**, I2T R@1 `54.55`; final vision tower cho luận văn |
 | Text finite/f32/link-safe path | QDQ proxy `0.9949 / 0.9912`; text-isolation proxy T2I R@1 `51.65`, I2T R@1 `55.55`; full text context trên board FAIL fidelity, split-text board PASS |
 | Text board diagnosis | `input_ids` thật và all-zero `input_ids` cho output board giống hệt (`cos=1.0`, `max_abs=0.0` trên 10/10 mẫu); HTP context hiện không dùng dynamic token IDs đúng cách |
 | Split-text board result | image FP32 + text board: T2I R@1 `51.30`, I2T R@1 `54.80`; board fidelity `0.9951 / 0.9926` |
-| Ứng viên trước đó | QAT v6 (random rotation): T2I R@1 `49.30`, QDQ `0.9491 / 0.9266` — v8 hơn `+1.55` T2I |
+| Random-rotation QAT reference | QAT v6 (random rotation): T2I R@1 `49.30`, QDQ `0.9491 / 0.9266`; learned-rotation ablation hơn `+1.55` T2I |
 | Binary deploy đã verify trên board | **Vision v9** W8A8 context binary + **split-text v8** W8A8 context binary |
 | Fidelity QAT v8 trên board | `0.9585 / 0.9399` mean/min, khớp QDQ `0.9606 / 0.9447` |
 | Runtime board final | Vision v9 `32.54 ms/image`, `24.29 FPS`; split-text transformer `7.87 ms/query`, `74.75 IPS` |
@@ -41,6 +39,7 @@ File master này hợp nhất toàn bộ lịch sử deployment/model-compressio
 Cách hiểu:
 
 - **Board both-INT8 là số deploy chính hiện tại**: vision v9 board + split-text board đạt T2I R@1 `50.35`, vượt target `50` và giảm `-1.93` so với paper baseline `52.28`.
+- **Off-board both-INT8 proxy hiện tại**: final refined vision proxy + split-text QDQ đạt T2I R@1 `50.63`, I2T R@1 `53.90`; proxy cũ `50.25/52.95` là mốc lịch sử trước khi thay vision tower bằng bản final refined.
 - **v8 vision là ablation accuracy quan trọng**: learned rotation nâng vision-isolation T2I R@1 lên `50.85`, cosine QDQ mean/min đều vượt v6. Delta `+1.55` so v6 là ablation sạch "learned vs random" (recipe v6 giữ nguyên).
 - **v9 là binary vision final trên board**: full gallery board retrieval đạt T2I R@1 `50.35`, I2T R@1 `54.55`, runtime `32.54 ms/image`.
 - **Text QDQ đúng nhưng full text HTP context không đáng tin**: static ONNX và QDQ đều giữ fidelity tốt, nhưng board output không đổi khi zero toàn bộ `input_ids`; split-text đưa embedding lookup sang RB3 CPU và HTP chạy transformer, đạt text-isolation `51.30` T2I.
@@ -2005,4 +2004,4 @@ python3 deployment/scripts/qnn/eval_retrieval_board_embeddings.py \
 | `artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask/board_text_r1.json` | Text board-isolation full 4000-caption query |
 | `artifacts/deployment/qnn_runs/both_int8_board_r1.json` | Final board both-INT8 retrieval |
 
-**Kết luận:** final board both-INT8 đạt T2I R@1 **`50.35`**, vượt deploy gate `>=50.0` và giảm **`-1.93`** so với paper baseline `52.28`. Đây là số deploy chính cho luận văn. Off-board both-INT8 QDQ proxy `50.25/52.95` chỉ còn là mốc tham chiếu; v8 board `49.95/53.05` là kết quả lịch sử trước khi thay vision tower bằng v9.
+**Kết luận:** final board both-INT8 đạt T2I R@1 **`50.35`**, vượt deploy gate `>=50.0` và giảm **`-1.93`** so với paper baseline `52.28`. Đây là số deploy chính cho luận văn. Off-board both-INT8 QDQ proxy mới nhất là **`50.63/53.90`**; proxy cũ `50.25/52.95` và v8 board `49.95/53.05` là kết quả lịch sử trước khi thay vision tower bằng bản final refined.

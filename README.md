@@ -260,8 +260,8 @@ The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN
 | Source checkpoint | `artifacts/models/checkpoints/epoch=56-val_score=52.28.ckpt` |
 | Paper baseline | VN3K T2I R@1 `52.28`; local FP32 sanity reproduction is `52.40` |
 | Final end-to-end board deploy | Board both-INT8 W8A8 on the full VN3K test set; T2I R@1 `50.35` (`-1.93` vs `52.28`) and I2T R@1 `54.20` |
-| Off-board both-INT8 proxy | Both-INT8 W8A8 QDQ; T2I R@1 `50.25`, I2T R@1 `52.95` |
-| Vision-only QDQ proxy | QAT v8 learned rotation, `50.85` T2I R@1, `52.90` I2T R@1 |
+| Off-board both-INT8 proxy | Final refined vision encoder + split-text W8A8 QDQ; T2I R@1 `50.63`, I2T R@1 `53.90` |
+| Vision-only QDQ proxy | Final refined learned-rotation vision encoder; T2I R@1 `50.98`, I2T R@1 `54.20` |
 | Vision-only board retrieval | QAT v9 W8A8 context binary on RB3, `50.35` T2I R@1, `54.55` I2T R@1 |
 | Text-only board retrieval | Split-text W8A8 context binary on RB3, `51.30` T2I R@1, `54.80` I2T R@1 |
 | Board-verified binary | Vision v9 + split-text W8A8 context binaries; direct board both-INT8 reaches `50.35` T2I R@1 |
@@ -289,7 +289,6 @@ Canonical references:
 
 - [Rotated W8A8 + QAT method](deployment/docs/w8a8_qat_rotated.md)
 - [Deploy master journal](deployment/docs/journal/[deploy-master].md)
-- [v8 / both-INT8 runbook](deployment/docs/runbook-w8a8-v8-both-int8.md)
 
 ### Deployment Gates
 
@@ -314,31 +313,13 @@ Canonical references:
 
 Text is 75% of parameters because the multilingual token embedding has `250000 x 768` entries. This is why text INT8 is required for the final 4 GB RB3 deployment path.
 
-> **All deployment commands live in one place.** The final reproducible deployment pipeline —
-> LoRA merge → learned rotation → vision QAT v9 / split-text QAT v8 → opset-20 ONNX export → AI Hub W8A8
-> quantize/compile/link → on-board `qnn-net-run` → and direct **INT8×INT8 retrieval on
-> the board** (vision + text) — is documented end-to-end in the runbook:
+> **Deployment commands and raw run records** are kept in the deploy master journal.
+> The README reports only the current deploy state: LoRA merge → learned rotation
+> → QAT distillation → opset-20 ONNX export → AI Hub W8A8 quantize/compile/link
+> → on-board `qnn-net-run` → direct **INT8×INT8 retrieval on the board**.
 >
-> ➡️ **[deployment/docs/runbook-w8a8-v8-both-int8.md](deployment/docs/runbook-w8a8-v8-both-int8.md)**
->
-> For the mathematics and method behind it (no commands), see
+> For the mathematics and method behind the deployment path, see
 > **[deployment/docs/w8a8_qat_rotated.md](deployment/docs/w8a8_qat_rotated.md)**.
-
-<details>
-<summary><strong>QAT iteration history</strong></summary>
-
-| Candidate | Result | Decision |
-|---|---:|---|
-| Rotation-only W8A8 | QDQ `0.8975 / 0.8747`, T2I R@1 `45.42`, I2T R@1 `49.40` | Links/runs, below `50` target (FAIL) |
-| QAT v3 | QDQ `0.9353 / 0.919`, T2I R@1 `48.20`, I2T R@1 `52.30` | First stable INT8, still below `50` target |
-| QAT v4 | QDQ `0.9364 / 0.9091`, T2I R@1 `48.50`, I2T R@1 `52.95`; board `0.9363 / 0.9068` | Legacy board-verified binary, below `50` target |
-| QAT v5 | QDQ `0.9437 / 0.9311`, T2I R@1 `49.25`, I2T R@1 `53.40` | Below `50` target |
-| QAT v6 | QDQ `0.9491 / 0.9266`, T2I R@1 `49.30`, I2T R@1 `53.85` | Random-rotation ceiling, below `50` target |
-| QAT v7 | QDQ `0.9485 / 0.9083`, T2I R@1 `48.38`, I2T R@1 `53.05` | Regressed vs v6 |
-| **QAT v8** | QDQ `0.9606 / 0.9447`, T2I R@1 `50.85`, I2T R@1 `52.90`; board T2I R@1 `50.20`, I2T R@1 `54.50` | Learned rotation — PASS (board-verified) |
-| **QAT v9** | tighter rotation/QAT follow-up; board T2I R@1 `50.35`, I2T R@1 `54.55`; both-INT8 board T2I R@1 `50.35` | **Final thesis deploy result** |
-
-</details>
 
 ## Project Map
 
@@ -380,7 +361,6 @@ figures/                           # README and paper figures
 | [docs/journal/](docs/journal/) | Dated training/model-optimization journals |
 | [deployment/docs/w8a8_qat_rotated.md](deployment/docs/w8a8_qat_rotated.md) | Canonical W8A8 rotation/QAT deployment method |
 | [deployment/docs/journal/[deploy-master].md](deployment/docs/journal/[deploy-master].md) | Consolidated deployment/model-compression journal |
-| [deployment/docs/runbook-w8a8-v8-both-int8.md](deployment/docs/runbook-w8a8-v8-both-int8.md) | Forward runbook for learned rotation, text, and both-INT8 |
 
 ## License
 Distributed under the Apache License, Version 2.0. See `LICENSE.txt` for more information.

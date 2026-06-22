@@ -1,131 +1,86 @@
-# Plan: Chapter 3 Part II — Edge Deployment Method (final vision + text)
+# Plan: Rewrite Chapter 6 — Conclusions and Future Work
 
 ## Context
 
-Chapter 2 (literature review) now carries the foundational deployment theory. The next step is
-**Chapter 3, Part II "Edge Deployment Method"** in `Chapter/3_Methodology.tex`. A Part II already
-exists (lines ~336–582) but does **not** present the final method:
+`Chapter/6_Conclusions.tex` still reflects an earlier state of the thesis and conflicts with the now-finished
+work and the updated intro/abstract:
+- It calls deployment an "evaluation scaffold" with results "left as Chapter~5 placeholders" — but deployment
+  is **done** (board both-INT8 T2I R@1 `50.35`, passes the `≥50` gate).
+- Its largest Future-Work subsection is **Noise-Robust Circle Loss** (Ideas D/A/C with FNM/RDE/GMM formulas) —
+  the user wants this detail removed (noise handling is now Part-1 paper material, not a thesis thrust).
+- It frames every result as a **delta over TBPS-mSigLIP** ("+2.58%", "+12.57%", "+1.09%", etc.). The user
+  considers mSigLIP-CLoRA a standalone method; repeatedly anchoring to TBPS-mSigLIP reads as derivative.
 
-- it shows only **random** rotation (the √(2 ln d) bound), not the **learned** rotation that is the
-  actual final vision method;
-- it carries **staging / version / ongoing-work language** ("primary diagnostic branch",
-  "text-encoder … remains ongoing work", "Early experiments … Later QAT variants …");
-- it has **no text-encoder method** (finite mask, link-safe float32 mask, split-encoder).
+Goal: rewrite the chapter so it (1) reports deployment as a completed contribution, (2) drops the Noise-Robust
+Circle Loss detail, (3) presents results as standalone absolute numbers without TBPS-mSigLIP comparisons, and
+(4) adds a future-work direction about building a **complete system to bring the model into a real-world
+application product**.
 
-Goal: rewrite Part II so it reads as one clean final method — develop it on the **vision encoder
-first**, then show the **text encoder adapting and refining** it — with no version labels, no
-results/numbers, no job IDs, no code, and ~6 figure placeholders.
+## User constraints (verbatim intent)
+- Remove the Noise-Robust Circle Loss detail.
+- Add: future work will build a complete system to deploy the model into a real-world application product.
+- Do **not** compare against TBPS-mSigLIP — present the method as its own, with absolute numbers.
 
-Confirmed decisions: **restructure vision + add text**; **reference Ch2 for general theory and keep
-Ch3 on the concrete construction**; **rich (~6) figure placeholders**.
+## Numbers to use (already verified; no TBPS-mSigLIP deltas)
+- Training (absolute R@1): VN3K best-seed `52.28`, multi-seed `51.52 ± 0.68`; PRW-TPS-CN `59.35`;
+  10% CUHK-PEDES `57.10`; English CUHK-PEDES `71.85`.
+- LoRA: 376M → 5.9M trainable (98.4%), batch 8→24; matched-batch full-FT control `49.18` vs LoRA `49.90`
+  (internal control — fine to keep, not a TBPS-mSigLIP comparison).
+- Circle instability (internal ablation, keep): `α5=0.2 → 49.83` below LoRA-only `49.90`.
+- Deployment: board both-INT8 T2I R@1 `50.35` (I2T `54.20`), `≥50` gate met, FP32 sanity `52.40`,
+  drop `-1.93` vs paper; learned mean-preserving rotation + W8A8 QAT + host/accelerator split text encoder;
+  vision `32.54 ms/image`, split-text `7.87 ms/query`; on-disk model ≈`370 MB`.
 
-Hard constraints (from the user):
-- Prose only — no code, no `artifacts/...` paths, no job IDs, no AI-Hub specifics.
-- Present the single final method; **never** write "this is v8/v9", no version comparison.
-- No results / metrics / latency / footprint (those live in Chapter 5).
-- Narrative: vision method developed first → text adapts and is refined further.
+## Edits in `Chapter/6_Conclusions.tex`
 
-## Source of truth
+### Summary
+- Para 1: reframe deployment from "methodology and evaluation scaffold" → a **delivered** all-INT8 on-device
+  system; present training (mSigLIP-CLoRA) and deployment as the two primary contributions.
+- Para 2 (Circle instability): keep the instability characterization (real Ch3/Ch4 result) but delete the
+  clause "motivates the noise-aware future-work directions discussed below".
+- Key-findings bullet 3 (SOTA): drop all "over the TBPS-mSigLIP reference" deltas; restate as **absolute**
+  accuracies (VN3K `52.28`, multi-seed `51.52±0.68`, PRW `59.35`, 10% CUHK `57.10`, English `71.85`),
+  keeping the qualitative claim that the benefit is largest in low-resource settings.
+- Key-findings bullet 4 (deployment): rewrite to the finished result — both encoders all-INT8 on RB3/HTP v68,
+  T2I R@1 `50.35` above the `≥50` gate, enabled by learned rotation + split-text; reference Chapter~5.
 
-All method content comes from `deployment/docs/w8a8_qat_rotated.md` (already fully read). Use only
-the rows classified as **method** in the Part A table of the prior planning round (LoRA merge,
-fused export, mean-preserving construction, learned rotation objective + Cayley, QAT distillation,
-quantize/link, text deltas: finite mask, link-safe float32 mask, split-encoder).
+### Limitations
+- Remove the **"No explicit noise handling in Circle Loss"** bullet (its only role was to set up the removed
+  noise future-work; noise is now paper material).
+- Replace the **"Deployment pipeline not yet finalized"** bullet (now false) with a *real* remaining limitation,
+  e.g. deployment validated on VN3K only / single board / vision latency dominates the per-query cost.
+- Keep the other limitations (aspect ratio, LoRA plasticity, batch size).
 
-## New Part II skeleton (in `Chapter/3_Methodology.tex`)
+### Future Work
+- **Delete** `\subsection{Noise-Robust Circle Loss}` entirely (Ideas D/A/C + formulas + the workspace.ipynb
+  validation paragraph).
+- **Rewrite** `\subsection{Completing the Edge Deployment Pipeline}` → `\subsection{A Complete On-Device
+  Application System}`: since the pipeline is done, the next step is a full product — live video pipeline
+  (decode → detect → crop → mSigLIP-CLoRA encode → retrieval) on-device, a gallery indexing/search service,
+  a user-facing query interface, and field validation for real surveillance/forensic use. Fold the existing
+  GStreamer-integration idea into this.
+- Keep **Richer Training Dynamics**, **Advanced PEFT**, **Extending to Video-Based Retrieval** (no TBPS-mSigLIP,
+  no noise detail). Light touch only.
+- Update the intro sentence "five strategic directions" to the new count (4).
 
-Keep `\section{Part II: Edge Deployment Method}`. Reorganize its subsections into:
+### Closing Remarks
+- Rewrite to state both contributions delivered: SOTA Vietnamese accuracy (`52.28`) + the all-INT8 on-device
+  system (`50.35`, gate met) — drop "leaving deployment with a concrete evaluation template".
+- Delete the "noise-aware extensions ... expected to lift accuracy" sentence; replace the closing forward-look
+  with the product-system direction (research → deployed product loop closed).
 
-**Framing**
-1. *Deployment Objective and Hardware Contract* — reframe the existing scope subsection: the final
-   method deploys **both** encoders as all-INT8 W8A8 on RB3/HTP v68. Remove all staging/diagnostic/
-   ongoing-work wording. State the integer-only contract briefly and refer to Ch2
-   (`\ref{sec:npu_int_exec}`, `\ref{sec:edge_deployment_lit}`) instead of re-deriving it.
-2. *Deployment Pipeline Overview* — representation-preserving transforms (LoRA merge → fused export
-   → mean-preserving learned rotation) + one weight-adapting step (QAT distillation) → W8A8
-   quantize/compile/link. **FIG 1: pipeline block diagram.** Drop the `artifacts/` sentence.
-
-**Vision Encoder Deployment (developed first)**
-3. *LoRA Merge* — keep `W_merged = W_0 + (α/r)BA`; this is the FP32 reference model.
-4. *Hardware-Friendly Fused Export* — keep fused GELU/LayerNorm rationale but shorten and refer to
-   Ch2's opset/fusion subsection; keep the static FP32-fidelity gate sentence.
-5. *Mean-Preserving Rotation* — keep the construction `Q = U·blockdiag(1,R_c)·Uᵀ`, `Q1=1`,
-   `LN(Qx)=Q·LN(x)`, and the fold equations (affine fold; writer `QW`; reader `WQᵀ`). Refer to Ch2
-   for incoherence μ and the `s²/12` error rather than repeating the derivation.
-   **FIG 2: writer/reader rotation-folding schematic.**
-6. *Learned Rotation* (**new — the core upgrade**): present `R_c` as learned. Objective
-   `min_Q Σ_sites E_calib[(max|aQᵀ|)²]` s.t. `QQᵀ=I, Q1=1`; explain it targets the quantity that
-   sets the per-tensor scale, and why **max-abs² not quant-MSE** (STE detaches the rounding
-   gradient — refer to Ch2 `\ref{sec:qat}`). Cayley parametrization
-   `Q = U·blockdiag(1,Cayley(S))·Uᵀ`, `Cayley(S)=(I−S)(I+S)⁻¹`, `S` skew-symmetric → orthogonal and
-   mean-preserving at every step. Offline calibration-only procedure (collect activations at
-   rotation sites, optimize, fold). No budgets/step counts/numbers. Cite `spinquant`, `quarot`,
-   `quip`, `slicegpt`. **FIG 3: learned-rotation calibration loop.**
-7. *W8A8 QAT with Teacher–Student Distillation* — keep teacher (frozen rotated FP32) / student
-   (rotated + fake-quant); keep the distillation loss (cosine+MSE fake path + clean-consistency
-   path) and its weights as method config. **De-version**: present the final fake-quant coverage
-   (residual + GELU + pooling head + all linear outputs + attention matmuls) as the method, deleting
-   "early/later variants". Reword the "In code, the forward pass…" sentence to remove the code
-   reference; refer to Ch2 for STE/EMA generalities. **FIG 4: QAT teacher–student + fake-quant
-   coverage on an encoder block.**
-8. *W8A8 Quantization and QNN Compilation* — rotated+QAT model → static W8A8 quantize → compile +
-   link to a context binary with quantized I/O; one sentence on why it links on v68 (no float I/O,
-   no internal float, no A16, no decomposed GELU). No job IDs / artifact paths.
-
-**Text Encoder Adaptation (adapt + refine)** — new transition + subsections
-9. *Transferring the Recipe to the Text Encoder* — the same four transforms carry over; only the
-   residual writer/reader boundary changes (writers: token + position embedding rows, `out_proj`,
-   `fc2`; readers: q/k/v, `fc1`, head after `final_layer_norm`).
-10. *Finite Attention Mask for Quantized Softmax* — the `-FLT_MAX` padding sentinel breaks per-tensor
-    quantization of `scores+mask`; replace it with a finite negative constant (e.g. −32) that keeps
-    `exp(−c)≈0`, preserving softmax semantics while bounding the quantized range. Refer to Ch2
-    `\ref{sec:transformer_quant_hazards}`. **FIG 5: mask handling (sentinel → finite + link-safe).**
-11. *Link-Safe Mask Representation* — export `attention_mask` as float32 0/1 and rewrite the additive
-    mask algebraically as `(1−mask)·(−c)` to avoid an internal float-cast island that HTP v68
-    rejects. Exact equivalence for binary masks.
-12. *Host/Accelerator Split Encoder* (the refinement that makes text deployable) — the large
-    runtime-indexed token-embedding gather is a memory read HTP v68 does not honor inside the
-    context binary; split the graph at the embedding boundary so the host CPU performs the lookup
-    (in the rotated space, since Q is folded into the embedding table) and feeds `inputs_embeds` to
-    the on-NPU transformer, which keeps all 12 layers of compute. Shared DRAM → no extra memory.
-    **FIG 6: split-encoder topology.**
-
-**Validation (method-level, no numbers)**
-13. *Deployment Validation Protocol* — construction-time gates only: FP32 invariance after each
-    representation-preserving transform; static FP32↔ONNX fidelity; QDQ proxy before board; board
-    fidelity after link; three isolation views (vision-only, text-only, end-to-end) for diagnosis;
-    Rank-1 retrieval is the decisive acceptance metric. Defer all numbers, latency, and footprint to
-    Chapter 5.
-
-## Figures (6 placeholders, existing project style + `% PLACEHOLDER`)
-
-`deploy_pipeline.png`, `rotation_fold.png`, `learned_rotation.png`, `qat_teacher_student.png`,
-`text_mask_linksafe.png`, `text_split_encoder.png` — generated as gray placeholder PNGs (via the
-project venv PIL) so the thesis compiles; user overwrites with real diagrams later. Captions
-descriptive; `\label{fig:...}`; widths matching existing figures (0.8–1.0\linewidth).
-
-## Supporting files
-
-- `reference.bib`: **no new entries needed** — all method citations (`slicegpt quarot quip spinquant
-  jacob2018 ste hinton2015distilling`) already exist. Verify before assuming.
-- `glossary.tex`: acronyms already present from the Ch2 pass (W8A8, QAT, STE, QDQ, FFN, NPU, HTP…).
-- Match existing Ch3 style: `\subsection/\subsubsection`, `\noindent`, `equation` env,
-  `\operatorname{}`, `booktabs` tables, inline-defined acronyms (no `\gls`).
-
-## Execution order
-
-1. Re-verify the method citation keys exist in `reference.bib`.
-2. Edit `Chapter/3_Methodology.tex` Part II: reframe subsections 1–2; light-edit 3–4; revise rotation
-   (5) and insert learned-rotation (6); de-version QAT (7) and revise compilation (8); insert the
-   Text Encoder Adaptation block (9–12); rewrite validation (13). Insert 6 figure placeholders.
-3. Generate the 6 placeholder PNGs under `Figure/`.
-4. Compile `main.tex` (latexmk + bibtex); fix any undefined `\cite`/`\ref`.
+## Style / constraints
+- English; match existing `\section/\subsection/itemize` structure. No code, no job IDs / artifact paths,
+  no version codenames (v8/v9). Keep cross-refs to Chapter~3/4/5.
+- No new bib/glossary entries (removed-glossary keys FNM/RDE/GMM may lose their only conclusion usage — verify
+  they still appear elsewhere or accept they drop from the abbreviation list; do NOT re-add unused entries).
 
 ## Verification
-
-- `latexmk -pdf -interaction=nonstopmode main.tex` exits 0; `main.log` has no undefined
-  citation/reference and no missing-figure errors.
-- Leak scan over `Chapter/3_Methodology.tex`: no `v8|v9|R@1|50.\d|job |ms/image|FPS|artifacts/`,
-  no "ongoing"/"diagnostic branch"/"Early experiments"/"Later … variants".
-- Proofread: Part II reads vision-first then text-adapt; the final method is stated without versions;
-  no results; Ch2 cross-references resolve.
+1. `latexmk -pdf -interaction=nonstopmode -file-line-error main.tex` exits 0; no undefined `\ref`/`\cite`,
+   no missing files.
+2. Grep `Chapter/6_Conclusions.tex`: no `TBPS-mSigLIP`, no "Noise-Robust"/"FNM"/"GMM"/`P(\text{FN}`, no
+   "placeholder"/"not yet finalized"/"evaluation scaffold", no `v8|v9|job|artifacts/`.
+3. Re-check glossary: confirm FNM/RDE/GMM usage counts after the edit; if any drop to 0 in the whole thesis,
+   note it (may warrant pruning later) but do not silently break the abbreviation list.
+4. Proofread: deployment presented as done; results stated as absolute standalone numbers; future work centers
+   on the complete application system; no dangling references to the removed noise subsection.
