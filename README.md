@@ -269,7 +269,7 @@ The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN
 | Context size | about `90 MB` for vision encoder |
 | Text encoder | Split-encoder deploy path: RB3 CPU embedding lookup + HTP transformer/head |
 
-*NOTE: ckpt can be download at: https://drive.google.com/file/d/1Mo8OnjVhrIGhMp8Og5x99GSwBCzPQ7Bn/view?usp=sharing*
+*NOTE: ckpt(VN3K) can be download at: https://drive.google.com/file/d/1Mo8OnjVhrIGhMp8Og5x99GSwBCzPQ7Bn/view?usp=sharing* 
 
 Final end-to-end deploy retrieval, measured directly on RB3 with board vision embeddings and board split-text embeddings:
 
