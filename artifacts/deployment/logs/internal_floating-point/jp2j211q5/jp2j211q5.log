@@ -1,0 +1,39 @@
+[2026-06-15T07:29:15.967+00:00] [INFO] Downloading model ID mq39xkokq
+[2026-06-15T07:29:17.285+00:00] [INFO] Running /qairt_sdk/default/2.46.0/bin/x86_64-linux-clang/qairt-dlc-info --input_dlc /tmp/tmp8giiivdw/job_jpxmwq8lg_optimized_dlc_mq39xkokq.dlc --save /tmp/tmpwllpg8sk.csv
+[2026-06-15T07:29:18.590+00:00] [INFO] Running /qairt_sdk/default/2.46.0/bin/x86_64-linux-clang/qairt-dlc-info --input_dlc /tmp/tmp8giiivdw/job_jpxmwq8lg_optimized_dlc_mq39xkokq.dlc --save /tmp/tmpphyc1y_i.csv
+[2026-06-15T07:29:19.759+00:00] [INFO] [link-post-download] Memory: 775.5MiB / 40.0GiB (2%) | working_set: 663.2MiB | peak: 811.5MiB
+[2026-06-15T07:29:19.784+00:00] [INFO] -=- Generating .json file from .dlc model (qairt-dlc-to-json) -=-
+[2026-06-15T07:29:19.784+00:00] [INFO] Running /qairt_sdk/default/2.45.0/bin/x86_64-linux-clang/qairt-dlc-to-json -i /tmp/tmp8giiivdw/job_jpxmwq8lg_optimized_dlc_mq39xkokq.dlc -o /tmp/tmpl6cl9uvp.json
+[2026-06-15T07:29:20.418+00:00] [INFO] Model Json saved at: /tmp/tmpl6cl9uvp.json
+[2026-06-15T07:29:23.836+00:00] [INFO] -=- QNN DLC models to QNN Context Binary (qnn-context-binary-generator) -=-
+[2026-06-15T07:29:23.836+00:00] [INFO] Contents of HTP Settings: {'context': {'weight_sharing_enabled': False}, 'devices': [{'device_id': 0, 'dsp_arch': 'v68', 'soc_model': 93}], 'graphs': [{'fp16_relaxed_precision': 0, 'vtcm_mb': 0, 'O': 3.0, 'graph_names': ['graph_iko0rs5y']}]}
+[2026-06-15T07:29:23.837+00:00] [INFO] Contents of HTP Config file used: {'context_configs': {'enable_graphs': ['graph_iko0rs5y']}, 'graph_configs': [{'graph_name': 'graph_iko0rs5y'}], 'backend_extensions': {'shared_library_path': 'libQnnHtpNetRunExtensions.so', 'config_file_path': '/tmp/tmp741ukv8a/htp_setting.json'}}
+[2026-06-15T07:29:23.837+00:00] [INFO] -=- Generating .json file from .dlc model (qairt-dlc-to-json) -=-
+[2026-06-15T07:29:23.837+00:00] [INFO] Running /qairt_sdk/default/2.45.0/bin/x86_64-linux-clang/qairt-dlc-to-json -i /tmp/tmp8giiivdw/job_jpxmwq8lg_optimized_dlc_mq39xkokq.dlc -o /tmp/tmp824jpefm.json
+[2026-06-15T07:29:24.314+00:00] [INFO] Model Json saved at: /tmp/tmp824jpefm.json
+[2026-06-15T07:29:24.657+00:00] [INFO] Running /qairt_sdk/default/2.45.0/bin/x86_64-linux-clang/qnn-context-binary-generator --backend /qairt_sdk/default/2.45.0/lib/x86_64-linux-clang/libQnnHtp.so --dlc_path /tmp/tmp8giiivdw/job_jpxmwq8lg_optimized_dlc_mq39xkokq.dlc --output_dir /tmp/tmp741ukv8a --binary_file qnn_model --config_file /tmp/tmp741ukv8a/htp_context.json --profiling_level detailed --profiling_option optrace
+[2026-06-15T07:29:24.659+00:00] [INFO] qnn-context-binary-generator pid:29
+[2026-06-15T07:29:24.830+00:00] [INFO]  <W> Initializing HtpProvider
+[2026-06-15T07:29:24.830+00:00] [INFO] Starting stage: Graph Preparation Initializing
+[2026-06-15T07:29:24.831+00:00] [INFO] Completed stage: Graph Preparation Initializing (232 us)
+[2026-06-15T07:29:24.831+00:00] [INFO] Starting stage: Graph Optimizations
+[2026-06-15T07:29:26.630+00:00] [INFO] Completed stage: Graph Optimizations (1799204 us)
+[2026-06-15T07:29:26.630+00:00] [INFO] Starting stage: Post Graph Optimization
+[2026-06-15T07:29:26.650+00:00] [INFO] Completed stage: Post Graph Optimization (20497 us)
+[2026-06-15T07:29:26.823+00:00] [INFO] Starting stage: Graph Sequencing for Target
+[2026-06-15T07:29:30.058+00:00] [INFO] Completed stage: Graph Sequencing for Target (3234230 us)
+[2026-06-15T07:29:30.058+00:00] [INFO] Starting stage: VTCM Allocation
+[2026-06-15T07:29:30.190+00:00] [INFO] Completed stage: VTCM Allocation (131962 us)
+[2026-06-15T07:29:30.190+00:00] [INFO] Starting stage: Parallelization Optimization
+[2026-06-15T07:29:30.204+00:00] [INFO] Completed stage: Parallelization Optimization (14972 us)
+[2026-06-15T07:29:30.209+00:00] [INFO] Starting stage: Finalizing Graph Sequence
+[2026-06-15T07:29:30.213+00:00] [INFO] ====== DDR bandwidth summary ======
+[2026-06-15T07:29:30.213+00:00] [INFO] spill_bytes=811008
+[2026-06-15T07:29:30.213+00:00] [INFO] fill_bytes=811008
+[2026-06-15T07:29:30.213+00:00] [INFO] write_total_bytes=1253376
+[2026-06-15T07:29:30.213+00:00] [INFO] read_total_bytes=95488000
+[2026-06-15T07:29:30.273+00:00] [INFO] Completed stage: Finalizing Graph Sequence (63375 us)
+[2026-06-15T07:29:30.273+00:00] [INFO] Starting stage: Completion
+[2026-06-15T07:29:30.273+00:00] [INFO] Completed stage: Completion (807 us)
+[2026-06-15T07:29:30.578+00:00] [INFO] -=- Linking completed -=-
+[2026-06-15T07:29:30.578+00:00] [INFO] [link-post-link] Memory: 888.6MiB / 40.0GiB (2%) | working_set: 671.4MiB | peak: 1.4GiB

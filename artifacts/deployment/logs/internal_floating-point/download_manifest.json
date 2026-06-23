@@ -1,0 +1,413 @@
+[
+  {
+    "job_id": "jgj1wxo1g",
+    "journal_section": "2026-06-08 - Compile/Link encoder_blocks_4_11_float diagnostic",
+    "kind": "link fail",
+    "why_relevant": "QDQ local pass but HTP link rejects internal FP tensor `add_1003`.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jgj1wxo1g/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Tensor 'add_1003' has a floating-point type which is not supported by the targeted device.\nPlease quantize the model including its I/O and try again.\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "jgj1wxo1g/jgj1wxo1g.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-06T17:17:42.459+00:00] [INFO] Tensor 'add_1003' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jgj178xvg",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "W8A16/qint16 local fidelity pass; link rejects floating GELU dequant output.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jgj178xvg/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device.\nPlease quantize the model including its I/O and try again.\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "jgj178xvg/jgj178xvg.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T01:46:55.842+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "j576417rg",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "Signed W8A16 variant with same floating/internal-float link failure family.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/j576417rg/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device.\nPlease quantize the model including its I/O and try again.\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "j576417rg/j576417rg.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T02:27:58.262+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jgzwm63xg",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "W8A16 + quantize_full_type int16; context conversion fails on unsupported mixed/internal pattern.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jgzwm63xg/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Conversion to context binary failed with exit code 14\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "jgzwm63xg/jgzwm63xg.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 18,
+        "text": "[2026-06-09T04:06:04.551+00:00] [INFO] [ ERROR ]  <E> [4294967295] has incorrect Value 68, expected >= 73."
+      },
+      {
+        "line": 20,
+        "text": "[2026-06-09T04:06:04.551+00:00] [INFO] [ ERROR ]  <E> QnnBackend_validateOpConfig failed 3110"
+      },
+      {
+        "line": 22,
+        "text": "[2026-06-09T04:06:04.551+00:00] [INFO] [ ERROR ]  <E> Failed to validate op node_MatMul_918 with error 0xc26"
+      },
+      {
+        "line": 26,
+        "text": "[2026-06-09T04:06:04.552+00:00] [INFO] [ ERROR ] Failed to successfully compose graph"
+      },
+      {
+        "line": 38,
+        "text": "[2026-06-09T04:06:04.561+00:00] [WARNING] Conversion to context binary failed with exit code 14"
+      }
+    ]
+  },
+  {
+    "job_id": "jpv4d8rzp",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "HTP FP16/internal activation attempt still leaves floating GELU output.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jpv4d8rzp/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device.\nPlease quantize the model including its I/O and try again.\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "jpv4d8rzp/jpv4d8rzp.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T04:22:59.699+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jp389l6z5",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "GELU qint8 variant remains in same internal-float link-fail family.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jp389l6z5/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device.\nPlease quantize the model including its I/O and try again.\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "jp389l6z5/jp389l6z5.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T02:47:57.262+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "j5wx7kmzp",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "GELU quint8 variant remains in same internal-float link-fail family.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/j5wx7kmzp/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device.\nPlease quantize the model including its I/O and try again.\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "j5wx7kmzp/j5wx7kmzp.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T04:58:53.995+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jgl7xd1l5",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "MatMul activation qint8 variant remains in same internal-float link-fail family.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jgl7xd1l5/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device.\nPlease quantize the model including its I/O and try again.\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "jgl7xd1l5/jgl7xd1l5.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T05:13:59.627+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jpr90k37p",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "GELU float-for-requant + int16 exits during context conversion.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jpr90k37p/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Conversion to context binary failed with exit code 14\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "jpr90k37p/jpr90k37p.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 18,
+        "text": "[2026-06-09T07:24:54.810+00:00] [INFO] [ ERROR ]  <E> [4294967295] has incorrect Value 68, expected >= 73."
+      },
+      {
+        "line": 20,
+        "text": "[2026-06-09T07:24:54.810+00:00] [INFO] [ ERROR ]  <E> QnnBackend_validateOpConfig failed 3110"
+      },
+      {
+        "line": 22,
+        "text": "[2026-06-09T07:24:54.810+00:00] [INFO] [ ERROR ]  <E> Failed to validate op node_MatMul_918 with error 0xc26"
+      },
+      {
+        "line": 26,
+        "text": "[2026-06-09T07:24:54.810+00:00] [INFO] [ ERROR ] Failed to successfully compose graph"
+      },
+      {
+        "line": 38,
+        "text": "[2026-06-09T07:24:54.821+00:00] [WARNING] Conversion to context binary failed with exit code 14"
+      }
+    ]
+  },
+  {
+    "job_id": "jp0kjyd25",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "blocks_0_11 int16 variant link rejects remaining floating tensor `add_103_updated`.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jp0kjyd25/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Tensor 'add_103_updated' has a floating-point type which is not supported by the targeted device.\nPlease quantize the model including its I/O and try again.\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "jp0kjyd25/jp0kjyd25.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T08:12:59.218+00:00] [INFO] Tensor 'add_103_updated' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "j576q80rg",
+    "journal_section": "2026-06-14 - W8A16 Link Fail Trên HTP v68",
+    "kind": "link fail",
+    "why_relevant": "Native W8A16 QAT path has high fidelity but HTP v68 link fails, proving fidelity alone is not deployability.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/j576q80rg/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Conversion to context binary failed with exit code 14\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "j576q80rg/j576q80rg.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 18,
+        "text": "[2026-06-14T13:02:59.666+00:00] [INFO] [ ERROR ]  <E> [4294967295] has incorrect Value 68, expected >= 73."
+      },
+      {
+        "line": 20,
+        "text": "[2026-06-14T13:02:59.666+00:00] [INFO] [ ERROR ]  <E> QnnBackend_validateOpConfig failed 3110"
+      },
+      {
+        "line": 22,
+        "text": "[2026-06-14T13:02:59.666+00:00] [INFO] [ ERROR ]  <E> Failed to validate op node_MatMul_774 with error 0xc26"
+      },
+      {
+        "line": 26,
+        "text": "[2026-06-14T13:02:59.667+00:00] [INFO] [ ERROR ] Failed to successfully compose graph"
+      },
+      {
+        "line": 38,
+        "text": "[2026-06-14T13:02:59.679+00:00] [WARNING] Conversion to context binary failed with exit code 14"
+      }
+    ]
+  },
+  {
+    "job_id": "jpxmw8kjg",
+    "journal_section": "2026-06-14 - mixed-int attention int8 + rest int16",
+    "kind": "link fail",
+    "why_relevant": "Mixed A16 path fails around LayerNorm, supporting the no-floating/no-wider-activation deployment constraint.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jpxmw8kjg/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Conversion to context binary failed with exit code 14\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "jpxmw8kjg/jpxmw8kjg.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 18,
+        "text": "[2026-06-15T00:41:19.464+00:00] [INFO] [ ERROR ]  <E> [4294967295] has incorrect Value 68, expected >= 73."
+      },
+      {
+        "line": 20,
+        "text": "[2026-06-15T00:41:19.464+00:00] [INFO] [ ERROR ]  <E> QnnBackend_validateOpConfig failed 3110"
+      },
+      {
+        "line": 22,
+        "text": "[2026-06-15T00:41:19.464+00:00] [INFO] [ ERROR ]  <E> Failed to validate op node_layer_norm with error 0xc26"
+      },
+      {
+        "line": 26,
+        "text": "[2026-06-15T00:41:19.464+00:00] [INFO] [ ERROR ] Failed to successfully compose graph"
+      },
+      {
+        "line": 38,
+        "text": "[2026-06-15T00:41:19.476+00:00] [WARNING] Conversion to context binary failed with exit code 14"
+      }
+    ]
+  },
+  {
+    "job_id": "j56re0vy5",
+    "journal_section": "2026-06-19 - Text f32-mask link fail",
+    "kind": "link fail",
+    "why_relevant": "Text full-graph f32 finite-mask path rejects internal `/text_model/Cast_output_0_updated` floating tensor.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/j56re0vy5/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Tensor '/text_model/Cast_output_0_updated' has a floating-point type which is not supported by the targeted device.\nPlease quantize the model including its I/O and try again.\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "j56re0vy5/j56re0vy5.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-19T08:19:27.679+00:00] [INFO] Tensor '/text_model/Cast_output_0_updated' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jglo3qz8g",
+    "journal_section": "2026-06-20 - B2 split-text link FAIL `/Cast_output_0_updated`",
+    "kind": "link fail",
+    "why_relevant": "Split-text graph still contains mask Cast float island; HTP rejects it.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jglo3qz8g/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Tensor '/Cast_output_0_updated' has a floating-point type which is not supported by the targeted device.\nPlease quantize the model including its I/O and try again.\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "jglo3qz8g/jglo3qz8g.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-20T11:49:38.830+00:00] [INFO] Tensor '/Cast_output_0_updated' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "j56rn6ry5",
+    "journal_section": "2026-06-20 - split-text re-submit after Cast fix",
+    "kind": "link fail",
+    "why_relevant": "Cast island removed, but HTP rejects materialized floating `/Expand_coef` mask island.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/j56rn6ry5/",
+    "status": "JobStatus\n---------\ncode    : FAILED\nmessage : Tensor '/Expand_coef' has a floating-point type which is not supported by the targeted device.\nPlease quantize the model including its I/O and try again.\n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "j56rn6ry5/j56rn6ry5.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-20T12:21:50.022+00:00] [INFO] Tensor '/Expand_coef' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jp2j211q5",
+    "journal_section": "2026-06-14 - W8A8 M3 link success",
+    "kind": "link success control",
+    "why_relevant": "All-W8A8 link success after avoiding internal floating islands; useful as positive control.",
+    "api_object": "LinkJob",
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jp2j211q5/",
+    "status": "JobStatus\n---------\ncode    : SUCCESS\nmessage : \n",
+    "available_artifacts": [
+      "JobArtifactType.HUB_LOG"
+    ],
+    "ok": true,
+    "downloaded_logs": [
+      "jp2j211q5/jp2j211q5.log"
+    ],
+    "evidence_lines": []
+  }
+]

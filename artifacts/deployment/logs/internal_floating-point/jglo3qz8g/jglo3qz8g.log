@@ -1,0 +1,9 @@
+[2026-06-20T11:49:32.356+00:00] [INFO] Downloading model ID mn1ore6pq
+[2026-06-20T11:49:33.612+00:00] [INFO] Running /qairt_sdk/default/2.46.0/bin/x86_64-linux-clang/qairt-dlc-info --input_dlc /tmp/tmpmqirckmh/job_j56rn0mv5_optimized_dlc_mn1ore6pq.dlc --save /tmp/tmp508o7jx3.csv
+[2026-06-20T11:49:34.696+00:00] [INFO] Running /qairt_sdk/default/2.46.0/bin/x86_64-linux-clang/qairt-dlc-info --input_dlc /tmp/tmpmqirckmh/job_j56rn0mv5_optimized_dlc_mn1ore6pq.dlc --save /tmp/tmpyxf9u4hz.csv
+[2026-06-20T11:49:35.659+00:00] [INFO] [link-post-download] Memory: 767.4MiB / 40.0GiB (2%) | working_set: 654.9MiB | peak: 802.3MiB
+[2026-06-20T11:49:35.681+00:00] [INFO] -=- Generating .json file from .dlc model (qairt-dlc-to-json) -=-
+[2026-06-20T11:49:35.681+00:00] [INFO] Running /qairt_sdk/default/2.45.0/bin/x86_64-linux-clang/qairt-dlc-to-json -i /tmp/tmpmqirckmh/job_j56rn0mv5_optimized_dlc_mn1ore6pq.dlc -o /tmp/tmp_j1_pcvg.json
+[2026-06-20T11:49:36.309+00:00] [INFO] Model Json saved at: /tmp/tmp_j1_pcvg.json
+[2026-06-20T11:49:38.830+00:00] [INFO] Tensor '/Cast_output_0_updated' has a floating-point type which is not supported by the targeted device.
+| Please quantize the model including its I/O and try again.

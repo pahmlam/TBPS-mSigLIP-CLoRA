@@ -1,0 +1,9 @@
+[2026-06-09T02:27:52.883+00:00] [INFO] Downloading model ID mqe5kvw4q
+[2026-06-09T02:27:54.218+00:00] [INFO] Running /qairt_sdk/default/2.46.0/bin/x86_64-linux-clang/qairt-dlc-info --input_dlc /tmp/tmp5jvo2y_b/job_j5wx708jp_optimized_dlc_mqe5kvw4q.dlc --save /tmp/tmpz8mbl97i.csv
+[2026-06-09T02:27:55.402+00:00] [INFO] Running /qairt_sdk/default/2.46.0/bin/x86_64-linux-clang/qairt-dlc-info --input_dlc /tmp/tmp5jvo2y_b/job_j5wx708jp_optimized_dlc_mqe5kvw4q.dlc --save /tmp/tmpnr4ee440.csv
+[2026-06-09T02:27:56.439+00:00] [INFO] [link-post-download] Memory: 776.7MiB / 40.0GiB (2%) | working_set: 664.1MiB | peak: 812.7MiB
+[2026-06-09T02:27:56.457+00:00] [INFO] -=- Generating .json file from .dlc model (qairt-dlc-to-json) -=-
+[2026-06-09T02:27:56.458+00:00] [INFO] Running /qairt_sdk/default/2.45.0/bin/x86_64-linux-clang/qairt-dlc-to-json -i /tmp/tmp5jvo2y_b/job_j5wx708jp_optimized_dlc_mqe5kvw4q.dlc -o /tmp/tmpt9jm0xxq.json
+[2026-06-09T02:27:56.873+00:00] [INFO] Model Json saved at: /tmp/tmpt9jm0xxq.json
+[2026-06-09T02:27:58.262+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device.
+| Please quantize the model including its I/O and try again.

@@ -1,0 +1,38 @@
+[2026-06-09T04:05:58.402+00:00] [INFO] Downloading model ID mmrkpvp6n
+[2026-06-09T04:05:59.872+00:00] [INFO] Running /qairt_sdk/default/2.46.0/bin/x86_64-linux-clang/qairt-dlc-info --input_dlc /tmp/tmpl8eqjdm0/job_jgkd41xnp_optimized_dlc_mmrkpvp6n.dlc --save /tmp/tmptfog2han.csv
+[2026-06-09T04:06:01.036+00:00] [INFO] Running /qairt_sdk/default/2.46.0/bin/x86_64-linux-clang/qairt-dlc-info --input_dlc /tmp/tmpl8eqjdm0/job_jgkd41xnp_optimized_dlc_mmrkpvp6n.dlc --save /tmp/tmpbgm173u7.csv
+[2026-06-09T04:06:02.107+00:00] [INFO] [link-post-download] Memory: 778.1MiB / 40.0GiB (2%) | working_set: 665.4MiB | peak: 813.6MiB
+[2026-06-09T04:06:02.227+00:00] [INFO] -=- Generating .json file from .dlc model (qairt-dlc-to-json) -=-
+[2026-06-09T04:06:02.227+00:00] [INFO] Running /qairt_sdk/default/2.45.0/bin/x86_64-linux-clang/qairt-dlc-to-json -i /tmp/tmpl8eqjdm0/job_jgkd41xnp_optimized_dlc_mmrkpvp6n.dlc -o /tmp/tmp_rlw_qu7.json
+[2026-06-09T04:06:02.650+00:00] [INFO] Model Json saved at: /tmp/tmp_rlw_qu7.json
+[2026-06-09T04:06:04.047+00:00] [INFO] -=- QNN DLC models to QNN Context Binary (qnn-context-binary-generator) -=-
+[2026-06-09T04:06:04.048+00:00] [INFO] Contents of HTP Settings: {'context': {'weight_sharing_enabled': False}, 'devices': [{'device_id': 0, 'dsp_arch': 'v68', 'soc_model': 93}], 'graphs': [{'fp16_relaxed_precision': 0, 'vtcm_mb': 0, 'O': 3.0, 'graph_names': ['graph_i1m54y9e']}]}
+[2026-06-09T04:06:04.048+00:00] [INFO] Contents of HTP Config file used: {'context_configs': {'enable_graphs': ['graph_i1m54y9e']}, 'graph_configs': [{'graph_name': 'graph_i1m54y9e'}], 'backend_extensions': {'shared_library_path': 'libQnnHtpNetRunExtensions.so', 'config_file_path': '/tmp/tmpgtkhzkxp/htp_setting.json'}}
+[2026-06-09T04:06:04.048+00:00] [INFO] -=- Generating .json file from .dlc model (qairt-dlc-to-json) -=-
+[2026-06-09T04:06:04.048+00:00] [INFO] Running /qairt_sdk/default/2.45.0/bin/x86_64-linux-clang/qairt-dlc-to-json -i /tmp/tmpl8eqjdm0/job_jgkd41xnp_optimized_dlc_mmrkpvp6n.dlc -o /tmp/tmp2g7sq3gd.json
+[2026-06-09T04:06:04.315+00:00] [INFO] Model Json saved at: /tmp/tmp2g7sq3gd.json
+[2026-06-09T04:06:04.477+00:00] [INFO] Running /qairt_sdk/default/2.45.0/bin/x86_64-linux-clang/qnn-context-binary-generator --backend /qairt_sdk/default/2.45.0/lib/x86_64-linux-clang/libQnnHtp.so --dlc_path /tmp/tmpl8eqjdm0/job_jgkd41xnp_optimized_dlc_mmrkpvp6n.dlc --output_dir /tmp/tmpgtkhzkxp --binary_file qnn_model --config_file /tmp/tmpgtkhzkxp/htp_context.json --profiling_level detailed --profiling_option optrace
+[2026-06-09T04:06:04.479+00:00] [INFO] qnn-context-binary-generator pid:29
+[2026-06-09T04:06:04.551+00:00] [INFO]  <W> Initializing HtpProvider
+[2026-06-09T04:06:04.551+00:00] [INFO]     71.4ms 
+[2026-06-09T04:06:04.551+00:00] [INFO] [ ERROR ]  <E> [4294967295] has incorrect Value 68, expected >= 73.
+[2026-06-09T04:06:04.551+00:00] [INFO]     71.4ms 
+[2026-06-09T04:06:04.551+00:00] [INFO] [ ERROR ]  <E> QnnBackend_validateOpConfig failed 3110
+[2026-06-09T04:06:04.551+00:00] [INFO]     71.4ms 
+[2026-06-09T04:06:04.551+00:00] [INFO] [ ERROR ]  <E> Failed to validate op node_MatMul_918 with error 0xc26
+[2026-06-09T04:06:04.552+00:00] [INFO]     54.7ms 
+[2026-06-09T04:06:04.552+00:00] [INFO] [ ERROR ] Exception encountered: Validate OpConfig failed: QNN_OP_PACKAGE_ERROR_VALIDATION_FAILURE: Op configuration failed validation
+[2026-06-09T04:06:04.552+00:00] [INFO]     54.7ms 
+[2026-06-09T04:06:04.552+00:00] [INFO] [ ERROR ] Failed to successfully compose graph
+[2026-06-09T04:06:04.552+00:00] [INFO]     54.7ms 
+[2026-06-09T04:06:04.552+00:00] [INFO] [ ERROR ] Graph composer failed, no graphs were created
+[2026-06-09T04:06:04.552+00:00] [INFO]     71.5ms 
+[2026-06-09T04:06:04.552+00:00] [INFO] [ ERROR ] Failed in QnnSystemDlc_composeGraphs() with error code 1002
+[2026-06-09T04:06:04.552+00:00] [INFO]     71.5ms 
+[2026-06-09T04:06:04.552+00:00] [INFO] [ ERROR ] Received nullptr for graphsInput.
+[2026-06-09T04:06:04.552+00:00] [INFO]     71.5ms 
+[2026-06-09T04:06:04.552+00:00] [INFO] [ ERROR ] Failed to copy graph infos while composing graphs from dlc.
+[2026-06-09T04:06:04.552+00:00] [INFO]     71.5ms 
+[2026-06-09T04:06:04.552+00:00] [INFO] [ ERROR ] ComposeGraphs Failed with error = 1
+[2026-06-09T04:06:04.553+00:00] [INFO] Graph Compose failure
+[2026-06-09T04:06:04.561+00:00] [WARNING] Conversion to context binary failed with exit code 14
