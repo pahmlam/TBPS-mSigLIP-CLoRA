@@ -27,18 +27,20 @@ Training (VN3K T2I R@1):
 | `53.00` T2I / `53.25` I2T | Best experimental: Part Align + Attn+FFN LoRA r32 |
 | `47.58` | PiSSA r32 — rejected for current VN3K setup |
 
-Deployment (vision encoder, all-INT8 W8A8 on HTP v68; QDQ proxy = board-faithful).
-**Deploy target: T2I R@1 ≥ 50; any result < 50 is a FAIL.**
+Deployment (all-INT8 W8A8 on RB3 / HTP v68).
+**Deploy target: T2I R@1 >= 50; any result < 50 is a FAIL.**
 
 | Result | Status |
 |---|---|
-| `50.85` T2I R@1 | **Current best — QAT v8 learned rotation** (QDQ proxy, meets the ≥50 deploy target) |
-| `49.30` T2I R@1 | QAT v6 random rotation (previous ceiling, below 50 target) |
-| `48.50` T2I R@1 | QAT v4 — **board-verified** binary (below 50 target; `~32.7 ms/img`, `22.9 FPS`, `~90 MB`) |
-| Text encoder | Pending — next: learned rotation + QAT, then both-INT8 retrieval on board |
+| `50.35` T2I / `54.20` I2T | **Official final deploy number**: direct board both-INT8, vision v9 + split-text, PASS (`-1.93` T2I vs paper `52.28`) |
+| `50.63` T2I / `53.90` I2T | Current off-board both-INT8 QDQ proxy v9 |
+| `50.35` T2I / `54.55` I2T | Vision v9 board isolation, `32.54 ms/image`, `24.29 FPS` |
+| `51.30` T2I / `54.80` I2T | Split-text board isolation, `7.87 ms/query`, `74.75 q/s` |
+| `50.85` T2I / `52.90` I2T | Vision v8 learned-rotation QDQ ablation; first proxy pass over target |
+| Full text graph | Links but **unusable on board**: dynamic token `Gather` ignores `input_ids`; use split-text path |
 
 The full numeric history (jobs, fidelity, gates) lives in the deploy-master journal
-(see Key Docs). README has the public training results and footprint tables.
+(see Key Docs). `deployment/docs/comprehensive_results.md` is the compact final result table.
 
 ## Main Files
 
@@ -91,7 +93,8 @@ docs/ knowledge/ changelog/ figures/   # docs, research notes, changelogs, paper
 
 Data flow (training): Hydra config → `TBPSDataModule` → `LitTBPS` → `tbps.py` forward
 routes losses from `objectives.py` → embeddings scored by T2I/I2T R@1.
-Data flow (deploy): checkpoint → LoRA merge → rotate → QAT → ONNX → W8A8 → board.
+Data flow (deploy): checkpoint → LoRA merge → learned mean-preserving rotation → QAT →
+ONNX → W8A8 → QNN context binary → board retrieval.
 
 ## Loss Design
 
@@ -113,18 +116,21 @@ Non-obvious rules:
 
 ## Deployment Recipe (vision)
 
-Pipeline: LoRA merge → mean-preserving rotation → opset-20 fused GELU/LayerNorm →
-QAT distillation (per-tensor STE + EMA observer) → W8A8 quantize/compile/link → board run.
+Pipeline: LoRA merge → learned mean-preserving rotation → QAT distillation (per-tensor STE +
+EMA observer) → opset-20 fused GELU/LayerNorm ONNX export → W8A8 quantize/compile/link → board run.
 
 Non-obvious rules:
 
 - HTP v68 is **all-INT8 only** — no A16 (needs v73+), no internal float, integer I/O.
 - Rotation must be **mean-preserving** (`Q·1=1`) to keep fused LayerNorm; never convert
   LN→RMSNorm (it re-exposes `Pow`/`ReduceMean` to the quantizer).
-- **Learned rotation (v8)** beats random rotation; objective is `min_Q Σ max|aQᵀ|²`
-  (not quant-MSE — STE detaches that gradient). It is the chosen rotation for text too.
+- **Learned rotation (v8/v9)** beats random rotation; objective is `min_Q Σ max|aQᵀ|²`
+  (not quant-MSE — STE detaches that gradient). v9 is the final vision board recipe:
+  larger calibration/search budget, best-Q selection, and 25-epoch QAT.
 - Decisive metric is **retrieval R@1**, not cosine. Always compare QDQ vs the *original*
   merged FP32 model. Keep text FP32 when measuring vision-only (and vice versa).
+- Text deploy path is **split-encoder**: RB3 CPU performs token embedding lookup, HTP runs
+  the transformer/head from `inputs_embeds`; do not use the full text graph on board.
 - Method/math reference: `deployment/docs/w8a8_qat_rotated.md` (math only, no commands).
 
 ## Optional Modules (disabled by default)
@@ -180,5 +186,6 @@ package script: `scripts/colab/package_training_code.sh`.
 - `docs/journal/[train]-2026-06-11.md` — NACIR failure, attn+FFN r32.
 - `docs/journal/[train]-2026-06-13.md` — PiSSA rejection, Part Align `53.00`.
 - `deployment/docs/w8a8_qat_rotated.md` — W8A8 rotation/QAT method (math only).
+- `deployment/docs/comprehensive_results.md` — final deployment numbers and artifact map.
 - `deployment/docs/journal/[deploy-master].md` — canonical deployment journal.
 - `deployment/docs/runbook-w8a8-v8-both-int8.md` — learned-rotation / text / both-INT8 runbook.

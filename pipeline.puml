@@ -1,0 +1,103 @@
+@startuml vision_deploy_pipeline
+'============================================================================
+' DRAFT - Vision encoder edge-deployment dataflow.
+' No code identifiers: math + descriptive words only.
+' Each phase is a container of internal steps; the artifact flows between phases.
+'============================================================================
+skinparam shadowing false
+skinparam ArrowFontSize 10
+skinparam rectangle {
+  FontSize 11
+  BorderThickness 1
+}
+skinparam note {
+  BackgroundColor #FFF7E0
+  BorderColor #C9A227
+  FontSize 10
+}
+title Vision encoder - edge-deployment dataflow (draft)
+
+rectangle "**Trained model checkpoint**\nfrozen backbone + low-rank adapters (floating-point)" as IN #DDE9F7
+
+' ===== Phase 1 - merge (exact, floating-point) =====
+rectangle "**Phase 1 - Merge adapters into the backbone**  //(exact, floating-point)//" as P1 #E3F4E1 {
+  rectangle "load trained checkpoint" as m1 #FFFFFF
+  rectangle "fold low-rank update\nW = W0 + (a / r) B A" as m2 #FFFFFF
+  rectangle "drop optimizer state and\ntraining-only heads" as m3 #FFFFFF
+  m1 -down-> m2
+  m2 -down-> m3
+}
+
+' ===== Phase 2 - learned mean-preserving rotation (exact) =====
+rectangle "**Phase 2 - Learn a mean-preserving rotation**  //(exact, floating-point)//" as P2 #E3F4E1 {
+  rectangle "collect residual-stream\nactivations  a  on calibration" as r1 #FFFFFF
+  rectangle "parametrize rotation\nQ = U blockdiag(1, Cayley(S)) U^T\nS skew-symmetric, mean axis 1/sqrt(d)\n=>  Q Q^T = I ,  Q 1 = 1" as r2 #FFFFFF
+  rectangle "optimize\nminimize  sum ( max | Q a | )^2" as r3 #FFFFFF
+  rectangle "fold Q into weights\nproducers <- Q W ,  consumers <- W Q^T\n(no runtime operator)" as r4 #FFFFFF
+  r1 -down-> r2
+  r2 -down-> r3
+  r3 -down-> r4
+}
+
+' ===== Phase 3 - QAT distillation (adapts weight values) =====
+rectangle "**Phase 3 - Quantization-aware distillation**  //(adapts weight VALUES)//" as P3 #FCEFD6 {
+  rectangle "build student = rotated model +\nsimulated-8-bit at activation, residual,\nhead, linear outputs, attention matmuls" as q1 #FFFFFF
+  rectangle "per-tensor scale (moving max)\ns = ( moving max | x | ) / 127" as q2 #FFFFFF
+  rectangle "forward frozen teacher (floating-point)\nand student (8-bit-sim and clean)" as q3 #FFFFFF
+  rectangle "distill & update weights\n[ 1 - cos(e_s, e_t) ] + small || e_s - e_t ||^2\n8-bit rounding with identity gradient" as q4 #FFFFFF
+  q1 -down-> q2
+  q2 -down-> q3
+  q3 -down-> q4
+}
+
+' ===== Phase 4 - fused export (exact) =====
+rectangle "**Phase 4 - Export to a fused graph**  //(exact, floating-point)//" as P4 #E3F4E1 {
+  rectangle "wrap as image-in / embedding-out\nmodule" as e1 #FFFFFF
+  rectangle "fuse activation and normalization\ninto single ops (hide high-range internals)" as e2 #FFFFFF
+  rectangle "serialize fused graph" as e3 #FFFFFF
+  e1 -down-> e2
+  e2 -down-> e3
+}
+
+' ===== Phase 5 - quantize + compile/link (lossy to 8-bit) =====
+rectangle "**Phase 5 - Quantize to 8-bit and compile / link**  //(lossy: FP -> 8-bit)//" as P5 #FAD9D5 {
+  rectangle "calibrate activation ranges\non a fixed set" as c1 #FFFFFF
+  rectangle "quantize weights AND activations\nto 8-bit" as c2 #FFFFFF
+  rectangle "compile graph for the\ninteger-only accelerator" as c3 #FFFFFF
+  rectangle "link  =>  integer input / output,\nno internal floating-point" as c4 #FFFFFF
+  c1 -down-> c2
+  c2 -down-> c3
+  c3 -down-> c4
+}
+
+rectangle "**All-integer compiled model (8-bit)**\nthe deployable edge artifact" as OUT #DDE9F7
+rectangle "**Deployment use (on the accelerator)**\ninput image ( 3 x 256 x 256 )\n[ compiled model ]\nimage embedding ( 768-dim, L2-normalized )" as RUN #DDE9F7
+
+' ----- inter-phase artifact flow (output -> next input) -----
+IN  -down->  m1 : "checkpoint"
+m3  -down->  r1 : "merged dense model\n(floating-point) -- the reference"
+r4  -down->  q1 : "rotated model\n(floating-point, range-equalized)"
+q4  -down->  e1 : "quantization-adapted model\n(floating-point weights, 8-bit-robust)"
+e3  -down->  c1 : "fused graph (floating-point)"
+c4  -down->  OUT : "compiled and linked"
+OUT -down->  RUN : "load on board"
+
+' ----- calibration side input (one set, reused) -----
+rectangle "**Calibration images**\nresize 256 x 256, normalize;\na few hundred samples" as CAL #E8F0FB
+CAL ..> r1 : "activations  a"
+CAL ..> q3 : "distillation inputs"
+CAL ..> c1 : "fixed calibration set"
+
+' ----- validation gates -----
+note right of r4 : exactness check:\ncosine ~ 1 vs merged model
+note right of e3 : exactness check:\nfloating-point output\nmatches the reference
+note right of c4 : off-board proxy:\nsimulate quantize / dequantize\n->  cosine, Rank-1
+note right of RUN : decisive metric:\non-board text-to-image Rank-1
+
+legend left
+  green  = exact (floating-point function unchanged)
+  amber  = adapts weight values
+  red    = lossy 8-bit quantization
+  blue   = data artifacts (input / calibration / output)
+endlegend
+@enduml

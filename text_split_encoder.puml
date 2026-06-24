@@ -1,0 +1,93 @@
+@startuml text_split_encoder
+'============================================================================
+' Figure: Host / accelerator split text encoder -- TWO deployable artifacts
+' (Methodology, Part III, subsec:text_split_method ; fig:text_split_encoder).
+' The deployable text encoder is split into TWO bins with an explicit tensor
+' interface. Labels use THESIS vocabulary (not code identifiers). Mapping:
+'   ARTIFACT 1 "token-embedding table"  <- dump_text_embedding_table.py
+'       token_embedding_int8.bin (~192 MB, int8 per-row) + token_embedding_int8_scale.bin
+'       lookup: board_text_encode.py _build_lookup(): inputs_embeds = int8[ids]*scale[ids]
+'   ARTIFACT 2 "split text context binary" <- text_encoder_split.bin (all-INT8 W8A8)
+'       graph: export_split_text_onnx.py SplitTextWrapper.forward()
+'       in: inputs_embeds [B,L,768] (re-quantized to uint8 at I/O) + attention_mask [B,L]
+'       +position(static) -> 12 encoder layers (link-safe mask (1-mask)*(-32))
+'       -> final_layer_norm -> last_hidden[:,-1,:] -> head -> text_projection
+' Why split: the full graph put the dynamic ~250k-row Gather on the HTP, which the
+' integer accelerator did NOT honor (board output bit-identical for real vs zero
+' token IDs) -> [deploy-master] sec.11-12 ; w8a8_qat_rotated.md sec.12A.8.
+'============================================================================
+skinparam shadowing false
+skinparam ArrowFontSize 10
+skinparam TitleFontSize 15
+skinparam rectangle {
+  FontSize 11
+  BorderThickness 1
+}
+skinparam note {
+  BackgroundColor #FFF7E0
+  BorderColor #C9A227
+  FontSize 10
+}
+title Host / accelerator split text encoder -- two deployable artifacts
+
+' ----------------------------- query inputs -----------------------------
+rectangle "**token identifiers**\n<i>[B, L]</i>  integer indices" as IDS #DDE9F7
+rectangle "**attention mask**\n<i>[B, L]</i>  float 0/1" as MSK #DDE9F7
+
+' ===================== ARTIFACT 1 -- host CPU table bin ===================
+rectangle "**ARTIFACT 1 - Token-embedding table**  //(runs on the board ARM CPU -- same SoC as the accelerator)//\n.bin : rotated token-embedding, 8-bit per-row ( ~192 MB ) + per-row scale" as A1 #E3F4E1 {
+  rectangle "**IN**\ntoken identifiers <i>[B, L]</i>" as A1IN #DDE9F7
+  rectangle "gather rows  +  per-row dequant\ninputs_embeds = table[ ids ] x scale[ ids ]" as A1OP #FFFFFF
+  rectangle "**OUT**\ninputs_embeds <i>[B, L, 768]</i>  fp32, rotated basis" as A1OUT #DDE9F7
+  A1IN  -down->  A1OP
+  A1OP  -down->  A1OUT
+}
+
+' ===================== ARTIFACT 2 -- accelerator context bin ==============
+rectangle "**ARTIFACT 2 - Split text context binary**  //(runs on the board accelerator / HTP NPU -- same SoC as the CPU)//\n.bin : all-INT8 W8A8 ; entire transformer compute" as A2 #E8F0FB {
+  rectangle "**IN**\ninputs_embeds <i>[B, L, 768]</i>  ( re-quantized to 8-bit at I/O )\n+  attention mask <i>[B, L]</i>  float" as A2IN #DDE9F7
+  rectangle "add rotated position embedding\n(static slice -- stays on accelerator)" as A2POS #FFFFFF
+  rectangle "transformer encoder  x 12 layers\nself-attention ( + link-safe mask  M = ( 1 - mask ) x ( -c ) )  +  feed-forward" as A2ENC #FFFFFF
+  rectangle "final normalization  ->  last-token pooler ( sticky end-of-sequence )\n->  head  ->  text projection" as A2HEAD #FFFFFF
+  rectangle "**OUT**\ntext embedding <i>[768]</i>  L2-normalized" as A2OUT #DDE9F7
+  A2IN   -down->  A2POS
+  A2POS  -down->  A2ENC
+  A2ENC  -down->  A2HEAD
+  A2HEAD -down->  A2OUT
+}
+
+rectangle "**Text embedding**\n<i>[768]</i>  L2-normalized  (retrieval query vector)" as OUT #DDE9F7
+
+' ----------------------- dataflow across the two bins --------------------
+IDS   -down->  A1IN  : "indices"
+A1OUT -down->  A2IN  : "**boundary tensor**: inputs_embeds <i>[B,L,768]</i>\n(fp32 on the wire ; the ONLY host -> accelerator tensor)"
+MSK   -down->  A2IN  : "mask bypasses the table\n(float, no internal cast)"
+A2OUT -down->  OUT
+
+' ----------------- why the table is its own on-board bin ----------------
+note right of A1
+  The lookup is a separate on-board CPU bin because, fused
+  into the accelerator context binary, the dynamic gather
+  over the ~250k-row table is not honored on the integer
+  datapath (board output decouples from the token IDs).
+end note
+
+' --------------- quant handoff + shared-memory footprint -----------------
+note right of A2
+  Two quantization domains meet at the boundary:
+  the table is int8 PER-ROW (finer); the context binary
+  RE-quantizes inputs_embeds to uint8 PER-TENSOR at its
+  input, so the table's quant is effectively lossless here.
+  The board ARM CPU and the HTP accelerator are on ONE SoC
+  and share one physical DRAM, so the split adds no model-
+  weight footprint -- only the boundary tensor crosses.
+end note
+
+legend left
+  Both artifacts run ON THE BOARD (RB3 Gen2 / QCS6490) at runtime, one SoC.
+  |<#E3F4E1>    | ARTIFACT 1 -- board ARM-CPU table bin (memory read, no transformer compute) |
+  |<#E8F0FB>    | ARTIFACT 2 -- board HTP context bin (integer transformer) |
+  |<#DDE9F7>    | explicit IN / OUT tensors of each artifact |
+  |<#FFF7E0>    | note -- why split, quant handoff, shared-memory footprint |
+endlegend
+@enduml
