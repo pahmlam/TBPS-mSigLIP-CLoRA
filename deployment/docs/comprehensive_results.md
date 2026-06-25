@@ -84,6 +84,25 @@ Runtime from `artifacts/deployment/qnn_runs/onboard_text/profile.txt`:
 
 Board fidelity for the split-text transformer is `0.9951 / 0.9926` cosine mean/min on the 10-query smoke set, matching the text QDQ proxy.
 
+### 2.3 Peak RAM Probe
+
+Peak RAM was measured on RB3 Gen2 with `deployment/scripts/qnn/measure_board_peak_ram.sh`
+at `INTERVAL=0.02`. The wrapper records host-process peak RSS/HWM from
+`/proc/<pid>/status` and the peak drop in system `MemAvailable` from
+`/proc/meminfo`. The system-level drop is the more useful board-memory indicator,
+because QNN HTP execution allocates memory outside the host process RSS.
+
+| Branch / step | Input scope | Exit code | Process peak VmRSS | Process peak VmHWM | MemAvailable start | MemAvailable min | MemAvailable end | System peak delta | Status |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| Vision v9 HTP context | 1 image | 0 | 101.88 MB | 102.00 MB | 2578.66 MB | 2333.75 MB | 2500.66 MB | 244.91 MB | Valid |
+| Text CPU token-embedding lookup | 4000 queries | 0 | 57.88 MB | 58.26 MB | 2584.40 MB | 2458.74 MB | 2539.64 MB | 125.66 MB | Valid |
+| Split-text HTP context | 1 query | 0 | 95.25 MB | 95.25 MB | 2590.65 MB | 2265.49 MB | 2458.86 MB | 325.16 MB | Valid |
+
+The valid split-text HTP probe used the board context binary at
+`artifacts/deployment/bin/text_encoder_split.bin`. An earlier failed probe pointed
+to an empty/missing copy under `artifacts/deployment/runtime/split_text_w8a8/`;
+that failed startup measurement is intentionally excluded from the table.
+
 ---
 
 ## 3. Off-Board QDQ Proxies
