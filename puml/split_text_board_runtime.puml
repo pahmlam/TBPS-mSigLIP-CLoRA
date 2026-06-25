@@ -1,0 +1,101 @@
+@startuml
+title Split Text Encoder Runtime on RB3 Gen2
+
+left to right direction
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam dpi 180
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam ArrowColor #263238
+skinparam RectangleBorderColor #263238
+skinparam RectangleBackgroundColor #FFFFFF
+skinparam ComponentBorderColor #263238
+skinparam ComponentBackgroundColor #FFFFFF
+skinparam DatabaseBorderColor #263238
+skinparam DatabaseBackgroundColor #FFFDE7
+skinparam ArtifactBorderColor #263238
+skinparam ArtifactBackgroundColor #F6F8FA
+skinparam NoteBorderColor #607D8B
+skinparam NoteBackgroundColor #F6F8FA
+
+actor "Text query" as caption
+
+rectangle "RB3 Gen2 runtime\nshared memory" as soc {
+
+  frame "Board CPU" as cpu {
+    component "Tokenize and pad text" as tokenizer
+    component "Token ID sequence" as input_ids
+    component "Attention mask" as attn_mask
+
+    database "Artifact 1\nRotated token embedding table" as token_table
+
+    component "Read selected token rows\nand restore embedding values" as lookup
+
+    artifact "Token embedding vectors" as embeds_raw
+    artifact "Attention mask tensor" as mask_raw
+    artifact "Runtime input pair" as input_list
+  }
+
+  frame "Hexagon HTP / QNN NPU" as htp {
+    artifact "Artifact 2\nSplit text context binary\nW8A8 transformer" as split_bin
+
+    component "Embedding vectors\nand attention mask" as graph_inputs
+
+    component "Add position embedding" as add_pos
+
+    component "Apply finite padding mask" as linksafe_mask
+
+    component "Twelve Transformer layers\nwith fused operators" as transformer
+
+    component "Final normalization\nand last-token pooling" as pooler
+
+    component "Projection head" as projection
+
+    artifact "Text embedding\nraw projected vector" as text_embedding
+  }
+}
+
+caption --> tokenizer
+tokenizer --> input_ids
+tokenizer --> attn_mask
+
+input_ids --> lookup
+token_table --> lookup
+lookup --> embeds_raw
+attn_mask --> mask_raw
+
+embeds_raw --> input_list
+mask_raw --> input_list
+input_list --> graph_inputs
+
+split_bin .. graph_inputs
+graph_inputs --> add_pos
+graph_inputs --> linksafe_mask
+add_pos --> transformer : hidden states
+linksafe_mask --> transformer : additive mask
+transformer --> pooler
+pooler --> projection
+projection --> text_embedding
+
+note right of tokenizer
+  Token IDs and the mask are created
+  from the input text at runtime.
+end note
+
+note bottom of token_table
+  The table is extracted from the
+  rotated, quantization-trained text model.
+end note
+
+note right of split_bin
+  The link-safe mask path is baked
+  into the context before deployment.
+end note
+
+note bottom of text_embedding
+  Retrieval uses the raw projected vector.
+end note
+
+@enduml

@@ -1,0 +1,76 @@
+@startuml
+title Vision Encoder Runtime on RB3 Gen2
+
+left to right direction
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam dpi 180
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam ArrowColor #263238
+skinparam RectangleBorderColor #263238
+skinparam RectangleBackgroundColor #FFFFFF
+skinparam ComponentBorderColor #263238
+skinparam ComponentBackgroundColor #FFFFFF
+skinparam ArtifactBorderColor #263238
+skinparam ArtifactBackgroundColor #F6F8FA
+skinparam NoteBorderColor #607D8B
+skinparam NoteBackgroundColor #F6F8FA
+
+actor "Input image" as input_image
+
+rectangle "RB3 Gen2 runtime\nshared memory" as soc {
+
+  frame "Board CPU" as cpu {
+    component "Load image" as load_image
+    component "Resize and normalize" as preprocess
+    artifact "Image tensor" as image_tensor
+    artifact "Runtime image input" as runtime_input
+  }
+
+  frame "Hexagon HTP / QNN NPU" as htp {
+    artifact "Vision context binary\nW8A8 encoder" as vision_bin
+
+    component "Quantized image input" as graph_input
+
+    component "Patch and position embedding" as patch_embed
+
+    component "Twelve Transformer layers\nwith fused operators" as transformer
+
+    component "Final normalization\nand attention pooling" as pooler
+
+    component "Visual projection" as projection
+
+    artifact "Image embedding\nraw projected vector" as image_embedding
+  }
+}
+
+input_image --> load_image
+load_image --> preprocess
+preprocess --> image_tensor
+image_tensor --> runtime_input
+runtime_input --> graph_input
+
+vision_bin .. graph_input
+graph_input --> patch_embed
+patch_embed --> transformer
+transformer --> pooler
+pooler --> projection
+projection --> image_embedding
+
+note bottom of preprocess
+  The CPU only prepares the image tensor
+  expected by the QNN runtime.
+end note
+
+note right of vision_bin
+  The context contains the whole
+  vision encoder after deployment transforms.
+end note
+
+note bottom of image_embedding
+  Retrieval uses the raw projected vector.
+end note
+
+@enduml

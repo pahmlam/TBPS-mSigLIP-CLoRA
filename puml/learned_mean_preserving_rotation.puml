@@ -1,0 +1,93 @@
+@startuml
+title Learned Mean-Preserving Rotation
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam dpi 180
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam ArrowColor #263238
+skinparam ActivityBorderColor #263238
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #263238
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam NoteBorderColor #607D8B
+skinparam NoteBackgroundColor #F6F8FA
+skinparam PartitionBorderColor #90A4AE
+skinparam PartitionBackgroundColor #FFFFFF
+
+start
+
+:Merged FP32 encoder\n(LoRA already folded);
+
+partition "Learned mean-preserving rotation" {
+  note right
+    This is one deployment stage.
+    "Mean-preserving" is the constraint/folding rule.
+    "Learned" is how the rotation Q is selected.
+  end note
+
+  :Phase A: fold LayerNorm affine\ninto reader projections;
+  :Keep fused LayerNorm\nand set affine to identity;
+
+  partition "Learn Q inside the mean-preserving family" {
+    :Calibration inputs;
+    :Run frozen Phase-A encoder;
+    :Collect activation tensors\nat rotation sites;
+    note right
+      Vision sites:
+      layer_norm1/2 outputs,
+      attention out_proj outputs,
+      MLP fc2 outputs,
+      post_layernorm output.
+
+      Text uses the same idea with
+      final_layer_norm instead of post_layernorm.
+    end note
+
+    :Initialize learnable skew parameter Omega\non the centered subspace;
+
+    repeat
+      :Build rotation\nQ = U blockdiag(1, Cayley(Omega)) U^T;
+      note right
+        Q^T Q = I
+        Q * 1 = 1
+
+        The all-ones axis is fixed, so
+        identity-affine LayerNorm commutes with Q.
+      end note
+
+      :Apply Q^T to cached activations;
+      :Compute objective\nJ = sum_sites (max |a Q^T|)^2;
+      :Backpropagate J\nand update Omega;
+      :Track best Q by lowest J;
+    repeat while (more optimization steps?) is (yes)
+
+    :Select best learned Q;
+  }
+
+  partition "Fold selected Q into encoder weights" {
+    :Residual writers emit rotated features;
+    :Fold Q into writers\nW <- QW, b <- Qb;
+    note right
+      Embedding rows use the row-vector form:
+      P <- P Q^T.
+    end note
+
+    :Fused LayerNorm\n(identity affine);
+    :Fold inverse rotation into readers\nW <- W Q^T;
+    :No explicit rotation op remains\nat runtime;
+  }
+}
+
+:FP32 invariance gate\ncosine(ref, rotated) >= 0.9999;
+
+if (gate passes?) then (yes)
+  :Rotated FP32 encoder\n(function unchanged);
+  :Next stage: W8A8 QAT distillation;
+else (no)
+  :Reject rotation artifact\nand debug folding / Q orientation;
+endif
+
+stop
+@enduml

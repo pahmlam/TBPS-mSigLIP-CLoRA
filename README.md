@@ -244,6 +244,8 @@ uv run test.py --ckpt_path artifacts/models/checkpoints/epoch=56-val_score=52.28
 
 The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN context binaries. The current deploy path is all-INT8 W8A8 for both the vision and text encoders.
 
+![mSigLIP deployment pipeline](puml/pipeline.png)
+
 ### Target Hardware Specification
 
 | Component | Specification |
