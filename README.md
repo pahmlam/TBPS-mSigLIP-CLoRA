@@ -268,8 +268,9 @@ The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN
 | Text-only board retrieval | Split-text W8A8 context binary on RB3, `51.30` T2I R@1, `54.80` I2T R@1 |
 | Board-verified binary | Vision v9 + split-text W8A8 context binaries; direct board both-INT8 reaches `50.35` T2I R@1 |
 | Board runtime | vision v9 `32.54 ms/image`, `24.29 FPS`; split-text transformer `7.87 ms/query`, `74.75 IPS` |
-| Context size | about `90 MB` for vision encoder |
-| Text encoder | Split-encoder deploy path: RB3 CPU embedding lookup + HTP transformer/head |
+| Context size | vision v9 context `94.31 MB`; split-text context `87.03 MB` |
+| Text CPU embedding table | token table `192.00 MB` + per-row scales `1.00 MB` |
+| Text encoder | Split-encoder deploy path: RB3 CPU embedding lookup + HTP transformer/head; text branch artifacts total about `280.03 MB` |
 
 *NOTE: ckpt(VN3K) can be download at: https://drive.google.com/file/d/1Mo8OnjVhrIGhMp8Og5x99GSwBCzPQ7Bn/view?usp=sharing* 
 
@@ -287,8 +288,16 @@ Board-verified vision-only retrieval on RB3 (v9):
 | **T2I** | **50.35** | **77.55** | **86.55** | **55.73** | **49.21** |
 | **I2T** | **54.55** | **82.10** | **89.35** | **50.58** | **33.66** |
 
+Board-verified text-only retrieval on RB3 (split-text):
+
+| Direction | R@1 | R@5 | R@10 | mAP | mINP |
+|---|---:|---:|---:|---:|---:|
+| **T2I** | **51.30** | **79.43** | **87.90** | **56.97** | **50.46** |
+| **I2T** | **54.80** | **81.00** | **88.60** | **51.14** | **34.72** |
+
 Canonical references:
 
+- [Comprehensive deployment results](deployment/docs/comprehensive_results.md)
 - [Rotated W8A8 + QAT method](deployment/docs/w8a8_qat_rotated.md)
 - [Deploy master journal](deployment/docs/journal/[deploy-master].md)
 
@@ -361,6 +370,7 @@ figures/                           # README and paper figures
 | [docs/EXPERIMENT_SUMMARY.md](docs/EXPERIMENT_SUMMARY.md) | Canonical older experiment summary |
 | [docs/noise-robust-multilingual-framework.md](docs/noise-robust-multilingual-framework.md) | MNEB-HN research and implementation design |
 | [docs/journal/](docs/journal/) | Dated training/model-optimization journals |
+| [deployment/docs/comprehensive_results.md](deployment/docs/comprehensive_results.md) | Detailed deployment results, board isolation, QDQ proxies, and final metrics |
 | [deployment/docs/w8a8_qat_rotated.md](deployment/docs/w8a8_qat_rotated.md) | Canonical W8A8 rotation/QAT deployment method |
 | [deployment/docs/journal/[deploy-master].md](deployment/docs/journal/[deploy-master].md) | Consolidated deployment/model-compression journal |
 
