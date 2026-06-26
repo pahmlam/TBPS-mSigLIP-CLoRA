@@ -1,1 +1,0 @@
-image:=raw/00000_pid2000_TamChuc_01_02001_1.raw

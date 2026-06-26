@@ -54,6 +54,7 @@ deployment/qnn_inputs/
 artifacts/*
 !artifacts/deployment/
 !artifacts/deployment/**
+**/Result_*/
 artifacts/deployment/exports/
 artifacts/deployment/runtime/
 artifacts/deployment/bin/*.bin
