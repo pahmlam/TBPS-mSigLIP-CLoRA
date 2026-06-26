@@ -1,0 +1,58 @@
+{
+  "platform": {
+    "system": "Darwin",
+    "release": "25.5.0",
+    "machine": "arm64",
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.10.19 (main, Oct  9 2025, 15:25:03) [Clang 17.0.0 (clang-1700.6.3.2)]"
+  },
+  "environment": {
+    "QNN_SDK_ROOT": "",
+    "QAIRT_ROOT": "",
+    "QNN_ROOT": "",
+    "SNPE_ROOT": "",
+    "PATH": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/venv/bin:/Users/phamtunglam/.opencode/bin:/Users/phamtunglam/.local/bin:/Users/phamtunglam/Library/Application Support/Code/User/globalStorage/github.copilot-chat/debugCommand:/Users/phamtunglam/Library/Application Support/Code/User/globalStorage/github.copilot-chat/copilotCli:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/TeX/texbin:/Users/phamtunglam/Library/Application Support/Code/User/globalStorage/github.copilot-chat/debugCommand:/Users/phamtunglam/Library/Application Support/Code/User/globalStorage/github.copilot-chat/copilotCli:/Users/phamtunglam/.opencode/bin:/Users/phamtunglam/.local/bin:/Users/phamtunglam/.vscode/extensions/ms-python.debugpy-2026.6.0-darwin-arm64/bundled/scripts/noConfigScripts",
+    "LD_LIBRARY_PATH": "",
+    "DYLD_LIBRARY_PATH": "",
+    "PYTHONPATH": ""
+  },
+  "searched_bin_dirs": [],
+  "tools": {
+    "qairt-converter": {
+      "found": false
+    },
+    "qairt-quantizer": {
+      "found": false
+    },
+    "qairt-model-lib-generator": {
+      "found": false
+    },
+    "qairt-context-binary-generator": {
+      "found": false
+    },
+    "qairt-net-run": {
+      "found": false
+    },
+    "qnn-onnx-converter": {
+      "found": false
+    },
+    "qnn-model-lib-generator": {
+      "found": false
+    },
+    "qnn-context-binary-generator": {
+      "found": false
+    },
+    "qnn-net-run": {
+      "found": false
+    },
+    "qnn-throughput-net-run": {
+      "found": false
+    },
+    "qnn-profile-viewer": {
+      "found": false
+    },
+    "qnn-platform-validator": {
+      "found": false
+    }
+  }
+}

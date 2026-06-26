@@ -1,0 +1,28 @@
+{
+  "onnx_model": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/job_jp17y648p_qdq_onnx/model.onnx",
+  "model_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8",
+  "input_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/qnn_inputs/vn3k_text_10",
+  "num_samples": 10,
+  "expected_dim": 768,
+  "input_types": {
+    "input_ids": "tensor(int64)",
+    "attention_mask": "tensor(int64)"
+  },
+  "cosine_l2_mean": 0.9949473202228546,
+  "cosine_l2_min": 0.9911668300628662,
+  "cosine_l2_max": 0.9971960783004761,
+  "any_onnx_nan": false,
+  "first_row": {
+    "result_index": 0,
+    "pid": "2000",
+    "caption": "n\u1eef \u0111\u1ed9i m\u0169 l\u01b0\u1ee1i trai m\u00e0u h\u1ed3ng, m\u1eb7c \u00e1o d\u00e0i m\u00e0u h\u1ed3ng v\u1edbi h\u1ecda ti\u1ebft \u1edf ph\u1ea7n ch\u00e2n \u00e1o d\u00e0",
+    "dim": 768,
+    "onnx_norm": 16.24326940398317,
+    "torch_norm": 16.275058676610396,
+    "cosine_raw": 0.9943577647209167,
+    "cosine_l2": 0.994357705116272,
+    "l2_l2": 0.10622983425855637,
+    "onnx_has_nan": false,
+    "torch_has_nan": false
+  }
+}

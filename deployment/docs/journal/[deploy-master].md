@@ -20,7 +20,7 @@ File master này hợp nhất toàn bộ lịch sử deployment/model-compressio
 | Baseline báo cáo chính | VN3K T2I R@1 `52.28` (paper/historical baseline) |
 | FP32 sanity local | VN3K T2I R@1 `52.40` tái lập local; chỉ dùng để kiểm pipeline, không làm mốc drop báo cáo |
 | Best end-to-end deploy result | **Board both-INT8 W8A8**: T2I R@1 `50.35`, I2T R@1 `54.20`; drop T2I `-1.93` so với `52.28`, PASS target `50` |
-| Artifact both-INT8 final | `artifacts/deployment/qnn_runs/both_int8_board_r1.json` |
+| Artifact both-INT8 final | `artifacts/deployment/logs/results/board/final_both-int8_v9-splittext__t2i50.35_i2t54.20.json` |
 | Off-board both-INT8 proxy hiện tại | QDQ proxy mới nhất: T2I R@1 `50.63`, I2T R@1 `53.90`; dùng final refined vision encoder + split-text QDQ |
 | Off-board both-INT8 proxy lịch sử | QDQ proxy trước final refined vision encoder: T2I R@1 `50.25`, I2T R@1 `52.95`; chỉ giữ làm mốc lịch sử |
 | Final vision off-board proxy | Refined learned-rotation vision: T2I R@1 `50.98`, I2T R@1 `54.20`; cosine `0.9648 / 0.9549` |
@@ -38,6 +38,7 @@ File master này hợp nhất toàn bộ lịch sử deployment/model-compressio
 
 Cách hiểu:
 
+- **Canonical deployment evidence hiện nằm trong `artifacts/deployment/logs/`**: các JSON result/log nhỏ đã được move sang tên semantic; các command/path cũ trong journal bên dưới là record lịch sử của lúc chạy.
 - **Board both-INT8 là số deploy chính hiện tại**: vision v9 board + split-text board đạt T2I R@1 `50.35`, vượt target `50` và giảm `-1.93` so với paper baseline `52.28`.
 - **Off-board both-INT8 proxy hiện tại**: final refined vision proxy + split-text QDQ đạt T2I R@1 `50.63`, I2T R@1 `53.90`; proxy cũ `50.25/52.95` là mốc lịch sử trước khi thay vision tower bằng bản final refined.
 - **v8 vision là ablation accuracy quan trọng**: learned rotation nâng vision-isolation T2I R@1 lên `50.85`, cosine QDQ mean/min đều vượt v6. Delta `+1.55` so v6 là ablation sạch "learned vs random" (recipe v6 giữ nguyên).
@@ -1080,6 +1081,7 @@ Text chiếm 75% parameter của model. Riêng token embedding là `250000 x 768
 | `artifacts/deployment/runtime/rotated_w8a8_v2/vision_encoder.bin` | Binary all-INT8 đầu tiên link được v68, retrieval fail |
 | `artifacts/deployment/runtime/rotated_w8a8_qat_v4/vision_encoder.bin` | Binary QAT v4 đã verify trên board khi có sẵn |
 | `artifacts/deployment/runtime/rotated_w8a8_qat_v6/job_j57krdwvp_qdq_onnx` | Artifact QDQ tốt nhất hiện tại |
+| `artifacts/deployment/logs/` | Canonical evidence archive cho AI Hub logs và JSON result summaries đã rename theo kết quả |
 | `artifacts/deployment/qnn_inputs/vn3k_train_calib_2000` | Raw calibration AI Hub |
 | `d7jzjy1m2` | Dataset AI Hub `msiglip-vision-vn3k-train-calib-2000` |
 
@@ -1268,7 +1270,7 @@ python3 deployment/scripts/qnn/eval_retrieval_quantized_vision.py \
 |---|---|
 | `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v8/job_jp24xxn65_qdq_onnx` | Vision QDQ v8 learned rotation |
 | `artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/job_jp17y648p_qdq_onnx` | Text QDQ v8 learned rotation + finite mask |
-| `artifacts/deployment/runtime/both_int8/both_int8_r1.json` | Kết quả C1 both-INT8 full VN3K test |
+| `artifacts/deployment/logs/results/qdq/both-int8_v8_proxy__t2i50.25_i2t52.95.json` | Kết quả C1 both-INT8 full VN3K test |
 
 **Kết quả retrieval full VN3K test:**
 
@@ -1306,7 +1308,7 @@ python3 deployment/scripts/qnn/eval_retrieval_board_vision.py \
 |---|---|
 | `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch_summary.json` | Smoke board fidelity 10 ảnh |
 | `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/profile.txt` | QNN profile: `33.05 ms/image`, `22.77 FPS` |
-| `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/board_vision_r1.json` | Full board vision-isolation retrieval |
+| `artifacts/deployment/logs/results/board/vision_v8_board-isolation__t2i50.20_i2t54.50.json` | Full board vision-isolation retrieval |
 
 **Kết quả:**
 
@@ -1425,8 +1427,8 @@ Where(1 - mask != 0, -32, 0)  ==  (1 - mask) * (-32),  mask in {0, 1}
 | Gate | Artifact | Kết quả |
 |---|---|---:|
 | Static ONNX i32/f32-mask/link-safe vs PyTorch | `artifacts/deployment/exports/exported_model_text_rotated_learned_qat_v8/text_onnx_i32_f32mask_finite_linksafe/static_vs_pytorch_i32_summary.json` | cosine mean/min `0.99999999 / 0.99999976` |
-| QDQ i32/f32-mask/link-safe vs PyTorch | `artifacts/deployment/runtime/text_w8a8_learned_qat_v8_i32_f32mask/text_qdq_fid.json` | cosine mean/min/max `0.99494732 / 0.99116683 / 0.99719608` |
-| Board QNN i32/f32-mask vs PyTorch | `artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/qnn_vs_pytorch_summary.json` | cosine mean/min/max `0.12666028 / 0.05224004 / 0.23556966` |
+| QDQ i32/f32-mask/link-safe vs PyTorch | `artifacts/deployment/logs/results/qdq/text_finite-mask_fidelity__cos0.9949_min0.9912.json` | cosine mean/min/max `0.99494732 / 0.99116683 / 0.99719608` |
+| Board QNN i32/f32-mask vs PyTorch | `artifacts/deployment/logs/results/board/text_fullgraph-i32__board-fidelity-fail__cos0.126_inputids-ignored.json` | cosine mean/min/max `0.12666028 / 0.05224004 / 0.23556966` |
 | Board execution metadata | `artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/execution_metadata.yaml` | 10 inferences completed; `input_ids` = `QNN_DATATYPE_INT_32`, `attention_mask`/`output_0` = `QNN_DATATYPE_UFIXED_POINT_8` |
 
 **Input file sanity:** board `input_ids` `.raw` đã được kiểm bằng `od` và chứa token thật, ví dụ sample đầu bắt đầu bằng:
@@ -1869,7 +1871,7 @@ M = (1 - attention_mask) * (-32),  expand [B,1,L,L]   # exp(-32)~1.3e-14, no Cas
 2. **Vision (tower sàn):** vision board drift `-0.65` lớn nhất; cải thiện vision QAT (thêm epoch/coverage) nâng both-INT8 trực tiếp. Tốn 1 train run.
 3. **Chấp nhận `49.95`≈50** cho phần on-device both-INT8 (trong nhiễu 2 query), giữ vision-only `50.20` và off-board proxy `50.25` làm mốc PASS.
 
-Artifact: `qnn_runs/split_text_query_full/`, text board `.../text_w8a8_learned_qat_v8_f32mask/board_text_r1.json`.
+Artifact: `qnn_runs/split_text_query_full/`, text board summary `artifacts/deployment/logs/results/board/text_split-board-isolation__t2i51.30_i2t54.80.json`.
 
 **Cập nhật 2026-06-22 — onboard lookup manifest fixed:** sau khi sửa `board_text_encode.py` để copy `pid/caption` từ manifest nguồn ở mode `--input-dir`, rerun/eval `query_onboard` ghi cùng artifact `board_text_r1.json` với full 4000-caption result:
 
@@ -2000,8 +2002,8 @@ python3 deployment/scripts/qnn/eval_retrieval_board_embeddings.py \
 
 | Artifact | Ý nghĩa |
 |---|---|
-| `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/board_vision_r1.json` | Vision v9 board-isolation full VN3K gallery |
-| `artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask/board_text_r1.json` | Text board-isolation full 4000-caption query |
-| `artifacts/deployment/qnn_runs/both_int8_board_r1.json` | Final board both-INT8 retrieval |
+| `artifacts/deployment/logs/results/board/vision_v9_board-isolation__t2i50.35_i2t54.55.json` | Vision v9 board-isolation full VN3K gallery |
+| `artifacts/deployment/logs/results/board/text_split-board-isolation__t2i51.30_i2t54.80.json` | Text board-isolation full 4000-caption query |
+| `artifacts/deployment/logs/results/board/final_both-int8_v9-splittext__t2i50.35_i2t54.20.json` | Final board both-INT8 retrieval |
 
 **Kết luận:** final board both-INT8 đạt T2I R@1 **`50.35`**, vượt deploy gate `>=50.0` và giảm **`-1.93`** so với paper baseline `52.28`. Đây là số deploy chính cho luận văn. Off-board both-INT8 QDQ proxy mới nhất là **`50.63/53.90`**; proxy cũ `50.25/52.95` và v8 board `49.95/53.05` là kết quả lịch sử trước khi thay vision tower bằng bản final refined.

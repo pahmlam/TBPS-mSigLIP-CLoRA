@@ -271,6 +271,25 @@ The deployment branch targets **Qualcomm RB3 Gen2 / QCS6490 / HTP v68** with QNN
 | Context size | vision v9 context `94.31 MB`; split-text context `87.03 MB` |
 | Text CPU embedding table | token table `192.00 MB` + per-row scales `1.00 MB` |
 | Text encoder | Split-encoder deploy path: RB3 CPU embedding lookup + HTP transformer/head; text branch artifacts total about `280.03 MB` |
+| Canonical evidence archive | [`artifacts/deployment/logs`](artifacts/deployment/logs/README.md) stores renamed AI Hub logs, board/QDQ result JSON summaries, diagnostics, and provenance manifest |
+
+### Board Peak RAM Probe
+
+Peak RAM was measured on RB3 Gen2 with `deployment/scripts/qnn/measure_board_peak_ram.sh`
+at `INTERVAL=0.02`. `System peak delta` is the more useful board-memory
+indicator than process RSS/HWM because QNN HTP execution can allocate memory
+outside the host process RSS.
+
+| Branch / step | Input scope | Process peak HWM | System peak delta |
+|---|---|---:|---:|
+| Vision v9 HTP context | 1 image | `102.00 MB` | `244.91 MB` |
+| Text CPU token-embedding lookup | 4000 queries | `58.26 MB` | `125.66 MB` |
+| Split-text HTP context | 1 query | `95.25 MB` | `325.16 MB` |
+
+All three probes are valid and remain within RB3 headroom; the split-text HTP
+context has the largest system-level peak. See
+[comprehensive deployment results](deployment/docs/comprehensive_results.md#23-peak-ram-probe)
+for the full measurement table.
 
 *NOTE: ckpt(VN3K) can be download at: https://drive.google.com/file/d/1Mo8OnjVhrIGhMp8Og5x99GSwBCzPQ7Bn/view?usp=sharing* 
 
@@ -300,6 +319,7 @@ Canonical references:
 - [Comprehensive deployment results](deployment/docs/comprehensive_results.md)
 - [Rotated W8A8 + QAT method](deployment/docs/w8a8_qat_rotated.md)
 - [Deploy master journal](deployment/docs/journal/[deploy-master].md)
+- [Canonical deployment evidence archive](artifacts/deployment/logs/README.md)
 
 ### Deployment Gates
 

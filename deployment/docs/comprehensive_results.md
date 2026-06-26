@@ -27,7 +27,7 @@ retrieval -> raw dot-product ranking, matching LitTBPS metrics
 
 **Official deploy number:** direct board both-INT8, full VN3K test set.
 
-Artifact: `artifacts/deployment/qnn_runs/both_int8_board_r1.json`
+Artifact: `artifacts/deployment/logs/results/board/final_both-int8_v9-splittext__t2i50.35_i2t54.20.json`
 
 | Direction | R@1 | R@5 | R@10 | mAP | mINP | Drop vs paper R@1 |
 |---|---:|---:|---:|---:|---:|---:|
@@ -42,7 +42,7 @@ The result passes the deployment gate (`T2I R@1 >= 50.0`). The reporting baselin
 
 ### 2.1 Vision v9 Board
 
-Artifact: `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/board_vision_r1.json`
+Artifact: `artifacts/deployment/logs/results/board/vision_v9_board-isolation__t2i50.35_i2t54.55.json`
 
 This is **vision-only board isolation**: image embeddings from the v9 QNN context binary, text embeddings from FP32 PyTorch.
 
@@ -63,7 +63,7 @@ Runtime from `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_
 
 ### 2.2 Text Split-Encoder Board
 
-Artifact: `artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask/board_text_r1.json`
+Artifact: `artifacts/deployment/logs/results/board/text_split-board-isolation__t2i51.30_i2t54.80.json`
 
 This is **text-only board isolation**: text embeddings from the split-text QNN context binary, image embeddings from FP32 PyTorch.
 
@@ -111,7 +111,7 @@ QDQ proxy means the AI Hub quantized ONNX graph is evaluated off-board with ONNX
 
 ### 3.1 Vision v9 QDQ
 
-Artifact: `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/retrieval_r1.json`
+Artifact: `artifacts/deployment/logs/results/qdq/vision_v9_qdq-isolation__t2i50.98_i2t54.20.json`
 
 This is **vision-only QDQ isolation**: image encoder v9 QDQ, text encoder FP32.
 
@@ -129,7 +129,7 @@ QDQ-to-board drift for the final vision tower:
 
 ### 3.2 Text QDQ
 
-Artifact source: `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/both_int8_qdq_r1.json`
+Artifact source: `artifacts/deployment/logs/results/qdq/both-int8_v9_proxy__t2i50.63_i2t53.90.json`
 
 This is **text-only QDQ isolation** from the same v9 proxy run: text encoder QDQ, image encoder FP32.
 
@@ -142,7 +142,7 @@ Text QDQ smoke fidelity is `0.9949 / 0.9912` cosine mean/min. The finite attenti
 
 ### 3.3 Both-INT8 QDQ v9
 
-Artifact: `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/both_int8_qdq_r1.json`
+Artifact: `artifacts/deployment/logs/results/qdq/both-int8_v9_proxy__t2i50.63_i2t53.90.json`
 
 This is the updated off-board proxy: vision v9 QDQ + text QDQ.
 
@@ -220,10 +220,10 @@ v9 is a recipe refinement rather than a new method: same learned mean-preserving
 
 | Artifact | Meaning |
 |---|---|
-| `artifacts/deployment/qnn_runs/both_int8_board_r1.json` | Official final board both-INT8 result |
-| `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/board_vision_r1.json` | Vision v9 board isolation |
-| `artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask/board_text_r1.json` | Text split-encoder board isolation |
-| `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/retrieval_r1.json` | Vision v9 QDQ isolation |
-| `artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/both_int8_qdq_r1.json` | Updated both-INT8 QDQ proxy v9 |
+| `artifacts/deployment/logs/results/board/final_both-int8_v9-splittext__t2i50.35_i2t54.20.json` | Official final board both-INT8 result |
+| `artifacts/deployment/logs/results/board/vision_v9_board-isolation__t2i50.35_i2t54.55.json` | Vision v9 board isolation |
+| `artifacts/deployment/logs/results/board/text_split-board-isolation__t2i51.30_i2t54.80.json` | Text split-encoder board isolation |
+| `artifacts/deployment/logs/results/qdq/vision_v9_qdq-isolation__t2i50.98_i2t54.20.json` | Vision v9 QDQ isolation |
+| `artifacts/deployment/logs/results/qdq/both-int8_v9_proxy__t2i50.63_i2t53.90.json` | Updated both-INT8 QDQ proxy v9 |
 | `artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/profile.txt` | Vision v9 board runtime |
 | `artifacts/deployment/qnn_runs/onboard_text/profile.txt` | Split-text board runtime |

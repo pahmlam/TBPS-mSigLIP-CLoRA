@@ -1,0 +1,45 @@
+[2026-06-16T16:15:38.406+00:00] [INFO] [quantize-post-download] Memory: 1.5GiB | working_set: 1.4GiB | peak: 1.9GiB
+[2026-06-16T16:15:40.314+00:00] [INFO] AIMET version: 2.31.0
+[2026-06-16T16:15:40.367+00:00] [INFO] Using quant scheme: QuantScheme.post_training_tf_enhanced
+[2026-06-16T16:15:47.721+00:00] [INFO] Creating Quantization Simulator...
+[2026-06-16T16:15:51.018+00:00] [INFO] Finished Creating Quantization Simulator
+[2026-06-16T16:15:51.018+00:00] [INFO] Computing Encodings...
+[2026-06-16T16:16:06.559+00:00] [INFO] Memory: 6.7GiB | working_set: 6.2GiB | peak: 6.7GiB
+[2026-06-16T16:17:06.620+00:00] [INFO] Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB
+[2026-06-16T16:18:06.679+00:00] [INFO] Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB
+[2026-06-16T16:19:06.739+00:00] [INFO] Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB
+[2026-06-16T16:20:06.799+00:00] [INFO] Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB
+[2026-06-16T16:21:06.829+00:00] [INFO] Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB
+[2026-06-16T16:22:06.889+00:00] [INFO] Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB
+[2026-06-16T16:23:06.949+00:00] [INFO] Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB
+[2026-06-16T16:24:07.010+00:00] [INFO] Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB
+[2026-06-16T16:25:07.069+00:00] [INFO] Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB
+[2026-06-16T16:26:07.129+00:00] [INFO] Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB
+[2026-06-16T16:27:07.189+00:00] [INFO] Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB
+[2026-06-16T16:27:22.099+00:00] [INFO] Finished Computing Encodings
+[2026-06-16T16:27:22.100+00:00] [INFO] Exporting QDQ ONNX graph from AIMET quantsim...
+[2026-06-16T16:27:25.427+00:00] [INFO] Completed export
+| ---AIMET LOGS---
+| 2026-06-16 16:15:48,644 - Quant - INFO - Selecting DefaultOpInstanceConfigGenerator to compute the specialized config. hw_version:None
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jgd09l96p", "attempt_number": 0, "asctime": "16/Jun/2026:16:16:06.559855 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.7GiB | working_set: 6.2GiB | peak: 6.7GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jgd09l96p", "attempt_number": 0, "asctime": "16/Jun/2026:16:17:06.620543 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jgd09l96p", "attempt_number": 0, "asctime": "16/Jun/2026:16:18:06.679693 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jgd09l96p", "attempt_number": 0, "asctime": "16/Jun/2026:16:19:06.739678 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jgd09l96p", "attempt_number": 0, "asctime": "16/Jun/2026:16:20:06.799704 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jgd09l96p", "attempt_number": 0, "asctime": "16/Jun/2026:16:21:06.829700 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jgd09l96p", "attempt_number": 0, "asctime": "16/Jun/2026:16:22:06.889693 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jgd09l96p", "attempt_number": 0, "asctime": "16/Jun/2026:16:23:06.949725 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jgd09l96p", "attempt_number": 0, "asctime": "16/Jun/2026:16:24:07.010188 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jgd09l96p", "attempt_number": 0, "asctime": "16/Jun/2026:16:25:07.069718 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jgd09l96p", "attempt_number": 0, "asctime": "16/Jun/2026:16:26:07.129748 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jgd09l96p", "attempt_number": 0, "asctime": "16/Jun/2026:16:27:07.189723 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 6.9GiB | working_set: 6.5GiB | peak: 6.9GiB"}
+| ---END AIMET LOGS---
+[2026-06-16T16:27:25.664+00:00] [INFO] ONNX graph successfully converted to QDQ format
+[2026-06-16T16:27:25.665+00:00] [INFO] Computing PSNR between FP32 and INT8 model output...
+[2026-06-16T16:27:29.280+00:00] [INFO] PSNR: {'image_embedding': 28.94972736115127}
+[2026-06-16T16:27:29.370+00:00] [INFO] [quantize-post-quantize] Memory: 7.5GiB | working_set: 7.0GiB | peak: 9.3GiB
+[2026-06-16T16:27:42.258+00:00] [INFO] Uploading asset to https://tetrahub-qprod-userdata.s3.amazonaws.com/models/mnwwe5zkn_yWIiOVLRt3b0QMl7.onnx.zip?uploadId=ykt3_L7gOYga0uEuE35tGD3hffdZEcWi4dE7.CJLBdWsmAH8S7lOmUpav5ZRySa_dURxNKk.s0pQtFwdq2f2wpX6LyusBzY0r_M2J_3TGLumkxdByuWHxPiX1HZOsre1&partNumber=1&AWSAccessKeyId=AKIAY25OF7UJ7WVT72WE&Signature=vHjVqa1yMZf
+[2026-06-16T16:27:45.435+00:00] [INFO] Successfully uploaded asset with response status: 200
+[2026-06-16T16:27:46.146+00:00] [INFO] Uploading asset to https://tetrahub-qprod-userdata.s3-accelerate.amazonaws.com/
+[2026-06-16T16:27:46.257+00:00] [INFO] Successfully uploaded asset with response status: 204
+[2026-06-16T16:27:46.258+00:00] [INFO] Successfully computed visualization graph for mnwwe5zkn

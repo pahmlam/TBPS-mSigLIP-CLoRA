@@ -1,0 +1,193 @@
+{
+  "jobs": [
+    {
+      "job_id": "jgj1wxo1g",
+      "target_relpath": "aihub/failures/internal-float/2026-06-08_encoder-blocks-4-11-float__link-fail__add_1003__jgj1wxo1g.log",
+      "journal_section": "2026-06-08 - Compile/Link encoder_blocks_4_11_float diagnostic",
+      "kind": "link fail",
+      "why_relevant": "QDQ local pass but HTP link rejects internal FP tensor add_1003."
+    },
+    {
+      "job_id": "jgj178xvg",
+      "target_relpath": "aihub/failures/internal-float/2026-06-09_w8a16-gelu-dequant__link-fail__jgj178xvg.log",
+      "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+      "kind": "link fail",
+      "why_relevant": "W8A16 local pass rejects floating GELU dequant output during link."
+    },
+    {
+      "job_id": "j576417rg",
+      "target_relpath": "aihub/failures/internal-float/2026-06-09_w8a16s-gelu-dequant__link-fail__j576417rg.log",
+      "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+      "kind": "link fail",
+      "why_relevant": "Signed W8A16 variant has same floating GELU dequant failure."
+    },
+    {
+      "job_id": "jpv4d8rzp",
+      "target_relpath": "aihub/failures/internal-float/2026-06-09_htp-fp16-gelu-dequant__link-fail__jpv4d8rzp.log",
+      "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+      "kind": "link fail",
+      "why_relevant": "HTP FP16/internal activation attempt still leaves floating GELU output."
+    },
+    {
+      "job_id": "jp389l6z5",
+      "target_relpath": "aihub/failures/internal-float/2026-06-09_gelu-qint8__link-fail__jp389l6z5.log",
+      "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+      "kind": "link fail",
+      "why_relevant": "GELU qint8 variant remains in the internal-float link-fail family."
+    },
+    {
+      "job_id": "j5wx7kmzp",
+      "target_relpath": "aihub/failures/internal-float/2026-06-09_gelu-quint8__link-fail__j5wx7kmzp.log",
+      "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+      "kind": "link fail",
+      "why_relevant": "GELU quint8 variant remains in the internal-float link-fail family."
+    },
+    {
+      "job_id": "jgl7xd1l5",
+      "target_relpath": "aihub/failures/internal-float/2026-06-09_matmul-act-qint8__link-fail__jgl7xd1l5.log",
+      "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+      "kind": "link fail",
+      "why_relevant": "MatMul activation qint8 variant remains in same internal-float link-fail family."
+    },
+    {
+      "job_id": "jp0kjyd25",
+      "target_relpath": "aihub/failures/internal-float/2026-06-09_blocks-0-11-int16__link-fail__add_103_updated__jp0kjyd25.log",
+      "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+      "kind": "link fail",
+      "why_relevant": "blocks_0_11 int16 variant rejects remaining floating tensor add_103_updated."
+    },
+    {
+      "job_id": "jgzwm63xg",
+      "target_relpath": "aihub/failures/htp-v73-required/2026-06-09_w8a16-quantize-full-int16__link-fail__matmul-v73-required__jgzwm63xg.log",
+      "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+      "kind": "link fail",
+      "why_relevant": "Context conversion fails because activation matmul pattern needs newer HTP."
+    },
+    {
+      "job_id": "jpr90k37p",
+      "target_relpath": "aihub/failures/htp-v73-required/2026-06-09_gelu-float-for-requant-int16__link-fail__matmul-v73-required__jpr90k37p.log",
+      "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+      "kind": "link fail",
+      "why_relevant": "GELU float-for-requant + int16 exits during context conversion."
+    },
+    {
+      "job_id": "j576q80rg",
+      "target_relpath": "aihub/failures/htp-v73-required/2026-06-14_w8a16-attention-matmul__link-fail__j576q80rg.log",
+      "journal_section": "2026-06-14 - W8A16 Link Fail Trên HTP v68",
+      "kind": "link fail",
+      "why_relevant": "Native W8A16 QAT path has high fidelity but HTP v68 link fails."
+    },
+    {
+      "job_id": "jpxmw8kjg",
+      "target_relpath": "aihub/failures/htp-v73-required/2026-06-15_mixed-a16-layernorm__link-fail__jpxmw8kjg.log",
+      "journal_section": "2026-06-14 - mixed-int attention int8 + rest int16",
+      "kind": "link fail",
+      "why_relevant": "Mixed A16 path fails around LayerNorm, supporting all-W8A8 constraint."
+    },
+    {
+      "job_id": "j56re0vy5",
+      "target_relpath": "aihub/failures/text-mask/2026-06-19_full-text-f32mask__link-fail__cast-output-0__j56re0vy5.log",
+      "journal_section": "2026-06-19 - Text f32-mask link fail",
+      "kind": "link fail",
+      "why_relevant": "Full text graph rejects internal /text_model/Cast_output_0_updated mask tensor."
+    },
+    {
+      "job_id": "jglo3qz8g",
+      "target_relpath": "aihub/failures/text-mask/2026-06-20_split-text-f32mask__link-fail__cast-output-0__jglo3qz8g.log",
+      "journal_section": "2026-06-20 - B2 split-text link FAIL `/Cast_output_0_updated`",
+      "kind": "link fail",
+      "why_relevant": "Split-text graph still contains mask Cast float island."
+    },
+    {
+      "job_id": "j56rn6ry5",
+      "target_relpath": "aihub/failures/text-mask/2026-06-20_split-text-mask-expand__link-fail__expand-coef__j56rn6ry5.log",
+      "journal_section": "2026-06-20 - split-text re-submit after Cast fix",
+      "kind": "link fail",
+      "why_relevant": "Cast island removed, but materialized Expand mask coefficient is rejected."
+    },
+    {
+      "job_id": "jp2j211q5",
+      "target_relpath": "aihub/successes/2026-06-15_rotation-w8a8-first-link-pass__jp2j211q5.log",
+      "journal_section": "2026-06-14 - W8A8 M3 link success",
+      "kind": "link success control",
+      "why_relevant": "All-W8A8 link success after avoiding internal floating islands."
+    },
+    {
+      "job_id": "jgoovyj4g",
+      "target_relpath": "aihub/successes/2026-06-22_vision-v9-qdq-final__jgoovyj4g.log",
+      "journal_section": "2026-06-22 - Final vision v9 QDQ",
+      "kind": "quantize success",
+      "why_relevant": "Final refined vision v9 QDQ used by current proxy and board recipe."
+    },
+    {
+      "job_id": "jpe8wr61p",
+      "target_relpath": "aihub/successes/2026-06-22_text-i32-f32mask-qdq-final__jpe8wr61p.log",
+      "journal_section": "2026-06-22 - Final text QDQ proxy",
+      "kind": "quantize success",
+      "why_relevant": "Final text QDQ proxy paired with vision v9 in both-INT8 proxy."
+    },
+    {
+      "job_id": "jp24xxn65",
+      "target_relpath": "aihub/successes/2026-06-18_vision-v8-learned-rotation-qdq-pass__jp24xxn65.log",
+      "journal_section": "2026-06-18 - QAT v8 learned rotation",
+      "kind": "quantize success",
+      "why_relevant": "First learned-rotation QDQ pass; clean ablation learned vs random."
+    },
+    {
+      "job_id": "jp17y648p",
+      "target_relpath": "aihub/successes/2026-06-19_text-v8-finite-mask-qdq-pass__jp17y648p.log",
+      "journal_section": "2026-06-19 - C1 Off-board both-INT8 retrieval PASS",
+      "kind": "quantize success",
+      "why_relevant": "Text learned-rotation finite-mask QDQ pass used in C1 proxy."
+    },
+    {
+      "job_id": "jp383qmn5",
+      "target_relpath": "aihub/ablations/vision_qat-v3__t2i48.20_cos0.9353__jp383qmn5.log",
+      "journal_section": "2026-06-15 - QAT v3",
+      "kind": "quantize ablation",
+      "why_relevant": "EMA observer first stable INT8 QAT result."
+    },
+    {
+      "job_id": "jgd09l96p",
+      "target_relpath": "aihub/ablations/vision_qat-v4__t2i48.50_cos0.9364__jgd09l96p.log",
+      "journal_section": "2026-06-15 - QAT v4",
+      "kind": "quantize ablation",
+      "why_relevant": "Head fake-quant and board-verified binary milestone."
+    },
+    {
+      "job_id": "jpxm2w0lg",
+      "target_relpath": "aihub/ablations/vision_qat-v5__t2i49.25_cos0.9437__jpxm2w0lg.log",
+      "journal_section": "2026-06-15 - QAT v5",
+      "kind": "quantize ablation",
+      "why_relevant": "Per-linear fake-quant improves worst-sample cosine."
+    },
+    {
+      "job_id": "j57krdwvp",
+      "target_relpath": "aihub/ablations/vision_qat-v6__t2i49.30_cos0.9491__j57krdwvp.log",
+      "journal_section": "2026-06-15 - QAT v6",
+      "kind": "quantize ablation",
+      "why_relevant": "Random-rotation coverage ceiling before learned rotation."
+    },
+    {
+      "job_id": "jpve62jmg",
+      "target_relpath": "aihub/ablations/vision_qat-v7-regress__t2i48.38_cos0.9485__jpve62jmg.log",
+      "journal_section": "2026-06-15 - QAT v7",
+      "kind": "quantize ablation",
+      "why_relevant": "Cosine LR/lr 2e-5 regression."
+    },
+    {
+      "job_id": "jgjoly0ep",
+      "target_relpath": "aihub/ablations/split-text-calib500__md5-baseline__jgjoly0ep.log",
+      "journal_section": "2026-06-22 - split-text calibration md5",
+      "kind": "quantize ablation",
+      "why_relevant": "Split-text calibration 500 md5 baseline."
+    },
+    {
+      "job_id": "jp24mdmq5",
+      "target_relpath": "aihub/ablations/split-text-calib2000__md5-identical__jp24mdmq5.log",
+      "journal_section": "2026-06-22 - split-text calibration md5",
+      "kind": "quantize ablation",
+      "why_relevant": "Split-text calibration 2000 produced byte-identical QDQ model."
+    }
+  ]
+}

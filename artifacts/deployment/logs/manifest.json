@@ -1,0 +1,363 @@
+{
+  "description": "Canonical deployment evidence archive manifest.",
+  "generated_by": "deployment/scripts/qnn/organize_deployment_logs.py",
+  "records": [
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/jgj1wxo1g/jgj1wxo1g.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/internal-float/2026-06-08_encoder-blocks-4-11-float__link-fail__add_1003__jgj1wxo1g.log",
+      "type": "aihub_log",
+      "job_id": "jgj1wxo1g",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/jgj178xvg/jgj178xvg.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/internal-float/2026-06-09_w8a16-gelu-dequant__link-fail__jgj178xvg.log",
+      "type": "aihub_log",
+      "job_id": "jgj178xvg",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/j576417rg/j576417rg.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/internal-float/2026-06-09_w8a16s-gelu-dequant__link-fail__j576417rg.log",
+      "type": "aihub_log",
+      "job_id": "j576417rg",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/jpv4d8rzp/jpv4d8rzp.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/internal-float/2026-06-09_htp-fp16-gelu-dequant__link-fail__jpv4d8rzp.log",
+      "type": "aihub_log",
+      "job_id": "jpv4d8rzp",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/jp389l6z5/jp389l6z5.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/internal-float/2026-06-09_gelu-qint8__link-fail__jp389l6z5.log",
+      "type": "aihub_log",
+      "job_id": "jp389l6z5",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/j5wx7kmzp/j5wx7kmzp.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/internal-float/2026-06-09_gelu-quint8__link-fail__j5wx7kmzp.log",
+      "type": "aihub_log",
+      "job_id": "j5wx7kmzp",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/jgl7xd1l5/jgl7xd1l5.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/internal-float/2026-06-09_matmul-act-qint8__link-fail__jgl7xd1l5.log",
+      "type": "aihub_log",
+      "job_id": "jgl7xd1l5",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/jp0kjyd25/jp0kjyd25.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/internal-float/2026-06-09_blocks-0-11-int16__link-fail__add_103_updated__jp0kjyd25.log",
+      "type": "aihub_log",
+      "job_id": "jp0kjyd25",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/jgzwm63xg/jgzwm63xg.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/htp-v73-required/2026-06-09_w8a16-quantize-full-int16__link-fail__matmul-v73-required__jgzwm63xg.log",
+      "type": "aihub_log",
+      "job_id": "jgzwm63xg",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/jpr90k37p/jpr90k37p.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/htp-v73-required/2026-06-09_gelu-float-for-requant-int16__link-fail__matmul-v73-required__jpr90k37p.log",
+      "type": "aihub_log",
+      "job_id": "jpr90k37p",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/j576q80rg/j576q80rg.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/htp-v73-required/2026-06-14_w8a16-attention-matmul__link-fail__j576q80rg.log",
+      "type": "aihub_log",
+      "job_id": "j576q80rg",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/jpxmw8kjg/jpxmw8kjg.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/htp-v73-required/2026-06-15_mixed-a16-layernorm__link-fail__jpxmw8kjg.log",
+      "type": "aihub_log",
+      "job_id": "jpxmw8kjg",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/j56re0vy5/j56re0vy5.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/text-mask/2026-06-19_full-text-f32mask__link-fail__cast-output-0__j56re0vy5.log",
+      "type": "aihub_log",
+      "job_id": "j56re0vy5",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/jglo3qz8g/jglo3qz8g.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/text-mask/2026-06-20_split-text-f32mask__link-fail__cast-output-0__jglo3qz8g.log",
+      "type": "aihub_log",
+      "job_id": "jglo3qz8g",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/j56rn6ry5/j56rn6ry5.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/failures/text-mask/2026-06-20_split-text-mask-expand__link-fail__expand-coef__j56rn6ry5.log",
+      "type": "aihub_log",
+      "job_id": "j56rn6ry5",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/jp2j211q5/jp2j211q5.log",
+      "canonical_path": "artifacts/deployment/logs/aihub/successes/2026-06-15_rotation-w8a8-first-link-pass__jp2j211q5.log",
+      "type": "aihub_log",
+      "job_id": "jp2j211q5",
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/both_int8_board_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/board/final_both-int8_v9-splittext__t2i50.35_i2t54.20.json",
+      "type": "board_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 50.35,
+        "i2t_r1": 54.2
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/board_vision_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/board/vision_v9_board-isolation__t2i50.35_i2t54.55.json",
+      "type": "board_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 50.35,
+        "i2t_r1": 54.55
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask/board_text_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/board/text_split-board-isolation__t2i51.30_i2t54.80.json",
+      "type": "board_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 51.3,
+        "i2t_r1": 54.8
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/board_vision_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/board/vision_v8_board-isolation__t2i50.20_i2t54.50.json",
+      "type": "board_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 50.2,
+        "i2t_r1": 54.5
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/qnn_vs_pytorch_summary.json",
+      "canonical_path": "artifacts/deployment/logs/results/board/text_fullgraph-i32__board-fidelity-fail__cos0.126_inputids-ignored.json",
+      "type": "board_fidelity_failure",
+      "job_id": null,
+      "metrics": {
+        "cosine_l2_mean": 0.12666028
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/both_int8_qdq_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/qdq/both-int8_v9_proxy__t2i50.63_i2t53.90.json",
+      "type": "qdq_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 50.63,
+        "i2t_r1": 53.9
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/both_int8/both_int8_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/qdq/both-int8_v8_proxy__t2i50.25_i2t52.95.json",
+      "type": "qdq_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 50.25,
+        "i2t_r1": 52.95
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/retrieval_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/qdq/vision_v9_qdq-isolation__t2i50.98_i2t54.20.json",
+      "type": "qdq_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 50.98,
+        "i2t_r1": 54.2
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/rotated_w8a8_v2/retrieval_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/qdq/vision_rotation-only__t2i45.42_cos0.8975.json",
+      "type": "qdq_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 45.42,
+        "cosine_l2_mean": 0.8975
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/rotated_w8a8_qat_v3/retrieval_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/qdq/vision_qat-v3__t2i48.20_cos0.9353.json",
+      "type": "qdq_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 48.2,
+        "cosine_l2_mean": 0.9353
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/rotated_w8a8_qat_v4/retrieval_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/qdq/vision_qat-v4__t2i48.50_cos0.9364.json",
+      "type": "qdq_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 48.5,
+        "cosine_l2_mean": 0.9364
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/rotated_w8a8_qat_v5/retrieval_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/qdq/vision_qat-v5__t2i49.25_cos0.9437.json",
+      "type": "qdq_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 49.25,
+        "cosine_l2_mean": 0.9437
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/rotated_w8a8_qat_v6/retrieval_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/qdq/vision_qat-v6__t2i49.30_cos0.9491.json",
+      "type": "qdq_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 49.3,
+        "cosine_l2_mean": 0.9491
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/rotated_w8a8_qat_v7/retrieval_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/qdq/vision_qat-v7-regress__t2i48.38_cos0.9485.json",
+      "type": "qdq_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 48.38,
+        "cosine_l2_mean": 0.9485
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/text_qdq_fid.json",
+      "canonical_path": "artifacts/deployment/logs/results/qdq/text_finite-mask_fidelity__cos0.9949_min0.9912.json",
+      "type": "qdq_fidelity",
+      "job_id": null,
+      "metrics": {
+        "cosine_l2_mean": 0.9949,
+        "cosine_l2_min": 0.9912
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/text_isolation_r1.json",
+      "canonical_path": "artifacts/deployment/logs/results/qdq/text_finite-mask_isolation__t2i51.65_i2t55.55.json",
+      "type": "qdq_result",
+      "job_id": null,
+      "metrics": {
+        "t2i_r1": 51.65,
+        "i2t_r1": 55.55
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/attention_qdq_scales.json",
+      "canonical_path": "artifacts/deployment/logs/results/qdq/text_attention-mask-scales__max0.3523.json",
+      "type": "qdq_diagnostic",
+      "job_id": null,
+      "metrics": {
+        "max_attention_qdq_scale": 0.3523
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/diag/text_outliers/summary.json",
+      "canonical_path": "artifacts/deployment/logs/diagnostics/text_outliers_before-rotation__residual-conc404x.json",
+      "type": "diagnostic",
+      "job_id": null,
+      "metrics": {
+        "residual_concentration_max": 404
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/diag/text_outliers_rotated/summary.json",
+      "canonical_path": "artifacts/deployment/logs/diagnostics/text_outliers_after-rotation__residual-conc5.3x.json",
+      "type": "diagnostic",
+      "job_id": null,
+      "metrics": {
+        "residual_concentration_max": 5.3
+      },
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/runtime/qnn_native/env_audit.json",
+      "canonical_path": "artifacts/deployment/logs/diagnostics/qnn_native_env_audit.json",
+      "type": "diagnostic",
+      "job_id": null,
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/download_manifest.json",
+      "canonical_path": "artifacts/deployment/logs/aihub/legacy/internal-floating-point_download_manifest.json",
+      "type": "legacy_manifest",
+      "job_id": null,
+      "metrics": {},
+      "status": "moved"
+    },
+    {
+      "source_path": "artifacts/deployment/logs/internal_floating-point/README.md",
+      "canonical_path": "artifacts/deployment/logs/aihub/legacy/internal-floating-point_README.md",
+      "type": "legacy_readme",
+      "job_id": null,
+      "metrics": {},
+      "status": "moved"
+    }
+  ]
+}

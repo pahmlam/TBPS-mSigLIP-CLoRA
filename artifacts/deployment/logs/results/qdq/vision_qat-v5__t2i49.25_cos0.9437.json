@@ -1,0 +1,46 @@
+{
+  "onnx_model": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/runtime/rotated_w8a8_qat_v5/job_jpxm2w0lg_qdq_onnx/model.onnx",
+  "model_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/exports/exported_model",
+  "num_gallery_images": 2000,
+  "num_query_captions": 4000,
+  "subset_smoke": false,
+  "similarity": "raw_dot_product",
+  "baseline_fp32": {
+    "t2i": {
+      "R1": 52.39999771118164,
+      "R5": 79.375,
+      "R10": 87.80000305175781,
+      "mAP": 57.384098052978516,
+      "mINP": 50.66837692260742
+    },
+    "i2t": {
+      "R1": 55.29999542236328,
+      "R5": 81.44999694824219,
+      "R10": 89.70000457763672,
+      "mAP": 51.37656784057617,
+      "mINP": 34.49866485595703
+    }
+  },
+  "quantized": {
+    "t2i": {
+      "R1": 49.25,
+      "R5": 77.2750015258789,
+      "R10": 85.79999542236328,
+      "mAP": 54.554168701171875,
+      "mINP": 47.85541534423828
+    },
+    "i2t": {
+      "R1": 53.39999771118164,
+      "R5": 80.8499984741211,
+      "R10": 88.0999984741211,
+      "mAP": 49.04928970336914,
+      "mINP": 32.00982666015625
+    }
+  },
+  "t2i_r1_drop": 3.1499977111816406,
+  "i2t_r1_drop": 1.8999977111816406,
+  "gate_r1": 48.0,
+  "onnx_ms_per_image": 56.502180828756536,
+  "baseline_sanity_pass": true,
+  "gate_pass": true
+}

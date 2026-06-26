@@ -1,0 +1,536 @@
+[
+  {
+    "job_id": "jgj1wxo1g",
+    "target_relpath": "aihub/failures/internal-float/2026-06-08_encoder-blocks-4-11-float__link-fail__add_1003__jgj1wxo1g.log",
+    "journal_section": "2026-06-08 - Compile/Link encoder_blocks_4_11_float diagnostic",
+    "kind": "link fail",
+    "why_relevant": "QDQ local pass but HTP link rejects internal FP tensor add_1003.",
+    "target_path": "aihub/failures/internal-float/2026-06-08_encoder-blocks-4-11-float__link-fail__add_1003__jgj1wxo1g.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/internal-float/2026-06-08_encoder-blocks-4-11-float__link-fail__add_1003__jgj1wxo1g.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-06T17:17:42.459+00:00] [INFO] Tensor 'add_1003' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jgj178xvg",
+    "target_relpath": "aihub/failures/internal-float/2026-06-09_w8a16-gelu-dequant__link-fail__jgj178xvg.log",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "W8A16 local pass rejects floating GELU dequant output during link.",
+    "target_path": "aihub/failures/internal-float/2026-06-09_w8a16-gelu-dequant__link-fail__jgj178xvg.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/internal-float/2026-06-09_w8a16-gelu-dequant__link-fail__jgj178xvg.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T01:46:55.842+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "j576417rg",
+    "target_relpath": "aihub/failures/internal-float/2026-06-09_w8a16s-gelu-dequant__link-fail__j576417rg.log",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "Signed W8A16 variant has same floating GELU dequant failure.",
+    "target_path": "aihub/failures/internal-float/2026-06-09_w8a16s-gelu-dequant__link-fail__j576417rg.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/internal-float/2026-06-09_w8a16s-gelu-dequant__link-fail__j576417rg.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T02:27:58.262+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jpv4d8rzp",
+    "target_relpath": "aihub/failures/internal-float/2026-06-09_htp-fp16-gelu-dequant__link-fail__jpv4d8rzp.log",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "HTP FP16/internal activation attempt still leaves floating GELU output.",
+    "target_path": "aihub/failures/internal-float/2026-06-09_htp-fp16-gelu-dequant__link-fail__jpv4d8rzp.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/internal-float/2026-06-09_htp-fp16-gelu-dequant__link-fail__jpv4d8rzp.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T04:22:59.699+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jp389l6z5",
+    "target_relpath": "aihub/failures/internal-float/2026-06-09_gelu-qint8__link-fail__jp389l6z5.log",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "GELU qint8 variant remains in the internal-float link-fail family.",
+    "target_path": "aihub/failures/internal-float/2026-06-09_gelu-qint8__link-fail__jp389l6z5.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/internal-float/2026-06-09_gelu-qint8__link-fail__jp389l6z5.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T02:47:57.262+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "j5wx7kmzp",
+    "target_relpath": "aihub/failures/internal-float/2026-06-09_gelu-quint8__link-fail__j5wx7kmzp.log",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "GELU quint8 variant remains in the internal-float link-fail family.",
+    "target_path": "aihub/failures/internal-float/2026-06-09_gelu-quint8__link-fail__j5wx7kmzp.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/internal-float/2026-06-09_gelu-quint8__link-fail__j5wx7kmzp.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T04:58:53.995+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jgl7xd1l5",
+    "target_relpath": "aihub/failures/internal-float/2026-06-09_matmul-act-qint8__link-fail__jgl7xd1l5.log",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "MatMul activation qint8 variant remains in same internal-float link-fail family.",
+    "target_path": "aihub/failures/internal-float/2026-06-09_matmul-act-qint8__link-fail__jgl7xd1l5.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/internal-float/2026-06-09_matmul-act-qint8__link-fail__jgl7xd1l5.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T05:13:59.627+00:00] [INFO] Tensor 'gelu_10_DequantizeLinear_Output' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jp0kjyd25",
+    "target_relpath": "aihub/failures/internal-float/2026-06-09_blocks-0-11-int16__link-fail__add_103_updated__jp0kjyd25.log",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "blocks_0_11 int16 variant rejects remaining floating tensor add_103_updated.",
+    "target_path": "aihub/failures/internal-float/2026-06-09_blocks-0-11-int16__link-fail__add_103_updated__jp0kjyd25.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/internal-float/2026-06-09_blocks-0-11-int16__link-fail__add_103_updated__jp0kjyd25.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-09T08:12:59.218+00:00] [INFO] Tensor 'add_103_updated' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jgzwm63xg",
+    "target_relpath": "aihub/failures/htp-v73-required/2026-06-09_w8a16-quantize-full-int16__link-fail__matmul-v73-required__jgzwm63xg.log",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "Context conversion fails because activation matmul pattern needs newer HTP.",
+    "target_path": "aihub/failures/htp-v73-required/2026-06-09_w8a16-quantize-full-int16__link-fail__matmul-v73-required__jgzwm63xg.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/htp-v73-required/2026-06-09_w8a16-quantize-full-int16__link-fail__matmul-v73-required__jgzwm63xg.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 18,
+        "text": "[2026-06-09T04:06:04.551+00:00] [INFO] [ ERROR ]  <E> [4294967295] has incorrect Value 68, expected >= 73."
+      },
+      {
+        "line": 20,
+        "text": "[2026-06-09T04:06:04.551+00:00] [INFO] [ ERROR ]  <E> QnnBackend_validateOpConfig failed 3110"
+      },
+      {
+        "line": 22,
+        "text": "[2026-06-09T04:06:04.551+00:00] [INFO] [ ERROR ]  <E> Failed to validate op node_MatMul_918 with error 0xc26"
+      },
+      {
+        "line": 38,
+        "text": "[2026-06-09T04:06:04.561+00:00] [WARNING] Conversion to context binary failed with exit code 14"
+      }
+    ]
+  },
+  {
+    "job_id": "jpr90k37p",
+    "target_relpath": "aihub/failures/htp-v73-required/2026-06-09_gelu-float-for-requant-int16__link-fail__matmul-v73-required__jpr90k37p.log",
+    "journal_section": "2026-06-09 - ORT W8A16 Pass Local, QNN Link Fail",
+    "kind": "link fail",
+    "why_relevant": "GELU float-for-requant + int16 exits during context conversion.",
+    "target_path": "aihub/failures/htp-v73-required/2026-06-09_gelu-float-for-requant-int16__link-fail__matmul-v73-required__jpr90k37p.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/htp-v73-required/2026-06-09_gelu-float-for-requant-int16__link-fail__matmul-v73-required__jpr90k37p.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 18,
+        "text": "[2026-06-09T07:24:54.810+00:00] [INFO] [ ERROR ]  <E> [4294967295] has incorrect Value 68, expected >= 73."
+      },
+      {
+        "line": 20,
+        "text": "[2026-06-09T07:24:54.810+00:00] [INFO] [ ERROR ]  <E> QnnBackend_validateOpConfig failed 3110"
+      },
+      {
+        "line": 22,
+        "text": "[2026-06-09T07:24:54.810+00:00] [INFO] [ ERROR ]  <E> Failed to validate op node_MatMul_918 with error 0xc26"
+      },
+      {
+        "line": 38,
+        "text": "[2026-06-09T07:24:54.821+00:00] [WARNING] Conversion to context binary failed with exit code 14"
+      }
+    ]
+  },
+  {
+    "job_id": "j576q80rg",
+    "target_relpath": "aihub/failures/htp-v73-required/2026-06-14_w8a16-attention-matmul__link-fail__j576q80rg.log",
+    "journal_section": "2026-06-14 - W8A16 Link Fail Trên HTP v68",
+    "kind": "link fail",
+    "why_relevant": "Native W8A16 QAT path has high fidelity but HTP v68 link fails.",
+    "target_path": "aihub/failures/htp-v73-required/2026-06-14_w8a16-attention-matmul__link-fail__j576q80rg.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/htp-v73-required/2026-06-14_w8a16-attention-matmul__link-fail__j576q80rg.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 18,
+        "text": "[2026-06-14T13:02:59.666+00:00] [INFO] [ ERROR ]  <E> [4294967295] has incorrect Value 68, expected >= 73."
+      },
+      {
+        "line": 20,
+        "text": "[2026-06-14T13:02:59.666+00:00] [INFO] [ ERROR ]  <E> QnnBackend_validateOpConfig failed 3110"
+      },
+      {
+        "line": 22,
+        "text": "[2026-06-14T13:02:59.666+00:00] [INFO] [ ERROR ]  <E> Failed to validate op node_MatMul_774 with error 0xc26"
+      },
+      {
+        "line": 38,
+        "text": "[2026-06-14T13:02:59.679+00:00] [WARNING] Conversion to context binary failed with exit code 14"
+      }
+    ]
+  },
+  {
+    "job_id": "jpxmw8kjg",
+    "target_relpath": "aihub/failures/htp-v73-required/2026-06-15_mixed-a16-layernorm__link-fail__jpxmw8kjg.log",
+    "journal_section": "2026-06-14 - mixed-int attention int8 + rest int16",
+    "kind": "link fail",
+    "why_relevant": "Mixed A16 path fails around LayerNorm, supporting all-W8A8 constraint.",
+    "target_path": "aihub/failures/htp-v73-required/2026-06-15_mixed-a16-layernorm__link-fail__jpxmw8kjg.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/htp-v73-required/2026-06-15_mixed-a16-layernorm__link-fail__jpxmw8kjg.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 18,
+        "text": "[2026-06-15T00:41:19.464+00:00] [INFO] [ ERROR ]  <E> [4294967295] has incorrect Value 68, expected >= 73."
+      },
+      {
+        "line": 20,
+        "text": "[2026-06-15T00:41:19.464+00:00] [INFO] [ ERROR ]  <E> QnnBackend_validateOpConfig failed 3110"
+      },
+      {
+        "line": 22,
+        "text": "[2026-06-15T00:41:19.464+00:00] [INFO] [ ERROR ]  <E> Failed to validate op node_layer_norm with error 0xc26"
+      },
+      {
+        "line": 38,
+        "text": "[2026-06-15T00:41:19.476+00:00] [WARNING] Conversion to context binary failed with exit code 14"
+      }
+    ]
+  },
+  {
+    "job_id": "j56re0vy5",
+    "target_relpath": "aihub/failures/text-mask/2026-06-19_full-text-f32mask__link-fail__cast-output-0__j56re0vy5.log",
+    "journal_section": "2026-06-19 - Text f32-mask link fail",
+    "kind": "link fail",
+    "why_relevant": "Full text graph rejects internal /text_model/Cast_output_0_updated mask tensor.",
+    "target_path": "aihub/failures/text-mask/2026-06-19_full-text-f32mask__link-fail__cast-output-0__j56re0vy5.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/text-mask/2026-06-19_full-text-f32mask__link-fail__cast-output-0__j56re0vy5.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-19T08:19:27.679+00:00] [INFO] Tensor '/text_model/Cast_output_0_updated' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jglo3qz8g",
+    "target_relpath": "aihub/failures/text-mask/2026-06-20_split-text-f32mask__link-fail__cast-output-0__jglo3qz8g.log",
+    "journal_section": "2026-06-20 - B2 split-text link FAIL `/Cast_output_0_updated`",
+    "kind": "link fail",
+    "why_relevant": "Split-text graph still contains mask Cast float island.",
+    "target_path": "aihub/failures/text-mask/2026-06-20_split-text-f32mask__link-fail__cast-output-0__jglo3qz8g.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/text-mask/2026-06-20_split-text-f32mask__link-fail__cast-output-0__jglo3qz8g.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-20T11:49:38.830+00:00] [INFO] Tensor '/Cast_output_0_updated' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "j56rn6ry5",
+    "target_relpath": "aihub/failures/text-mask/2026-06-20_split-text-mask-expand__link-fail__expand-coef__j56rn6ry5.log",
+    "journal_section": "2026-06-20 - split-text re-submit after Cast fix",
+    "kind": "link fail",
+    "why_relevant": "Cast island removed, but materialized Expand mask coefficient is rejected.",
+    "target_path": "aihub/failures/text-mask/2026-06-20_split-text-mask-expand__link-fail__expand-coef__j56rn6ry5.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/failures/text-mask/2026-06-20_split-text-mask-expand__link-fail__expand-coef__j56rn6ry5.log"
+    ],
+    "evidence_lines": [
+      {
+        "line": 8,
+        "text": "[2026-06-20T12:21:50.022+00:00] [INFO] Tensor '/Expand_coef' has a floating-point type which is not supported by the targeted device."
+      }
+    ]
+  },
+  {
+    "job_id": "jp2j211q5",
+    "target_relpath": "aihub/successes/2026-06-15_rotation-w8a8-first-link-pass__jp2j211q5.log",
+    "journal_section": "2026-06-14 - W8A8 M3 link success",
+    "kind": "link success control",
+    "why_relevant": "All-W8A8 link success after avoiding internal floating islands.",
+    "target_path": "aihub/successes/2026-06-15_rotation-w8a8-first-link-pass__jp2j211q5.log",
+    "ok": true,
+    "download_status": "already_present",
+    "downloaded_logs": [
+      "aihub/successes/2026-06-15_rotation-w8a8-first-link-pass__jp2j211q5.log"
+    ],
+    "evidence_lines": []
+  },
+  {
+    "job_id": "jgoovyj4g",
+    "target_relpath": "aihub/successes/2026-06-22_vision-v9-qdq-final__jgoovyj4g.log",
+    "journal_section": "2026-06-22 - Final vision v9 QDQ",
+    "kind": "quantize success",
+    "why_relevant": "Final refined vision v9 QDQ used by current proxy and board recipe.",
+    "target_path": "aihub/successes/2026-06-22_vision-v9-qdq-final__jgoovyj4g.log",
+    "ok": true,
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jgoovyj4g/",
+    "status": "JobStatus\n---------\ncode    : SUCCESS\nmessage : \n",
+    "download_result": "['/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/logs/.download_tmp/jgoovyj4g/jgoovyj4g.log']",
+    "download_status": "downloaded",
+    "downloaded_logs": [
+      "aihub/successes/2026-06-22_vision-v9-qdq-final__jgoovyj4g.log"
+    ],
+    "evidence_lines": []
+  },
+  {
+    "job_id": "jpe8wr61p",
+    "target_relpath": "aihub/successes/2026-06-22_text-i32-f32mask-qdq-final__jpe8wr61p.log",
+    "journal_section": "2026-06-22 - Final text QDQ proxy",
+    "kind": "quantize success",
+    "why_relevant": "Final text QDQ proxy paired with vision v9 in both-INT8 proxy.",
+    "target_path": "aihub/successes/2026-06-22_text-i32-f32mask-qdq-final__jpe8wr61p.log",
+    "ok": true,
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jpe8wr61p/",
+    "status": "JobStatus\n---------\ncode    : SUCCESS\nmessage : \n",
+    "download_result": "['/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/logs/.download_tmp/jpe8wr61p/jpe8wr61p.log']",
+    "download_status": "downloaded",
+    "downloaded_logs": [
+      "aihub/successes/2026-06-22_text-i32-f32mask-qdq-final__jpe8wr61p.log"
+    ],
+    "evidence_lines": []
+  },
+  {
+    "job_id": "jp24xxn65",
+    "target_relpath": "aihub/successes/2026-06-18_vision-v8-learned-rotation-qdq-pass__jp24xxn65.log",
+    "journal_section": "2026-06-18 - QAT v8 learned rotation",
+    "kind": "quantize success",
+    "why_relevant": "First learned-rotation QDQ pass; clean ablation learned vs random.",
+    "target_path": "aihub/successes/2026-06-18_vision-v8-learned-rotation-qdq-pass__jp24xxn65.log",
+    "ok": true,
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jp24xxn65/",
+    "status": "JobStatus\n---------\ncode    : SUCCESS\nmessage : \n",
+    "download_result": "['/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/logs/.download_tmp/jp24xxn65/jp24xxn65.log']",
+    "download_status": "downloaded",
+    "downloaded_logs": [
+      "aihub/successes/2026-06-18_vision-v8-learned-rotation-qdq-pass__jp24xxn65.log"
+    ],
+    "evidence_lines": []
+  },
+  {
+    "job_id": "jp17y648p",
+    "target_relpath": "aihub/successes/2026-06-19_text-v8-finite-mask-qdq-pass__jp17y648p.log",
+    "journal_section": "2026-06-19 - C1 Off-board both-INT8 retrieval PASS",
+    "kind": "quantize success",
+    "why_relevant": "Text learned-rotation finite-mask QDQ pass used in C1 proxy.",
+    "target_path": "aihub/successes/2026-06-19_text-v8-finite-mask-qdq-pass__jp17y648p.log",
+    "ok": true,
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jp17y648p/",
+    "status": "JobStatus\n---------\ncode    : SUCCESS\nmessage : \n",
+    "download_result": "['/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/logs/.download_tmp/jp17y648p/jp17y648p.log']",
+    "download_status": "downloaded",
+    "downloaded_logs": [
+      "aihub/successes/2026-06-19_text-v8-finite-mask-qdq-pass__jp17y648p.log"
+    ],
+    "evidence_lines": []
+  },
+  {
+    "job_id": "jp383qmn5",
+    "target_relpath": "aihub/ablations/vision_qat-v3__t2i48.20_cos0.9353__jp383qmn5.log",
+    "journal_section": "2026-06-15 - QAT v3",
+    "kind": "quantize ablation",
+    "why_relevant": "EMA observer first stable INT8 QAT result.",
+    "target_path": "aihub/ablations/vision_qat-v3__t2i48.20_cos0.9353__jp383qmn5.log",
+    "ok": true,
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jp383qmn5/",
+    "status": "JobStatus\n---------\ncode    : SUCCESS\nmessage : \n",
+    "download_result": "['/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/logs/.download_tmp/jp383qmn5/jp383qmn5.log']",
+    "download_status": "downloaded",
+    "downloaded_logs": [
+      "aihub/ablations/vision_qat-v3__t2i48.20_cos0.9353__jp383qmn5.log"
+    ],
+    "evidence_lines": []
+  },
+  {
+    "job_id": "jgd09l96p",
+    "target_relpath": "aihub/ablations/vision_qat-v4__t2i48.50_cos0.9364__jgd09l96p.log",
+    "journal_section": "2026-06-15 - QAT v4",
+    "kind": "quantize ablation",
+    "why_relevant": "Head fake-quant and board-verified binary milestone.",
+    "target_path": "aihub/ablations/vision_qat-v4__t2i48.50_cos0.9364__jgd09l96p.log",
+    "ok": true,
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jgd09l96p/",
+    "status": "JobStatus\n---------\ncode    : SUCCESS\nmessage : \n",
+    "download_result": "['/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/logs/.download_tmp/jgd09l96p/jgd09l96p.log']",
+    "download_status": "downloaded",
+    "downloaded_logs": [
+      "aihub/ablations/vision_qat-v4__t2i48.50_cos0.9364__jgd09l96p.log"
+    ],
+    "evidence_lines": []
+  },
+  {
+    "job_id": "jpxm2w0lg",
+    "target_relpath": "aihub/ablations/vision_qat-v5__t2i49.25_cos0.9437__jpxm2w0lg.log",
+    "journal_section": "2026-06-15 - QAT v5",
+    "kind": "quantize ablation",
+    "why_relevant": "Per-linear fake-quant improves worst-sample cosine.",
+    "target_path": "aihub/ablations/vision_qat-v5__t2i49.25_cos0.9437__jpxm2w0lg.log",
+    "ok": true,
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jpxm2w0lg/",
+    "status": "JobStatus\n---------\ncode    : SUCCESS\nmessage : \n",
+    "download_result": "['/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/logs/.download_tmp/jpxm2w0lg/jpxm2w0lg.log']",
+    "download_status": "downloaded",
+    "downloaded_logs": [
+      "aihub/ablations/vision_qat-v5__t2i49.25_cos0.9437__jpxm2w0lg.log"
+    ],
+    "evidence_lines": []
+  },
+  {
+    "job_id": "j57krdwvp",
+    "target_relpath": "aihub/ablations/vision_qat-v6__t2i49.30_cos0.9491__j57krdwvp.log",
+    "journal_section": "2026-06-15 - QAT v6",
+    "kind": "quantize ablation",
+    "why_relevant": "Random-rotation coverage ceiling before learned rotation.",
+    "target_path": "aihub/ablations/vision_qat-v6__t2i49.30_cos0.9491__j57krdwvp.log",
+    "ok": true,
+    "url": "https://workbench.aihub.qualcomm.com/jobs/j57krdwvp/",
+    "status": "JobStatus\n---------\ncode    : SUCCESS\nmessage : \n",
+    "download_result": "['/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/logs/.download_tmp/j57krdwvp/j57krdwvp.log']",
+    "download_status": "downloaded",
+    "downloaded_logs": [
+      "aihub/ablations/vision_qat-v6__t2i49.30_cos0.9491__j57krdwvp.log"
+    ],
+    "evidence_lines": []
+  },
+  {
+    "job_id": "jpve62jmg",
+    "target_relpath": "aihub/ablations/vision_qat-v7-regress__t2i48.38_cos0.9485__jpve62jmg.log",
+    "journal_section": "2026-06-15 - QAT v7",
+    "kind": "quantize ablation",
+    "why_relevant": "Cosine LR/lr 2e-5 regression.",
+    "target_path": "aihub/ablations/vision_qat-v7-regress__t2i48.38_cos0.9485__jpve62jmg.log",
+    "ok": true,
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jpve62jmg/",
+    "status": "JobStatus\n---------\ncode    : SUCCESS\nmessage : \n",
+    "download_result": "['/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/logs/.download_tmp/jpve62jmg/jpve62jmg.log']",
+    "download_status": "downloaded",
+    "downloaded_logs": [
+      "aihub/ablations/vision_qat-v7-regress__t2i48.38_cos0.9485__jpve62jmg.log"
+    ],
+    "evidence_lines": []
+  },
+  {
+    "job_id": "jgjoly0ep",
+    "target_relpath": "aihub/ablations/split-text-calib500__md5-baseline__jgjoly0ep.log",
+    "journal_section": "2026-06-22 - split-text calibration md5",
+    "kind": "quantize ablation",
+    "why_relevant": "Split-text calibration 500 md5 baseline.",
+    "target_path": "aihub/ablations/split-text-calib500__md5-baseline__jgjoly0ep.log",
+    "ok": true,
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jgjoly0ep/",
+    "status": "JobStatus\n---------\ncode    : SUCCESS\nmessage : \n",
+    "download_result": "['/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/logs/.download_tmp/jgjoly0ep/jgjoly0ep.log']",
+    "download_status": "downloaded",
+    "downloaded_logs": [
+      "aihub/ablations/split-text-calib500__md5-baseline__jgjoly0ep.log"
+    ],
+    "evidence_lines": []
+  },
+  {
+    "job_id": "jp24mdmq5",
+    "target_relpath": "aihub/ablations/split-text-calib2000__md5-identical__jp24mdmq5.log",
+    "journal_section": "2026-06-22 - split-text calibration md5",
+    "kind": "quantize ablation",
+    "why_relevant": "Split-text calibration 2000 produced byte-identical QDQ model.",
+    "target_path": "aihub/ablations/split-text-calib2000__md5-identical__jp24mdmq5.log",
+    "ok": true,
+    "url": "https://workbench.aihub.qualcomm.com/jobs/jp24mdmq5/",
+    "status": "JobStatus\n---------\ncode    : SUCCESS\nmessage : \n",
+    "download_result": "['/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/logs/.download_tmp/jp24mdmq5/jp24mdmq5.log']",
+    "download_status": "downloaded",
+    "downloaded_logs": [
+      "aihub/ablations/split-text-calib2000__md5-identical__jp24mdmq5.log"
+    ],
+    "evidence_lines": []
+  }
+]

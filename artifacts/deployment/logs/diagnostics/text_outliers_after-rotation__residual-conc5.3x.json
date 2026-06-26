@@ -1,0 +1,995 @@
+{
+  "onnx_model": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/exports/exported_model_text_rotated/text_onnx/text_encoder.onnx",
+  "input_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/qnn_inputs/vn3k_text_10",
+  "num_samples": 10,
+  "blocks": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "capture_ops": [
+    "Add",
+    "Gemm",
+    "LayerNormalization",
+    "MatMul"
+  ],
+  "num_target_tensors": 206,
+  "verdict": {
+    "decision": "DIFFUSE",
+    "recommendation": "Outlier energy is spread across many channels. Per-tensor INT8 cannot represent it without collapse; properly-calibrated W8A16 (plan branch P1-C) is the likely deployable path.",
+    "worst_tensor_count": 51,
+    "frac_worst_concentrated": 0.27450980392156865,
+    "frac_concentrated_fixed": 0.07142857142857142,
+    "global_abs_max_overall": 3.4028234663852886e+38,
+    "global_abs_max_tensor": "/text_model/encoder/layers.0/self_attn/Add_output_0",
+    "concentration_threshold": 50.0,
+    "stability_threshold": 0.5
+  },
+  "per_block": {
+    "0": {
+      "block": 0,
+      "num_tensors": 17,
+      "max_global_abs_max": 3.4028234663852886e+38,
+      "max_concentration_ratio": 1.4383888116271893e+37
+    },
+    "1": {
+      "block": 1,
+      "num_tensors": 17,
+      "max_global_abs_max": 3.4028234663852886e+38,
+      "max_concentration_ratio": 3.0413830678144944e+37
+    },
+    "2": {
+      "block": 2,
+      "num_tensors": 17,
+      "max_global_abs_max": 3.4028234663852886e+38,
+      "max_concentration_ratio": 3.0404515981534467e+37
+    },
+    "3": {
+      "block": 3,
+      "num_tensors": 17,
+      "max_global_abs_max": 3.4028234663852886e+38,
+      "max_concentration_ratio": 2.835495567337466e+37
+    },
+    "4": {
+      "block": 4,
+      "num_tensors": 17,
+      "max_global_abs_max": 3.4028234663852886e+38,
+      "max_concentration_ratio": 3.245027333789359e+37
+    },
+    "5": {
+      "block": 5,
+      "num_tensors": 17,
+      "max_global_abs_max": 3.4028234663852886e+38,
+      "max_concentration_ratio": 3.106094602715185e+37
+    },
+    "6": {
+      "block": 6,
+      "num_tensors": 17,
+      "max_global_abs_max": 3.4028234663852886e+38,
+      "max_concentration_ratio": 2.7064117208367058e+37
+    },
+    "7": {
+      "block": 7,
+      "num_tensors": 17,
+      "max_global_abs_max": 3.4028234663852886e+38,
+      "max_concentration_ratio": 3.407953394834292e+37
+    },
+    "8": {
+      "block": 8,
+      "num_tensors": 17,
+      "max_global_abs_max": 3.4028234663852886e+38,
+      "max_concentration_ratio": 3.005340211828325e+37
+    },
+    "9": {
+      "block": 9,
+      "num_tensors": 17,
+      "max_global_abs_max": 3.4028234663852886e+38,
+      "max_concentration_ratio": 3.2717699443818936e+37
+    },
+    "10": {
+      "block": 10,
+      "num_tensors": 17,
+      "max_global_abs_max": 3.4028234663852886e+38,
+      "max_concentration_ratio": 2.9321800392072334e+37
+    },
+    "11": {
+      "block": 11,
+      "num_tensors": 19,
+      "max_global_abs_max": 3.4028234663852886e+38,
+      "max_concentration_ratio": 3.398971583271435e+37
+    }
+  },
+  "top_tensors_by_abs_max": [
+    {
+      "tensor": "/text_model/encoder/layers.0/self_attn/Add_output_0",
+      "block": 0,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        12,
+        64,
+        64
+      ],
+      "num_channels": 64,
+      "global_abs_max": 3.4028234663852886e+38,
+      "per_channel_abs_max_median": 23.657188415527344,
+      "per_channel_abs_max_max": 3.4028234663852886e+38,
+      "concentration_ratio": 1.4383888116271893e+37,
+      "num_outlier_channels_gt_10x_median": 26,
+      "p99_9_mean": 1.0208470399155866e+38,
+      "p99_9_max": 3.4028234663852886e+38,
+      "p99_99_mean": 1.0208470399155866e+38,
+      "p99_99_max": 3.4028234663852886e+38,
+      "top_channels": [
+        {
+          "channel": 63,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 50,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 38,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 39,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 40,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 41,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 42,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 43,
+          "abs_max": 3.4028234663852886e+38
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.0,
+      "top_k_union_size": 25,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.1/self_attn/Add_output_0",
+      "block": 1,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        12,
+        64,
+        64
+      ],
+      "num_channels": 64,
+      "global_abs_max": 3.4028234663852886e+38,
+      "per_channel_abs_max_median": 11.188407897949219,
+      "per_channel_abs_max_max": 3.4028234663852886e+38,
+      "concentration_ratio": 3.0413830678144944e+37,
+      "num_outlier_channels_gt_10x_median": 26,
+      "p99_9_mean": 1.0208470399155866e+38,
+      "p99_9_max": 3.4028234663852886e+38,
+      "p99_99_mean": 1.0208470399155866e+38,
+      "p99_99_max": 3.4028234663852886e+38,
+      "top_channels": [
+        {
+          "channel": 63,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 49,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 62,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 38,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 39,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 40,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 41,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 42,
+          "abs_max": 3.4028234663852886e+38
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.0,
+      "top_k_union_size": 38,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.2/self_attn/Add_output_0",
+      "block": 2,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        12,
+        64,
+        64
+      ],
+      "num_channels": 64,
+      "global_abs_max": 3.4028234663852886e+38,
+      "per_channel_abs_max_median": 11.191835403442383,
+      "per_channel_abs_max_max": 3.4028234663852886e+38,
+      "concentration_ratio": 3.0404515981534467e+37,
+      "num_outlier_channels_gt_10x_median": 26,
+      "p99_9_mean": 1.0208470399155866e+38,
+      "p99_9_max": 3.4028234663852886e+38,
+      "p99_99_mean": 1.0208470399155866e+38,
+      "p99_99_max": 3.4028234663852886e+38,
+      "top_channels": [
+        {
+          "channel": 63,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 49,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 62,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 38,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 39,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 40,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 41,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 42,
+          "abs_max": 3.4028234663852886e+38
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.0,
+      "top_k_union_size": 30,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.3/self_attn/Add_output_0",
+      "block": 3,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        12,
+        64,
+        64
+      ],
+      "num_channels": 64,
+      "global_abs_max": 3.4028234663852886e+38,
+      "per_channel_abs_max_median": 12.00080680847168,
+      "per_channel_abs_max_max": 3.4028234663852886e+38,
+      "concentration_ratio": 2.835495567337466e+37,
+      "num_outlier_channels_gt_10x_median": 26,
+      "p99_9_mean": 1.0208470399155866e+38,
+      "p99_9_max": 3.4028234663852886e+38,
+      "p99_99_mean": 1.0208470399155866e+38,
+      "p99_99_max": 3.4028234663852886e+38,
+      "top_channels": [
+        {
+          "channel": 63,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 49,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 62,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 38,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 39,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 40,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 41,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 42,
+          "abs_max": 3.4028234663852886e+38
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.0,
+      "top_k_union_size": 29,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.4/self_attn/Add_output_0",
+      "block": 4,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        12,
+        64,
+        64
+      ],
+      "num_channels": 64,
+      "global_abs_max": 3.4028234663852886e+38,
+      "per_channel_abs_max_median": 10.486270904541016,
+      "per_channel_abs_max_max": 3.4028234663852886e+38,
+      "concentration_ratio": 3.245027333789359e+37,
+      "num_outlier_channels_gt_10x_median": 26,
+      "p99_9_mean": 1.0208470399155866e+38,
+      "p99_9_max": 3.4028234663852886e+38,
+      "p99_99_mean": 1.0208470399155866e+38,
+      "p99_99_max": 3.4028234663852886e+38,
+      "top_channels": [
+        {
+          "channel": 63,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 49,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 62,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 38,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 39,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 40,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 41,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 42,
+          "abs_max": 3.4028234663852886e+38
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.0,
+      "top_k_union_size": 30,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.5/self_attn/Add_output_0",
+      "block": 5,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        12,
+        64,
+        64
+      ],
+      "num_channels": 64,
+      "global_abs_max": 3.4028234663852886e+38,
+      "per_channel_abs_max_median": 10.95531177520752,
+      "per_channel_abs_max_max": 3.4028234663852886e+38,
+      "concentration_ratio": 3.106094602715185e+37,
+      "num_outlier_channels_gt_10x_median": 26,
+      "p99_9_mean": 1.0208470399155866e+38,
+      "p99_9_max": 3.4028234663852886e+38,
+      "p99_99_mean": 1.0208470399155866e+38,
+      "p99_99_max": 3.4028234663852886e+38,
+      "top_channels": [
+        {
+          "channel": 63,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 49,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 62,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 38,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 39,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 40,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 41,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 42,
+          "abs_max": 3.4028234663852886e+38
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.0,
+      "top_k_union_size": 33,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.6/self_attn/Add_output_0",
+      "block": 6,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        12,
+        64,
+        64
+      ],
+      "num_channels": 64,
+      "global_abs_max": 3.4028234663852886e+38,
+      "per_channel_abs_max_median": 12.573192596435547,
+      "per_channel_abs_max_max": 3.4028234663852886e+38,
+      "concentration_ratio": 2.7064117208367058e+37,
+      "num_outlier_channels_gt_10x_median": 26,
+      "p99_9_mean": 1.0208470399155866e+38,
+      "p99_9_max": 3.4028234663852886e+38,
+      "p99_99_mean": 1.0208470399155866e+38,
+      "p99_99_max": 3.4028234663852886e+38,
+      "top_channels": [
+        {
+          "channel": 63,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 49,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 62,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 38,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 39,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 40,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 41,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 42,
+          "abs_max": 3.4028234663852886e+38
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.0,
+      "top_k_union_size": 31,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.7/self_attn/Add_output_0",
+      "block": 7,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        12,
+        64,
+        64
+      ],
+      "num_channels": 64,
+      "global_abs_max": 3.4028234663852886e+38,
+      "per_channel_abs_max_median": 9.984947204589844,
+      "per_channel_abs_max_max": 3.4028234663852886e+38,
+      "concentration_ratio": 3.407953394834292e+37,
+      "num_outlier_channels_gt_10x_median": 26,
+      "p99_9_mean": 1.0208470399155866e+38,
+      "p99_9_max": 3.4028234663852886e+38,
+      "p99_99_mean": 1.0208470399155866e+38,
+      "p99_99_max": 3.4028234663852886e+38,
+      "top_channels": [
+        {
+          "channel": 63,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 49,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 62,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 38,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 39,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 40,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 41,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 42,
+          "abs_max": 3.4028234663852886e+38
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.0,
+      "top_k_union_size": 37,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.8/self_attn/Add_output_0",
+      "block": 8,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        12,
+        64,
+        64
+      ],
+      "num_channels": 64,
+      "global_abs_max": 3.4028234663852886e+38,
+      "per_channel_abs_max_median": 11.322589874267578,
+      "per_channel_abs_max_max": 3.4028234663852886e+38,
+      "concentration_ratio": 3.005340211828325e+37,
+      "num_outlier_channels_gt_10x_median": 26,
+      "p99_9_mean": 1.0208470399155866e+38,
+      "p99_9_max": 3.4028234663852886e+38,
+      "p99_99_mean": 1.0208470399155866e+38,
+      "p99_99_max": 3.4028234663852886e+38,
+      "top_channels": [
+        {
+          "channel": 63,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 49,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 62,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 38,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 39,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 40,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 41,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 43,
+          "abs_max": 3.4028234663852886e+38
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.0,
+      "top_k_union_size": 39,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.9/self_attn/Add_output_0",
+      "block": 9,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        12,
+        64,
+        64
+      ],
+      "num_channels": 64,
+      "global_abs_max": 3.4028234663852886e+38,
+      "per_channel_abs_max_median": 10.400558471679688,
+      "per_channel_abs_max_max": 3.4028234663852886e+38,
+      "concentration_ratio": 3.2717699443818936e+37,
+      "num_outlier_channels_gt_10x_median": 26,
+      "p99_9_mean": 1.0208470399155866e+38,
+      "p99_9_max": 3.4028234663852886e+38,
+      "p99_99_mean": 1.0208470399155866e+38,
+      "p99_99_max": 3.4028234663852886e+38,
+      "top_channels": [
+        {
+          "channel": 63,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 49,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 62,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 38,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 39,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 40,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 41,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 42,
+          "abs_max": 3.4028234663852886e+38
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.0,
+      "top_k_union_size": 37,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.10/self_attn/Add_output_0",
+      "block": 10,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        12,
+        64,
+        64
+      ],
+      "num_channels": 64,
+      "global_abs_max": 3.4028234663852886e+38,
+      "per_channel_abs_max_median": 11.605096817016602,
+      "per_channel_abs_max_max": 3.4028234663852886e+38,
+      "concentration_ratio": 2.9321800392072334e+37,
+      "num_outlier_channels_gt_10x_median": 26,
+      "p99_9_mean": 1.0208470399155866e+38,
+      "p99_9_max": 3.4028234663852886e+38,
+      "p99_99_mean": 1.0208470399155866e+38,
+      "p99_99_max": 3.4028234663852886e+38,
+      "top_channels": [
+        {
+          "channel": 63,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 49,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 62,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 38,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 39,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 41,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 42,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 43,
+          "abs_max": 3.4028234663852886e+38
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.0,
+      "top_k_union_size": 33,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.11/self_attn/Add_output_0",
+      "block": 11,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        12,
+        64,
+        64
+      ],
+      "num_channels": 64,
+      "global_abs_max": 3.4028234663852886e+38,
+      "per_channel_abs_max_median": 10.011332511901855,
+      "per_channel_abs_max_max": 3.4028234663852886e+38,
+      "concentration_ratio": 3.398971583271435e+37,
+      "num_outlier_channels_gt_10x_median": 26,
+      "p99_9_mean": 1.0208470399155866e+38,
+      "p99_9_max": 3.4028234663852886e+38,
+      "p99_99_mean": 1.0208470399155866e+38,
+      "p99_99_max": 3.4028234663852886e+38,
+      "top_channels": [
+        {
+          "channel": 63,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 49,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 62,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 39,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 40,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 41,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 42,
+          "abs_max": 3.4028234663852886e+38
+        },
+        {
+          "channel": 43,
+          "abs_max": 3.4028234663852886e+38
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.0,
+      "top_k_union_size": 34,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.0/mlp/fc1/Add_output_0",
+      "block": 0,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        64,
+        3072
+      ],
+      "num_channels": 3072,
+      "global_abs_max": 307.04425048828125,
+      "per_channel_abs_max_median": 4.604743003845215,
+      "per_channel_abs_max_max": 307.04425048828125,
+      "concentration_ratio": 66.68000030517578,
+      "num_outlier_channels_gt_10x_median": 5,
+      "p99_9_mean": 33.66636619567871,
+      "p99_9_max": 36.71748733520508,
+      "p99_99_mean": 63.405290603637695,
+      "p99_99_max": 68.69412231445312,
+      "top_channels": [
+        {
+          "channel": 2525,
+          "abs_max": 307.04425048828125
+        },
+        {
+          "channel": 3013,
+          "abs_max": 305.7433166503906
+        },
+        {
+          "channel": 453,
+          "abs_max": 304.6515197753906
+        },
+        {
+          "channel": 1668,
+          "abs_max": 280.38006591796875
+        },
+        {
+          "channel": 2038,
+          "abs_max": 54.77302551269531
+        },
+        {
+          "channel": 1498,
+          "abs_max": 21.20149040222168
+        },
+        {
+          "channel": 1288,
+          "abs_max": 13.37051773071289
+        },
+        {
+          "channel": 1901,
+          "abs_max": 12.9400634765625
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.75,
+      "top_k_union_size": 11,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.0/mlp/activation_fn/Gelu_output_0",
+      "block": 0,
+      "producer_op": "MatMul_input",
+      "role": "activation_input",
+      "shape": [
+        1,
+        64,
+        3072
+      ],
+      "num_channels": 3072,
+      "global_abs_max": 307.04425048828125,
+      "per_channel_abs_max_median": 1.0339195728302002,
+      "per_channel_abs_max_max": 307.04425048828125,
+      "concentration_ratio": 296.97113037109375,
+      "num_outlier_channels_gt_10x_median": 8,
+      "p99_9_mean": 3.0189165353775023,
+      "p99_9_max": 3.507066011428833,
+      "p99_99_mean": 14.739961051940918,
+      "p99_99_max": 18.56776237487793,
+      "top_channels": [
+        {
+          "channel": 2525,
+          "abs_max": 307.04425048828125
+        },
+        {
+          "channel": 3013,
+          "abs_max": 305.7433166503906
+        },
+        {
+          "channel": 453,
+          "abs_max": 304.6515197753906
+        },
+        {
+          "channel": 1668,
+          "abs_max": 280.38006591796875
+        },
+        {
+          "channel": 2038,
+          "abs_max": 54.77302551269531
+        },
+        {
+          "channel": 1498,
+          "abs_max": 21.20149040222168
+        },
+        {
+          "channel": 1288,
+          "abs_max": 13.37051773071289
+        },
+        {
+          "channel": 1901,
+          "abs_max": 12.9400634765625
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.375,
+      "top_k_union_size": 14,
+      "has_nonfinite": false
+    },
+    {
+      "tensor": "/text_model/encoder/layers.10/Add_output_0",
+      "block": 10,
+      "producer_op": "Add",
+      "role": "output",
+      "shape": [
+        1,
+        64,
+        768
+      ],
+      "num_channels": 768,
+      "global_abs_max": 113.76908111572266,
+      "per_channel_abs_max_median": 21.429676055908203,
+      "per_channel_abs_max_max": 113.76908111572266,
+      "concentration_ratio": 5.308949947357178,
+      "num_outlier_channels_gt_10x_median": 0,
+      "p99_9_mean": 53.05574545860291,
+      "p99_9_max": 69.6499252319336,
+      "p99_99_mean": 72.26507515907288,
+      "p99_99_max": 93.93699645996094,
+      "top_channels": [
+        {
+          "channel": 238,
+          "abs_max": 113.76908111572266
+        },
+        {
+          "channel": 484,
+          "abs_max": 98.3492660522461
+        },
+        {
+          "channel": 392,
+          "abs_max": 94.86781311035156
+        },
+        {
+          "channel": 254,
+          "abs_max": 93.33082580566406
+        },
+        {
+          "channel": 88,
+          "abs_max": 92.46200561523438
+        },
+        {
+          "channel": 132,
+          "abs_max": 86.36148834228516
+        },
+        {
+          "channel": 706,
+          "abs_max": 84.47496032714844
+        },
+        {
+          "channel": 717,
+          "abs_max": 79.56076049804688
+        }
+      ],
+      "top_k_stability_intersection_frac": 0.125,
+      "top_k_union_size": 18,
+      "has_nonfinite": false
+    }
+  ]
+}

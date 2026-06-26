@@ -1,0 +1,33 @@
+[2026-06-21T08:01:22.043+00:00] [INFO] [quantize-post-download] Memory: 1.3GiB | working_set: 1.3GiB | peak: 1.6GiB
+[2026-06-21T08:01:24.091+00:00] [INFO] AIMET version: 2.31.0
+[2026-06-21T08:01:24.145+00:00] [INFO] Using quant scheme: QuantScheme.post_training_tf_enhanced
+[2026-06-21T08:01:27.022+00:00] [INFO] Creating Quantization Simulator...
+[2026-06-21T08:01:30.159+00:00] [INFO] Finished Creating Quantization Simulator
+[2026-06-21T08:01:30.160+00:00] [INFO] Computing Encodings...
+[2026-06-21T08:02:01.937+00:00] [INFO] Memory: 5.4GiB | working_set: 5.0GiB | peak: 5.4GiB
+[2026-06-21T08:03:01.996+00:00] [INFO] Memory: 5.4GiB | working_set: 5.0GiB | peak: 5.4GiB
+[2026-06-21T08:04:02.056+00:00] [INFO] Memory: 5.4GiB | working_set: 5.0GiB | peak: 5.4GiB
+[2026-06-21T08:05:02.116+00:00] [INFO] Memory: 5.4GiB | working_set: 5.0GiB | peak: 5.4GiB
+[2026-06-21T08:06:02.176+00:00] [INFO] Memory: 5.4GiB | working_set: 5.0GiB | peak: 5.4GiB
+[2026-06-21T08:06:57.831+00:00] [INFO] Finished Computing Encodings
+[2026-06-21T08:06:57.831+00:00] [INFO] Exporting QDQ ONNX graph from AIMET quantsim...
+[2026-06-21T08:07:00.766+00:00] [INFO] Completed export
+| ---AIMET LOGS---
+| {"task_name": null, "celery_task_id": null, "handler_name": null, "job_id": null, "attempt_number": null, "asctime": "21/Jun/2026:08:01:27.165041 +0000", "name": "onnx_ir.passes.common.unused_removal", "process": 1, "levelname": "INFO", "message": "Removed 16 unused nodes"}
+| 2026-06-21 08:01:27,894 - Quant - INFO - Selecting DefaultOpInstanceConfigGenerator to compute the specialized config. hw_version:None
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp24mdmq5", "attempt_number": 0, "asctime": "21/Jun/2026:08:02:01.937189 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 5.4GiB | working_set: 5.0GiB | peak: 5.4GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp24mdmq5", "attempt_number": 0, "asctime": "21/Jun/2026:08:03:01.996952 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 5.4GiB | working_set: 5.0GiB | peak: 5.4GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp24mdmq5", "attempt_number": 0, "asctime": "21/Jun/2026:08:04:02.056971 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 5.4GiB | working_set: 5.0GiB | peak: 5.4GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp24mdmq5", "attempt_number": 0, "asctime": "21/Jun/2026:08:05:02.116974 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 5.4GiB | working_set: 5.0GiB | peak: 5.4GiB"}
+| {"task_name": "quantize", "celery_task_id": null, "handler_name": "kubernetes.job", "job_id": "jp24mdmq5", "attempt_number": 0, "asctime": "21/Jun/2026:08:06:02.176970 +0000", "name": "kubernetes.job", "process": 1, "levelname": "INFO", "message": "Memory: 5.4GiB | working_set: 5.0GiB | peak: 5.4GiB"}
+| ---END AIMET LOGS---
+[2026-06-21T08:07:00.979+00:00] [INFO] ONNX graph successfully converted to QDQ format
+[2026-06-21T08:07:00.979+00:00] [INFO] Computing PSNR between FP32 and INT8 model output...
+[2026-06-21T08:07:03.366+00:00] [INFO] Memory: 7.2GiB | working_set: 6.5GiB | peak: 7.7GiB
+[2026-06-21T08:07:03.746+00:00] [INFO] PSNR: {'text_embedding': 29.335006930891975}
+[2026-06-21T08:07:03.837+00:00] [INFO] [quantize-post-quantize] Memory: 5.9GiB | working_set: 5.5GiB | peak: 7.7GiB
+[2026-06-21T08:07:16.144+00:00] [INFO] Uploading asset to https://tetrahub-qprod-userdata.s3.amazonaws.com/models/mm6od1l6m_zITagL5nzyxE2Pz9.onnx.zip?uploadId=zQRn7V9najbeZrLyvsmpasyddC57lfLfwyaSJCfBLqKTPC0nurgLii8AEdh3_nxtTmglrR4RftD6yMBpBgHy8OmnNaUPd7r6CNXzSV5MjtOgIoA65vegM0muoAJKyrgI&partNumber=1&AWSAccessKeyId=AKIAY25OF7UJ3LDDUB4E&Signature=WOvjcakeRT%
+[2026-06-21T08:07:18.867+00:00] [INFO] Successfully uploaded asset with response status: 200
+[2026-06-21T08:07:19.588+00:00] [INFO] Uploading asset to https://tetrahub-qprod-userdata.s3-accelerate.amazonaws.com/
+[2026-06-21T08:07:19.719+00:00] [INFO] Successfully uploaded asset with response status: 204
+[2026-06-21T08:07:19.720+00:00] [INFO] Successfully computed visualization graph for mm6od1l6m

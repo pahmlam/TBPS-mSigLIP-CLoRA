@@ -1,0 +1,664 @@
+[34m[1mwandb[0m: logging graph, to disable use `wandb.watch(log_graph=False)`
+You are using a CUDA device ('NVIDIA GeForce RTX 3060') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+Validation DataLoader 0: |                                                           | 13/? [00:25<00:00,  0.51it/s]
+[32m2026-01-19 09:18:40.824[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+------+------+
+| Task |   R1  |   R5  |  R10  | mAP  | mINP |
++------+-------+-------+-------+------+------+
+| t2i  |  6.74 | 14.18 | 18.76 | 6.52 | 2.85 |
+| i2t  | 12.36 | 24.30 | 31.26 | 4.98 | 0.28 |
++------+-------+-------+-------+------+------+[0m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+     Validate metric           DataLoader 0
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       val_i2t_R1           12.361743927001953
+       val_i2t_R10           31.2622013092041
+       val_i2t_R5            24.30058479309082
+       val_i2t_mAP           4.984208106994629
+      val_i2t_mINP           0.277337908744812
+        val_score            6.741390228271484
+       val_t2i_R1            6.741390228271484
+       val_t2i_R10          18.762184143066406
+       val_t2i_R5           14.181285858154297
+       val_t2i_mAP           6.515940189361572
+      val_t2i_mINP          2.8456337451934814
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[32m2026-01-19 09:18:41.470[0m | [1mINFO    [0m | [36m__main__[0m:[36mrun[0m:[36m163[0m - [1mStarting training from scratch[0m
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+[32m2026-01-19 09:18:41.712[0m | [1mINFO    [0m | [36msolver.build[0m:[36mbuild_optimizer[0m:[36m76[0m - [1mUsing torch.optim.AdamW optimizer with information: AdamW (
+Parameter Group 0
+    amsgrad: False
+    betas: [0.9, 0.999]
+    capturable: False
+    decoupled_weight_decay: True
+    differentiable: False
+    end_lr: 1e-05
+    eps: 1e-08
+    foreach: None
+    fused: None
+    lr: 0.0001
+    maximize: False
+    name: backbone
+    start_lr: 1e-06
+    weight_decay: 0.01
+    weight_decay_bias: 0.0
+
+Parameter Group 1
+    amsgrad: False
+    betas: [0.9, 0.999]
+    capturable: False
+    decoupled_weight_decay: True
+    differentiable: False
+    end_lr: 1e-05
+    eps: 1e-08
+    foreach: None
+    fused: None
+    lr: 0.0001
+    maximize: False
+    name: simclr
+    start_lr: 1e-06
+    weight_decay: 0.05
+    weight_decay_bias: 0.0
+
+Parameter Group 2
+    amsgrad: False
+    betas: [0.9, 0.999]
+    capturable: False
+    decoupled_weight_decay: True
+    differentiable: False
+    end_lr: 1e-05
+    eps: 1e-08
+    foreach: None
+    fused: None
+    lr: 0.0001
+    maximize: False
+    name: default
+    start_lr: 1e-06
+    weight_decay: 0.01
+    weight_decay_bias: 0.0
+)[0m
+[32m2026-01-19 09:18:41.713[0m | [1mINFO    [0m | [36msolver.build[0m:[36mbuild_lr_scheduler[0m:[36m89[0m - [1mUsing solver.lr_scheduler.LRSchedulerWithWarmup scheduler.[0m
+
+  | Name     | Type                          | Params | Mode
+-------------------------------------------------------------------
+0 | backbone | PeftModelForFeatureExtraction | 375 M  | train
+1 | model    | TBPS                          | 376 M  | train
+-------------------------------------------------------------------
+5.9 M     Trainable params
+370 M     Non-trainable params
+376 M     Total params
+1,506.300 Total estimated model params size (MB)
+1289      Modules in train mode
+0         Modules in eval mode
+Epoch 3: 100%|█| 5676/5676 [1:15:15<00:00,  1.26it/s, v_num=s4a3, total_loss_step=2.970, cw_step=0.000, grad_norm_st
+[32m2026-01-19 09:18:46.075[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_training_metrics[0m:[36m241[0m - [1mInitial loss: 27.5951[0m
+Validation DataLoader 0: |                                                           | 13/? [00:15<00:00,  0.84it/s]
+[32m2026-01-19 10:34:07.893[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 21.59 | 41.02 | 51.45 | 22.09 | 13.40 |
+| i2t  | 28.33 | 54.26 | 66.92 | 16.33 |  2.88 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 0, global step 1892: 'val_score' reached 21.58869 (best 21.58869), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=0-val_score=21.59.ckpt' as top 1
+[32m2026-01-19 11:49:40.318[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 35.67 | 58.48 | 68.45 | 34.02 | 21.89 |
+| i2t  | 42.23 | 71.18 | 81.26 | 25.37 |  5.69 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 1, global step 3784: 'val_score' reached 35.67252 (best 35.67252), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=1-val_score=35.67-v1.ckpt' as top 1
+[32m2026-01-19 13:05:19.048[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 41.02 | 64.91 | 74.33 | 38.78 | 25.75 |
+| i2t  | 48.50 | 77.16 | 85.85 | 30.18 |  7.58 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 2, global step 5676: 'val_score' reached 41.01690 (best 41.01690), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=2-val_score=41.02.ckpt' as top 1
+[32m2026-01-19 14:20:55.914[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 47.04 | 70.22 | 79.06 | 43.55 | 29.47 |
+| i2t  | 56.25 | 81.82 | 89.53 | 35.35 |  9.68 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 3, global step 7568: 'val_score' reached 47.04353 (best 47.04353), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=3-val_score=47.04.ckpt' as top 1
+[32m2026-01-19 15:36:29.080[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 52.55 | 74.25 | 82.23 | 47.86 | 33.06 |
+| i2t  | 60.44 | 85.00 | 91.44 | 39.21 | 11.72 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 4, global step 9460: 'val_score' reached 52.55036 (best 52.55036), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=4-val_score=52.55.ckpt' as top 1
+[32m2026-01-19 16:52:16.877[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 56.27 | 76.67 | 84.75 | 50.68 | 35.21 |
+| i2t  | 61.39 | 85.33 | 91.77 | 41.48 | 13.34 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 5, global step 11352: 'val_score' reached 56.27031 (best 56.27031), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=5-val_score=56.27.ckpt' as top 1
+[32m2026-01-19 18:18:46.098[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 58.09 | 79.40 | 85.90 | 52.61 | 36.84 |
+| i2t  | 64.48 | 88.22 | 93.72 | 43.96 | 14.89 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 6, global step 13244: 'val_score' reached 58.08967 (best 58.08967), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=6-val_score=58.09.ckpt' as top 1
+[32m2026-01-19 19:44:56.587[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 58.04 | 78.75 | 85.95 | 52.91 | 37.46 |
+| i2t  | 65.97 | 88.03 | 93.56 | 44.73 | 14.72 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 7, global step 15136: 'val_score' was not in top 1
+[32m2026-01-19 21:11:08.395[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 60.46 | 80.67 | 87.43 | 54.66 | 38.94 |
+| i2t  | 65.71 | 88.84 | 93.92 | 45.48 | 15.91 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 8, global step 17028: 'val_score' reached 60.46134 (best 60.46134), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=8-val_score=60.46.ckpt' as top 1
+[32m2026-01-19 22:37:24.257[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 60.19 | 80.78 | 87.44 | 54.36 | 38.59 |
+| i2t  | 69.78 | 89.88 | 95.12 | 47.74 | 17.03 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 9, global step 18920: 'val_score' was not in top 1
+[32m2026-01-20 00:03:36.269[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 60.96 | 81.06 | 88.22 | 55.07 | 39.32 |
+| i2t  | 66.98 | 88.68 | 94.40 | 45.57 | 15.80 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 10, global step 20812: 'val_score' reached 60.96491 (best 60.96491), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=10-val_score=60.96.ckpt' as top 1
+[32m2026-01-20 01:29:51.093[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 62.00 | 82.65 | 89.00 | 55.93 | 39.88 |
+| i2t  | 68.28 | 90.37 | 95.15 | 46.28 | 16.39 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 11, global step 22704: 'val_score' reached 62.00455 (best 62.00455), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=11-val_score=62.00.ckpt' as top 1
+[32m2026-01-20 02:56:05.436[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 62.93 | 82.23 | 89.15 | 56.76 | 40.78 |
+| i2t  | 69.23 | 90.18 | 95.15 | 47.42 | 16.96 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 12, global step 24596: 'val_score' reached 62.93048 (best 62.93048), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=12-val_score=62.93.ckpt' as top 1
+[32m2026-01-20 04:22:19.030[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 63.11 | 83.04 | 89.10 | 56.94 | 41.25 |
+| i2t  | 68.84 | 90.60 | 94.86 | 47.76 | 17.65 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 13, global step 26488: 'val_score' reached 63.10916 (best 63.10916), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=13-val_score=63.11.ckpt' as top 1
+[32m2026-01-20 05:48:33.412[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 64.46 | 83.41 | 89.88 | 57.72 | 41.26 |
+| i2t  | 69.26 | 90.83 | 94.89 | 48.58 | 18.07 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 14, global step 28380: 'val_score' reached 64.45744 (best 64.45744), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=14-val_score=64.46.ckpt' as top 1
+[32m2026-01-20 07:14:47.843[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 64.47 | 84.21 | 89.81 | 58.10 | 42.07 |
+| i2t  | 71.24 | 92.09 | 96.19 | 49.47 | 18.38 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 15, global step 30272: 'val_score' reached 64.47369 (best 64.47369), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=15-val_score=64.47.ckpt' as top 1
+[32m2026-01-20 08:41:01.730[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 63.87 | 84.15 | 89.86 | 58.31 | 42.57 |
+| i2t  | 69.84 | 90.53 | 95.28 | 48.63 | 17.98 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 16, global step 32164: 'val_score' was not in top 1
+[32m2026-01-20 10:07:12.167[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 65.40 | 83.84 | 89.80 | 58.46 | 42.14 |
+| i2t  | 71.63 | 91.22 | 95.77 | 49.56 | 18.98 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 17, global step 34056: 'val_score' reached 65.39961 (best 65.39961), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=17-val_score=65.40.ckpt' as top 1
+[32m2026-01-20 11:33:19.944[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 65.61 | 84.15 | 90.12 | 59.00 | 42.70 |
+| i2t  | 71.60 | 92.09 | 96.29 | 49.66 | 18.95 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 18, global step 35948: 'val_score' reached 65.61079 (best 65.61079), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=18-val_score=65.61.ckpt' as top 1
+[32m2026-01-20 12:59:29.418[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 65.89 | 85.17 | 90.25 | 59.60 | 43.53 |
+| i2t  | 71.18 | 91.35 | 95.54 | 49.64 | 18.76 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 19, global step 37840: 'val_score' reached 65.88694 (best 65.88694), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=19-val_score=65.89.ckpt' as top 1
+[32m2026-01-20 14:25:56.589[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 64.88 | 84.06 | 90.38 | 59.06 | 43.16 |
+| i2t  | 71.73 | 91.38 | 95.74 | 50.05 | 19.22 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 20, global step 39732: 'val_score' was not in top 1
+[32m2026-01-20 15:52:19.278[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 66.44 | 84.93 | 91.16 | 59.91 | 43.79 |
+| i2t  | 72.84 | 91.54 | 95.87 | 50.56 | 19.33 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 21, global step 41624: 'val_score' reached 66.43925 (best 66.43925), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=21-val_score=66.44.ckpt' as top 1
+[32m2026-01-20 17:18:46.049[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 67.02 | 85.04 | 90.50 | 60.09 | 43.87 |
+| i2t  | 74.11 | 91.54 | 95.74 | 51.86 | 20.56 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 22, global step 43516: 'val_score' reached 67.02404 (best 67.02404), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=22-val_score=67.02.ckpt' as top 1
+[32m2026-01-20 18:45:11.939[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 67.17 | 85.59 | 91.31 | 60.43 | 44.36 |
+| i2t  | 74.24 | 92.23 | 95.74 | 51.38 | 19.69 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 23, global step 45408: 'val_score' reached 67.17024 (best 67.17024), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=23-val_score=67.17.ckpt' as top 1
+[32m2026-01-20 20:11:37.108[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 67.85 | 85.38 | 91.29 | 60.84 | 44.57 |
+| i2t  | 75.67 | 93.36 | 97.20 | 52.96 | 21.06 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 24, global step 47300: 'val_score' reached 67.85250 (best 67.85250), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=24-val_score=67.85.ckpt' as top 1
+[32m2026-01-20 21:37:58.408[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 67.30 | 85.64 | 90.66 | 60.70 | 44.73 |
+| i2t  | 74.82 | 92.81 | 96.68 | 52.82 | 21.25 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 25, global step 49192: 'val_score' was not in top 1
+[32m2026-01-20 23:04:15.293[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 67.04 | 85.41 | 91.00 | 60.49 | 44.49 |
+| i2t  | 73.72 | 93.20 | 96.65 | 51.93 | 20.11 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 26, global step 51084: 'val_score' was not in top 1
+[32m2026-01-21 00:30:31.833[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 67.79 | 85.88 | 91.55 | 61.00 | 44.99 |
+| i2t  | 75.70 | 93.27 | 96.81 | 53.54 | 21.24 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 27, global step 52976: 'val_score' was not in top 1
+[32m2026-01-21 01:56:47.670[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 67.41 | 86.16 | 91.49 | 60.77 | 44.44 |
+| i2t  | 75.60 | 92.65 | 96.19 | 53.07 | 21.09 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 28, global step 54868: 'val_score' was not in top 1
+[32m2026-01-21 03:23:06.234[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 68.10 | 86.06 | 91.52 | 61.37 | 45.25 |
+| i2t  | 75.99 | 93.72 | 96.91 | 53.97 | 21.86 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 29, global step 56760: 'val_score' reached 68.09617 (best 68.09617), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=29-val_score=68.10.ckpt' as top 1
+[32m2026-01-21 04:49:25.312[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 68.01 | 86.01 | 91.60 | 61.36 | 45.16 |
+| i2t  | 76.22 | 93.53 | 96.94 | 54.06 | 21.93 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 30, global step 58652: 'val_score' was not in top 1
+[32m2026-01-21 06:15:39.739[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 68.37 | 86.34 | 91.63 | 61.84 | 45.74 |
+| i2t  | 77.03 | 93.79 | 96.78 | 54.82 | 22.26 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 31, global step 60544: 'val_score' reached 68.37232 (best 68.37232), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=31-val_score=68.37.ckpt' as top 1
+[32m2026-01-21 07:41:59.756[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 68.94 | 86.44 | 91.83 | 62.07 | 45.91 |
+| i2t  | 78.99 | 93.98 | 97.01 | 55.89 | 22.73 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 32, global step 62436: 'val_score' reached 68.94087 (best 68.94087), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=32-val_score=68.94.ckpt' as top 1
+[32m2026-01-21 09:08:19.556[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 69.28 | 86.57 | 91.98 | 62.08 | 45.72 |
+| i2t  | 77.98 | 94.21 | 97.56 | 55.32 | 22.47 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 33, global step 64328: 'val_score' reached 69.28200 (best 69.28200), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=33-val_score=69.28.ckpt' as top 1
+[32m2026-01-21 10:34:39.555[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 68.63 | 86.29 | 91.91 | 62.28 | 46.49 |
+| i2t  | 79.25 | 94.96 | 97.56 | 56.31 | 23.33 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 34, global step 66220: 'val_score' was not in top 1
+[32m2026-01-21 12:00:56.286[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 69.31 | 87.28 | 92.04 | 62.54 | 46.59 |
+| i2t  | 79.02 | 94.83 | 98.05 | 56.71 | 23.50 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 35, global step 68112: 'val_score' reached 69.31449 (best 69.31449), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=35-val_score=69.31.ckpt' as top 1
+[32m2026-01-21 13:27:15.160[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 69.51 | 87.00 | 92.33 | 62.70 | 46.74 |
+| i2t  | 79.31 | 94.73 | 97.63 | 56.75 | 23.64 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 36, global step 70004: 'val_score' reached 69.50942 (best 69.50942), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=36-val_score=69.51.ckpt' as top 1
+[32m2026-01-21 14:53:33.873[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 70.21 | 87.23 | 92.50 | 62.87 | 46.65 |
+| i2t  | 79.93 | 95.58 | 97.85 | 57.18 | 23.58 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 37, global step 71896: 'val_score' reached 70.20793 (best 70.20793), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=37-val_score=70.21.ckpt' as top 1
+[32m2026-01-21 16:19:50.063[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 69.96 | 87.33 | 92.43 | 62.98 | 46.98 |
+| i2t  | 81.03 | 95.74 | 98.05 | 58.08 | 24.27 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 38, global step 73788: 'val_score' was not in top 1
+[32m2026-01-21 17:46:00.435[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 70.08 | 87.17 | 92.25 | 63.07 | 47.15 |
+| i2t  | 81.20 | 95.90 | 98.37 | 58.07 | 24.38 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 39, global step 75680: 'val_score' was not in top 1
+[32m2026-01-21 19:12:11.572[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 69.77 | 86.92 | 92.50 | 62.84 | 46.91 |
+| i2t  | 79.83 | 95.41 | 97.98 | 57.41 | 24.11 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 40, global step 77572: 'val_score' was not in top 1
+[32m2026-01-21 20:38:22.553[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 70.21 | 87.13 | 92.32 | 63.03 | 46.71 |
+| i2t  | 81.26 | 95.61 | 97.92 | 58.44 | 24.81 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 41, global step 79464: 'val_score' was not in top 1
+[32m2026-01-21 22:04:34.809[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 70.42 | 87.49 | 92.54 | 63.20 | 46.92 |
+| i2t  | 80.74 | 95.93 | 98.02 | 58.33 | 24.68 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 42, global step 81356: 'val_score' reached 70.41911 (best 70.41911), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=42-val_score=70.42.ckpt' as top 1
+[32m2026-01-21 23:30:50.223[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 70.44 | 87.10 | 92.59 | 63.31 | 47.37 |
+| i2t  | 81.95 | 96.26 | 98.37 | 58.72 | 24.89 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 43, global step 83248: 'val_score' reached 70.43535 (best 70.43535), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=43-val_score=70.44.ckpt' as top 1
+[32m2026-01-22 00:57:04.362[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 70.52 | 87.49 | 92.56 | 63.39 | 47.14 |
+| i2t  | 81.42 | 95.71 | 98.11 | 58.76 | 24.77 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 44, global step 85140: 'val_score' reached 70.51657 (best 70.51657), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=44-val_score=70.52.ckpt' as top 1
+[32m2026-01-22 02:23:18.446[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.02 | 87.52 | 92.71 | 63.80 | 47.83 |
+| i2t  | 80.97 | 96.06 | 98.41 | 58.66 | 25.10 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 45, global step 87032: 'val_score' reached 71.02014 (best 71.02014), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=45-val_score=71.02.ckpt' as top 1
+[32m2026-01-22 03:49:32.978[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.13 | 87.35 | 92.61 | 63.61 | 47.29 |
+| i2t  | 80.94 | 95.58 | 98.31 | 58.57 | 24.94 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 46, global step 88924: 'val_score' reached 71.13385 (best 71.13385), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=46-val_score=71.13.ckpt' as top 1
+[32m2026-01-22 05:15:47.862[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 70.89 | 87.65 | 92.77 | 63.68 | 47.29 |
+| i2t  | 81.33 | 96.32 | 98.41 | 58.86 | 25.14 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 47, global step 90816: 'val_score' was not in top 1
+[32m2026-01-22 06:41:59.152[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 70.97 | 87.41 | 92.80 | 63.70 | 47.40 |
+| i2t  | 81.39 | 96.16 | 98.24 | 58.94 | 25.25 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 48, global step 92708: 'val_score' was not in top 1
+[32m2026-01-22 08:08:09.832[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.49 | 87.59 | 93.00 | 64.11 | 47.89 |
+| i2t  | 82.04 | 96.36 | 98.21 | 59.39 | 25.33 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 49, global step 94600: 'val_score' reached 71.49123 (best 71.49123), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=49-val_score=71.49.ckpt' as top 1
+[32m2026-01-22 09:34:19.657[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.25 | 87.95 | 92.51 | 63.85 | 47.40 |
+| i2t  | 81.29 | 95.71 | 98.41 | 58.78 | 24.98 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 50, global step 96492: 'val_score' was not in top 1
+[32m2026-01-22 11:00:29.971[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.33 | 87.82 | 92.82 | 64.05 | 47.79 |
+| i2t  | 81.95 | 95.87 | 98.08 | 59.04 | 25.25 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 51, global step 98384: 'val_score' was not in top 1
+[32m2026-01-22 12:26:41.314[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.62 | 87.67 | 92.79 | 64.16 | 47.94 |
+| i2t  | 82.40 | 96.00 | 98.28 | 59.41 | 25.38 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 52, global step 100276: 'val_score' reached 71.62119 (best 71.62119), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=52-val_score=71.62.ckpt' as top 1
+[32m2026-01-22 13:52:51.147[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.09 | 88.06 | 92.98 | 64.01 | 47.73 |
+| i2t  | 82.21 | 95.93 | 98.31 | 59.46 | 25.34 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 53, global step 102168: 'val_score' was not in top 1
+[32m2026-01-22 15:18:58.712[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.75 | 87.83 | 92.98 | 64.34 | 48.16 |
+| i2t  | 82.43 | 96.16 | 98.21 | 59.46 | 25.45 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 54, global step 104060: 'val_score' reached 71.75114 (best 71.75114), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=54-val_score=71.75.ckpt' as top 1
+[32m2026-01-22 16:45:09.778[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.59 | 88.39 | 93.14 | 64.27 | 48.05 |
+| i2t  | 81.88 | 96.36 | 98.34 | 59.61 | 25.58 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 55, global step 105952: 'val_score' was not in top 1
+[32m2026-01-22 18:11:20.266[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.46 | 88.16 | 92.90 | 64.16 | 47.94 |
+| i2t  | 81.59 | 95.93 | 98.37 | 59.38 | 25.47 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 56, global step 107844: 'val_score' was not in top 1
+[32m2026-01-22 19:37:25.746[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.85 | 88.26 | 92.98 | 64.34 | 48.11 |
+| i2t  | 82.43 | 96.19 | 98.31 | 59.75 | 25.73 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 57, global step 109736: 'val_score' reached 71.84860 (best 71.84860), saving model to '/mnt/data/user_data/lampt/PS/code/checkpoints/epoch=57-val_score=71.85.ckpt' as top 1
+[32m2026-01-22 21:03:35.360[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.49 | 88.19 | 93.13 | 64.25 | 48.06 |
+| i2t  | 82.86 | 96.58 | 98.44 | 59.83 | 25.83 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 58, global step 111628: 'val_score' was not in top 1
+[32m2026-01-22 22:29:39.766[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Val Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.69 | 88.03 | 93.21 | 64.22 | 47.96 |
+| i2t  | 82.66 | 96.62 | 98.41 | 59.78 | 25.86 |
++------+-------+-------+-------+-------+-------+[0m
+Epoch 59, global step 113520: 'val_score' was not in top 1
+`Trainer.fit` stopped: `max_epochs=60` reached.
+Restoring states from the checkpoint path at /mnt/data/user_data/lampt/PS/code/checkpoints/epoch=57-val_score=71.85.ckpt
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+Loaded model weights from the checkpoint at /mnt/data/user_data/lampt/PS/code/checkpoints/epoch=57-val_score=71.85.ckpt
+[32m2026-01-22 22:30:01.167[0m | [1mINFO    [0m | [36mlightning_models[0m:[36m_log_metrics[0m:[36m391[0m - [1m
+Test Results:
++------+-------+-------+-------+-------+-------+
+| Task |   R1  |   R5  |  R10  |  mAP  |  mINP |
++------+-------+-------+-------+-------+-------+
+| t2i  | 71.85 | 88.26 | 92.98 | 64.34 | 48.11 |
+| i2t  | 82.43 | 96.19 | 98.31 | 59.75 | 25.73 |
++------+-------+-------+-------+-------+-------+[0m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       Test metric             DataLoader 0             DataLoader 1
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       test_i2t_R1           82.43331146240234        82.43331146240234
+      test_i2t_R10           98.30839538574219        98.30839538574219
+       test_i2t_R5           96.19388580322266        96.19388580322266
+      test_i2t_mAP           59.74714660644531        59.74714660644531
+      test_i2t_mINP          25.73145866394043        25.73145866394043
+       test_score            71.84860229492188        71.84860229492188
+       test_t2i_R1           71.84860229492188        71.84860229492188
+      test_t2i_R10           92.98246002197266        92.98246002197266
+       test_t2i_R5           88.25536346435547        88.25536346435547
+      test_t2i_mAP           64.34143829345703        64.34143829345703
+      test_t2i_mINP          48.11192321777344        48.11192321777344
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

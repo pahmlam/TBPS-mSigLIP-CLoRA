@@ -1,0 +1,51 @@
+{
+  "vision_onnx_model": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/job_jgoovyj4g_qdq_onnx/model.onnx",
+  "text_onnx_model": null,
+  "model_dir": "/Users/phamtunglam/Documents/Projects/mSigLIP/code/artifacts/deployment/exports/exported_model",
+  "num_gallery_images": 2000,
+  "num_query_captions": 4000,
+  "subset_smoke": false,
+  "similarity": "raw_dot_product",
+  "combos": {
+    "baseline_fp32": {
+      "t2i": {
+        "R1": 52.39999771118164,
+        "R5": 79.375,
+        "R10": 87.80000305175781,
+        "mAP": 57.384098052978516,
+        "mINP": 50.66837692260742
+      },
+      "i2t": {
+        "R1": 55.29999542236328,
+        "R5": 81.44999694824219,
+        "R10": 89.70000457763672,
+        "mAP": 51.37656784057617,
+        "mINP": 34.49866485595703
+      }
+    },
+    "vision_int8": {
+      "t2i": {
+        "R1": 50.97500228881836,
+        "R5": 77.30000305175781,
+        "R10": 86.5250015258789,
+        "mAP": 55.8636589050293,
+        "mINP": 49.10457229614258
+      },
+      "i2t": {
+        "R1": 54.20000076293945,
+        "R5": 80.8499984741211,
+        "R10": 89.0,
+        "mAP": 50.13954544067383,
+        "mINP": 33.268951416015625
+      }
+    }
+  },
+  "deploy_combo": "vision_int8",
+  "t2i_r1_drop": 1.4249954223632812,
+  "i2t_r1_drop": 1.0999946594238281,
+  "gate_r1": 48.0,
+  "vision_onnx_ms_per_image": 61.84564486530144,
+  "text_onnx_ms_per_caption": null,
+  "baseline_sanity_pass": true,
+  "gate_pass": true
+}

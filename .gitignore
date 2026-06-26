@@ -52,6 +52,10 @@ deployment/qnn_inputs/
 # prepared QNN inputs, outputs, configs, and small runtime assets.
 !artifacts/
 artifacts/*
+!artifacts/training/
+artifacts/training/*
+!artifacts/training/logs/
+!artifacts/training/logs/**
 !artifacts/deployment/
 !artifacts/deployment/**
 **/Result_*/
