@@ -348,6 +348,171 @@ RESULT_MOVES: list[dict[str, Any]] = [
 ]
 
 
+def _runtime_moves(source_dir: str, target_dir: str, files: list[str]) -> list[dict[str, Any]]:
+    return [
+        {
+            "source": f"artifacts/deployment/qnn_runs/{source_dir}/{name}",
+            "target_relpath": f"runtime/board/{target_dir}/{name}",
+            "type": "board_runtime",
+        }
+        for name in files
+    ]
+
+
+QNN_RUN_MOVES: list[dict[str, Any]] = [
+    {
+        "source": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch_summary.json",
+        "target_relpath": "results/board/vision_v8_board-fidelity-smoke10__cos0.9585_min0.9400.json",
+        "type": "board_fidelity",
+        "metrics": {"cosine_l2_mean": 0.9585, "cosine_l2_min": 0.9400},
+    },
+    {
+        "source": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch.csv",
+        "target_relpath": "results/board/per-sample/vision_v8_board-fidelity-smoke10__qnn-vs-pytorch.csv",
+        "type": "board_fidelity_csv",
+        "metrics": {"num_samples": 10},
+    },
+    {
+        "source": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/qnn_vs_pytorch_summary.json",
+        "target_relpath": "results/board/vision_v8_gallery-fidelity__cos0.9562_min0.8840.json",
+        "type": "board_fidelity",
+        "metrics": {"cosine_l2_mean": 0.9562, "cosine_l2_min": 0.8840},
+    },
+    {
+        "source": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/qnn_vs_pytorch.csv",
+        "target_relpath": "results/board/per-sample/vision_v8_gallery-fidelity__qnn-vs-pytorch.csv",
+        "type": "board_fidelity_csv",
+        "metrics": {"num_samples": 2000},
+    },
+    {
+        "source": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/qnn_vs_pytorch.csv",
+        "target_relpath": "results/board/per-sample/text_fullgraph-i32__board-fidelity-fail__qnn-vs-pytorch.csv",
+        "type": "board_fidelity_failure_csv",
+        "metrics": {"num_samples": 10},
+    },
+]
+
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "rotated_w8a8_learned_qat_v9_gallery_2000",
+        "vision_v9_final-gallery2000__32.54ms_24.29fps",
+        ["execution_metadata.yaml", "profile.txt", "qnn-profiling-data_0.log"],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "onboard_text",
+        "text_split_onboard-query4000-final__7.87ms_74.75qps",
+        [
+            "execution_metadata.yaml",
+            "profile.txt",
+            "qnn-profiling-data_0.log",
+            "qnn-profiling-data_1.log",
+            "qnn-profiling-data_2.log",
+        ],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "rotated_w8a8_learned_qat_v8",
+        "vision_v8_smoke10__33.05ms_22.77fps",
+        [
+            "execution_metadata.yaml",
+            "profile.txt",
+            "qnn-profiling-data_0.log",
+            "qnn-profiling-data_1.log",
+            "qnn-profiling-data_2.log",
+            "qnn-profiling-data_3.log",
+            "qnn-profiling-data_4.log",
+        ],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "rotated_w8a8_learned_qat_v8_gallery_2000",
+        "vision_v8_gallery2000",
+        ["execution_metadata.yaml", "qnn-profiling-data_0.log"],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "rotated_w8a8_learned_qat_v9",
+        "vision_v9_gallery2000-preprofile",
+        ["execution_metadata.yaml", "qnn-profiling-data_0.log"],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "split_text_query_full",
+        "text_split_hostembeds-query4000",
+        ["execution_metadata.yaml", "profile.txt", "qnn-profiling-data_0.log"],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "split_text_query_4000",
+        "text_split_hostembeds-query2000",
+        ["execution_metadata.yaml", "qnn-profiling-data_0.log"],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "split_text_w8a8",
+        "text_split_smoke10-real-embeds",
+        ["execution_metadata.yaml", "qnn-profiling-data_0.log", "qnn-profiling-data_1.log"],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "split_text_w8a8_zero",
+        "text_split_smoke10-zero-embeds-control",
+        ["execution_metadata.yaml", "qnn-profiling-data_0.log", "qnn-profiling-data_1.log"],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "text_w8a8_learned_qat_v8_i32_f32mask",
+        "text_fullgraph_i32-realids-fail",
+        [
+            "execution_metadata.yaml",
+            "qnn-profiling-data_0.log",
+            "qnn-profiling-data_1.log",
+            "qnn-profiling-data_2.log",
+            "qnn-profiling-data_3.log",
+            "qnn-profiling-data_4.log",
+        ],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "text_w8a8_learned_qat_v8_i32_zero_ids",
+        "text_fullgraph_i32-zeroids-control",
+        ["execution_metadata.yaml", "qnn-profiling-data_0.log"],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "text_altreal",
+        "text_fullgraph_i32-altreal-mask-control",
+        ["execution_metadata.yaml", "qnn-profiling-data_0.log", "qnn-profiling-data_1.log"],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "vision_ram_one",
+        "vision_v9_ram-one",
+        ["execution_metadata.yaml", "qnn-profiling-data_0.log"],
+    )
+)
+QNN_RUN_MOVES.extend(
+    _runtime_moves(
+        "text_ram_one",
+        "text_split_ram-one",
+        ["execution_metadata.yaml", "qnn-profiling-data_0.log", "qnn-profiling-data_1.log"],
+    )
+)
+
+
 LEGACY_MOVES: list[dict[str, Any]] = [
     {
         "source": "artifacts/deployment/logs/internal_floating-point/download_manifest.json",
@@ -375,13 +540,14 @@ locations.
 |---|---|
 | `aihub/` | Curated Qualcomm AI Hub job logs, named by result/failure mode with job ID retained for traceability. |
 | `results/board/` | Board retrieval and board fidelity JSON summaries. |
+| `results/board/per-sample/` | Small per-sample board fidelity CSV tables. |
 | `results/qdq/` | Off-board QDQ proxy retrieval/fidelity JSON summaries. |
+| `runtime/board/` | Board `qnn-net-run` execution metadata, generated profiles, and profiling logs. |
 | `diagnostics/` | Small diagnostic JSON summaries for environment, mask, and activation-outlier checks. |
 | `manifest.json` | Provenance map from original source paths to canonical evidence paths. |
 
 Large model files, QNN context binaries, ONNX/QDQ model directories, raw inputs,
-board `Result_*` outputs, and per-sample CSV files are intentionally not stored
-here.
+and board `Result_*` outputs are intentionally not stored here.
 """
 
 
@@ -392,6 +558,7 @@ def _move_specs() -> list[dict[str, Any]]:
         if source:
             specs.append({**item, "type": "aihub_log"})
     specs.extend(RESULT_MOVES)
+    specs.extend(QNN_RUN_MOVES)
     specs.extend(LEGACY_MOVES)
     return specs
 
@@ -426,6 +593,10 @@ def _move_file(repo: Path, logs_root: Path, spec: dict[str, Any], apply: bool, o
         "status": "planned",
     }
     if not source.exists():
+        if target.exists():
+            record["status"] = "already_canonical"
+            print(f"HAVE  {target}")
+            return record
         record["status"] = "source_missing"
         print(f"MISS  {source}")
         return record
@@ -473,6 +644,29 @@ def _remove_ds_store(root: Path, apply: bool) -> None:
             path.unlink()
 
 
+def _remove_qnn_run_profile_aliases(root: Path, apply: bool) -> None:
+    if not root.exists():
+        return
+    for path in sorted(root.rglob("qnn-profiling-data.log")):
+        if not path.is_symlink():
+            continue
+        print(f"REMOVE {path}")
+        if apply:
+            path.unlink()
+
+
+def _cleanup_empty_tree(root: Path, apply: bool) -> None:
+    if not root.exists():
+        return
+    for path in sorted((p for p in root.rglob("*") if p.is_dir()), reverse=True):
+        try:
+            next(path.iterdir())
+        except StopIteration:
+            print(f"RMDIR {path}")
+            if apply:
+                path.rmdir()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--logs-root", type=Path, default=_repo_root() / "artifacts/deployment/logs")
@@ -482,6 +676,7 @@ def main() -> None:
 
     repo = _repo_root()
     logs_root = args.logs_root.expanduser().resolve()
+    qnn_runs_root = repo / "artifacts/deployment/qnn_runs"
 
     print("Mode:", "apply" if args.apply else "dry-run")
     print("Logs root:", logs_root)
@@ -505,11 +700,15 @@ def main() -> None:
     _write_json(logs_root / "aihub/curated_jobs.json", {"jobs": jobs_for_download}, args.apply)
 
     _remove_ds_store(logs_root, args.apply)
+    _remove_ds_store(qnn_runs_root, args.apply)
+    _remove_qnn_run_profile_aliases(qnn_runs_root, args.apply)
     _cleanup_empty_dirs(logs_root / "internal_floating-point", logs_root, args.apply)
+    _cleanup_empty_tree(qnn_runs_root, args.apply)
 
     moved = sum(1 for record in records if record["status"] == "moved")
     missing = sum(1 for record in records if record["status"] == "source_missing")
-    print(f"Summary: moved={moved}, source_missing={missing}, records={len(records)}")
+    canonical = sum(1 for record in records if record["status"] == "already_canonical")
+    print(f"Summary: moved={moved}, already_canonical={canonical}, source_missing={missing}, records={len(records)}")
 
 
 if __name__ == "__main__":

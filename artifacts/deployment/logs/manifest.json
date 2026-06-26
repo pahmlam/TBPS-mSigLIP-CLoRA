@@ -8,7 +8,7 @@
       "type": "aihub_log",
       "job_id": "jgj1wxo1g",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/jgj178xvg/jgj178xvg.log",
@@ -16,7 +16,7 @@
       "type": "aihub_log",
       "job_id": "jgj178xvg",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/j576417rg/j576417rg.log",
@@ -24,7 +24,7 @@
       "type": "aihub_log",
       "job_id": "j576417rg",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/jpv4d8rzp/jpv4d8rzp.log",
@@ -32,7 +32,7 @@
       "type": "aihub_log",
       "job_id": "jpv4d8rzp",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/jp389l6z5/jp389l6z5.log",
@@ -40,7 +40,7 @@
       "type": "aihub_log",
       "job_id": "jp389l6z5",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/j5wx7kmzp/j5wx7kmzp.log",
@@ -48,7 +48,7 @@
       "type": "aihub_log",
       "job_id": "j5wx7kmzp",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/jgl7xd1l5/jgl7xd1l5.log",
@@ -56,7 +56,7 @@
       "type": "aihub_log",
       "job_id": "jgl7xd1l5",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/jp0kjyd25/jp0kjyd25.log",
@@ -64,7 +64,7 @@
       "type": "aihub_log",
       "job_id": "jp0kjyd25",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/jgzwm63xg/jgzwm63xg.log",
@@ -72,7 +72,7 @@
       "type": "aihub_log",
       "job_id": "jgzwm63xg",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/jpr90k37p/jpr90k37p.log",
@@ -80,7 +80,7 @@
       "type": "aihub_log",
       "job_id": "jpr90k37p",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/j576q80rg/j576q80rg.log",
@@ -88,7 +88,7 @@
       "type": "aihub_log",
       "job_id": "j576q80rg",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/jpxmw8kjg/jpxmw8kjg.log",
@@ -96,7 +96,7 @@
       "type": "aihub_log",
       "job_id": "jpxmw8kjg",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/j56re0vy5/j56re0vy5.log",
@@ -104,7 +104,7 @@
       "type": "aihub_log",
       "job_id": "j56re0vy5",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/jglo3qz8g/jglo3qz8g.log",
@@ -112,7 +112,7 @@
       "type": "aihub_log",
       "job_id": "jglo3qz8g",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/j56rn6ry5/j56rn6ry5.log",
@@ -120,7 +120,7 @@
       "type": "aihub_log",
       "job_id": "j56rn6ry5",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/jp2j211q5/jp2j211q5.log",
@@ -128,7 +128,7 @@
       "type": "aihub_log",
       "job_id": "jp2j211q5",
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/qnn_runs/both_int8_board_r1.json",
@@ -139,7 +139,7 @@
         "t2i_r1": 50.35,
         "i2t_r1": 54.2
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/board_vision_r1.json",
@@ -150,7 +150,7 @@
         "t2i_r1": 50.35,
         "i2t_r1": 54.55
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_f32mask/board_text_r1.json",
@@ -161,7 +161,7 @@
         "t2i_r1": 51.3,
         "i2t_r1": 54.8
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/board_vision_r1.json",
@@ -172,7 +172,7 @@
         "t2i_r1": 50.2,
         "i2t_r1": 54.5
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/qnn_vs_pytorch_summary.json",
@@ -182,7 +182,7 @@
       "metrics": {
         "cosine_l2_mean": 0.12666028
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/both_int8_qdq_r1.json",
@@ -193,7 +193,7 @@
         "t2i_r1": 50.63,
         "i2t_r1": 53.9
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/both_int8/both_int8_r1.json",
@@ -204,7 +204,7 @@
         "t2i_r1": 50.25,
         "i2t_r1": 52.95
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/rotated_w8a8_learned_qat_v9/retrieval_r1.json",
@@ -215,7 +215,7 @@
         "t2i_r1": 50.98,
         "i2t_r1": 54.2
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/rotated_w8a8_v2/retrieval_r1.json",
@@ -226,7 +226,7 @@
         "t2i_r1": 45.42,
         "cosine_l2_mean": 0.8975
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/rotated_w8a8_qat_v3/retrieval_r1.json",
@@ -237,7 +237,7 @@
         "t2i_r1": 48.2,
         "cosine_l2_mean": 0.9353
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/rotated_w8a8_qat_v4/retrieval_r1.json",
@@ -248,7 +248,7 @@
         "t2i_r1": 48.5,
         "cosine_l2_mean": 0.9364
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/rotated_w8a8_qat_v5/retrieval_r1.json",
@@ -259,7 +259,7 @@
         "t2i_r1": 49.25,
         "cosine_l2_mean": 0.9437
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/rotated_w8a8_qat_v6/retrieval_r1.json",
@@ -270,7 +270,7 @@
         "t2i_r1": 49.3,
         "cosine_l2_mean": 0.9491
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/rotated_w8a8_qat_v7/retrieval_r1.json",
@@ -281,7 +281,7 @@
         "t2i_r1": 48.38,
         "cosine_l2_mean": 0.9485
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/text_qdq_fid.json",
@@ -292,7 +292,7 @@
         "cosine_l2_mean": 0.9949,
         "cosine_l2_min": 0.9912
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/text_isolation_r1.json",
@@ -303,7 +303,7 @@
         "t2i_r1": 51.65,
         "i2t_r1": 55.55
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/text_w8a8_learned_qat_v8_finite_mask/attention_qdq_scales.json",
@@ -313,7 +313,7 @@
       "metrics": {
         "max_attention_qdq_scale": 0.3523
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/diag/text_outliers/summary.json",
@@ -323,7 +323,7 @@
       "metrics": {
         "residual_concentration_max": 404
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/diag/text_outliers_rotated/summary.json",
@@ -333,7 +333,7 @@
       "metrics": {
         "residual_concentration_max": 5.3
       },
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/runtime/qnn_native/env_audit.json",
@@ -341,7 +341,427 @@
       "type": "diagnostic",
       "job_id": null,
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch_summary.json",
+      "canonical_path": "artifacts/deployment/logs/results/board/vision_v8_board-fidelity-smoke10__cos0.9585_min0.9400.json",
+      "type": "board_fidelity",
+      "job_id": null,
+      "metrics": {
+        "cosine_l2_mean": 0.9585,
+        "cosine_l2_min": 0.94
+      },
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn_vs_pytorch.csv",
+      "canonical_path": "artifacts/deployment/logs/results/board/per-sample/vision_v8_board-fidelity-smoke10__qnn-vs-pytorch.csv",
+      "type": "board_fidelity_csv",
+      "job_id": null,
+      "metrics": {
+        "num_samples": 10
+      },
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/qnn_vs_pytorch_summary.json",
+      "canonical_path": "artifacts/deployment/logs/results/board/vision_v8_gallery-fidelity__cos0.9562_min0.8840.json",
+      "type": "board_fidelity",
+      "job_id": null,
+      "metrics": {
+        "cosine_l2_mean": 0.9562,
+        "cosine_l2_min": 0.884
+      },
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/qnn_vs_pytorch.csv",
+      "canonical_path": "artifacts/deployment/logs/results/board/per-sample/vision_v8_gallery-fidelity__qnn-vs-pytorch.csv",
+      "type": "board_fidelity_csv",
+      "job_id": null,
+      "metrics": {
+        "num_samples": 2000
+      },
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/qnn_vs_pytorch.csv",
+      "canonical_path": "artifacts/deployment/logs/results/board/per-sample/text_fullgraph-i32__board-fidelity-fail__qnn-vs-pytorch.csv",
+      "type": "board_fidelity_failure_csv",
+      "job_id": null,
+      "metrics": {
+        "num_samples": 10
+      },
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v9_final-gallery2000__32.54ms_24.29fps/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/profile.txt",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v9_final-gallery2000__32.54ms_24.29fps/profile.txt",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9_gallery_2000/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v9_final-gallery2000__32.54ms_24.29fps/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/onboard_text/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_onboard-query4000-final__7.87ms_74.75qps/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/onboard_text/profile.txt",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_onboard-query4000-final__7.87ms_74.75qps/profile.txt",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/onboard_text/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_onboard-query4000-final__7.87ms_74.75qps/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/onboard_text/qnn-profiling-data_1.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_onboard-query4000-final__7.87ms_74.75qps/qnn-profiling-data_1.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/onboard_text/qnn-profiling-data_2.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_onboard-query4000-final__7.87ms_74.75qps/qnn-profiling-data_2.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v8_smoke10__33.05ms_22.77fps/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/profile.txt",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v8_smoke10__33.05ms_22.77fps/profile.txt",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v8_smoke10__33.05ms_22.77fps/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn-profiling-data_1.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v8_smoke10__33.05ms_22.77fps/qnn-profiling-data_1.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn-profiling-data_2.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v8_smoke10__33.05ms_22.77fps/qnn-profiling-data_2.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn-profiling-data_3.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v8_smoke10__33.05ms_22.77fps/qnn-profiling-data_3.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8/qnn-profiling-data_4.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v8_smoke10__33.05ms_22.77fps/qnn-profiling-data_4.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v8_gallery2000/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v8_gallery_2000/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v8_gallery2000/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v9_gallery2000-preprofile/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/rotated_w8a8_learned_qat_v9/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v9_gallery2000-preprofile/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/split_text_query_full/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_hostembeds-query4000/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/split_text_query_full/profile.txt",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_hostembeds-query4000/profile.txt",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/split_text_query_full/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_hostembeds-query4000/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/split_text_query_4000/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_hostembeds-query2000/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/split_text_query_4000/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_hostembeds-query2000/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/split_text_w8a8/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_smoke10-real-embeds/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/split_text_w8a8/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_smoke10-real-embeds/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/split_text_w8a8/qnn-profiling-data_1.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_smoke10-real-embeds/qnn-profiling-data_1.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/split_text_w8a8_zero/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_smoke10-zero-embeds-control/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/split_text_w8a8_zero/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_smoke10-zero-embeds-control/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/split_text_w8a8_zero/qnn-profiling-data_1.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_smoke10-zero-embeds-control/qnn-profiling-data_1.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_fullgraph_i32-realids-fail/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_fullgraph_i32-realids-fail/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/qnn-profiling-data_1.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_fullgraph_i32-realids-fail/qnn-profiling-data_1.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/qnn-profiling-data_2.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_fullgraph_i32-realids-fail/qnn-profiling-data_2.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/qnn-profiling-data_3.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_fullgraph_i32-realids-fail/qnn-profiling-data_3.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_f32mask/qnn-profiling-data_4.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_fullgraph_i32-realids-fail/qnn-profiling-data_4.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_zero_ids/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_fullgraph_i32-zeroids-control/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_w8a8_learned_qat_v8_i32_zero_ids/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_fullgraph_i32-zeroids-control/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_altreal/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_fullgraph_i32-altreal-mask-control/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_altreal/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_fullgraph_i32-altreal-mask-control/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_altreal/qnn-profiling-data_1.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_fullgraph_i32-altreal-mask-control/qnn-profiling-data_1.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/vision_ram_one/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v9_ram-one/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/vision_ram_one/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/vision_v9_ram-one/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_ram_one/execution_metadata.yaml",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_ram-one/execution_metadata.yaml",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_ram_one/qnn-profiling-data_0.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_ram-one/qnn-profiling-data_0.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
+    },
+    {
+      "source_path": "artifacts/deployment/qnn_runs/text_ram_one/qnn-profiling-data_1.log",
+      "canonical_path": "artifacts/deployment/logs/runtime/board/text_split_ram-one/qnn-profiling-data_1.log",
+      "type": "board_runtime",
+      "job_id": null,
+      "metrics": {},
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/download_manifest.json",
@@ -349,7 +769,7 @@
       "type": "legacy_manifest",
       "job_id": null,
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     },
     {
       "source_path": "artifacts/deployment/logs/internal_floating-point/README.md",
@@ -357,7 +777,7 @@
       "type": "legacy_readme",
       "job_id": null,
       "metrics": {},
-      "status": "moved"
+      "status": "already_canonical"
     }
   ]
 }
