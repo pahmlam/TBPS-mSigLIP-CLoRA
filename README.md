@@ -291,8 +291,7 @@ context has the largest system-level peak. See
 [comprehensive deployment results](deployment/docs/comprehensive_results.md#23-peak-ram-probe)
 for the full measurement table.
 
-*NOTE: ckpt(VN3K) can be download at: https://drive.google.com/file/d/1Mo8OnjVhrIGhMp8Og5x99GSwBCzPQ7Bn/view?usp=sharing* 
-
+*NOTE: To obtain the VN3K dataset, please contact lan.lethi1@hust.edu.vn*
 Final end-to-end deploy retrieval, measured directly on RB3 with board vision embeddings and board split-text embeddings:
 
 | Direction | R@1 | R@5 | R@10 | mAP | mINP |
