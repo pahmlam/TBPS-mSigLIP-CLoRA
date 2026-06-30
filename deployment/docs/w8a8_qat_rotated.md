@@ -1,10 +1,15 @@
 # Rotated W8A8 + QAT: Mathematics & Method for the mSigLIP Vision + Text Encoders on RB3 Gen2 (HTP v68)
 
 > **Scope:** this is the **theory and method** document for the vision-encoder deployment branch and the matching text-encoder finite/f32/link-safe mask extension. It contains the mathematics of every transform and the reasoning behind every design choice. It contains **no commands, scripts, or code** — for the reproducible command sequence, AI Hub job IDs, and artifact paths, see the consolidated history in [`deployment/docs/journal/[deploy-master].md`](journal/[deploy-master].md).
+>
 > **Source checkpoint:** LoRA + Curriculum Circle, seed 2400 (FP32 reference ≈ paper 52.28).
+>
 > **Target device:** Qualcomm RB3 Gen2 / QCS6490 / Hexagon HTP **v68**.
+>
 > **End-to-end result:** the final direct RB3 board run is **both-INT8 W8A8**: vision v9 context binary + split-text context binary reach **T2I Rank@1 = 50.35** and **I2T Rank@1 = 54.20**, passing the ≥50 deploy target with a `-1.93` T2I drop from the paper baseline `52.28`. The older both-INT8 QDQ proxy remains a reference at **50.25 / 52.95**.
+>
 > **Vision status:** vision-only QDQ proxy reaches **T2I Rank@1 = 50.85** (learned rotation, QAT v8; `-1.43` vs paper baseline `52.28`). The final RB3 board context binary is **v9**, reaching **50.35** T2I R@1 and **54.55** I2T R@1 with **32.54 ms/image** throughput.
+>
 > **Text status:** the *full-graph* text binary links but is **unusable on board** — its output ignores `input_ids` because HTP v68 breaks the dynamic 250k-row embedding `Gather` (§12A.8). The **deployable text path is the split-encoder**: RB3-side embedding lookup feeds `inputs_embeds` to an HTP transformer. It is board-verified — board fidelity **0.9951 / 0.9926** (matching the QDQ proxy), text-isolation board **T2I R@1 = 51.30**, and runtime **7.87 ms/query**.
 
 This document explains the hardware constraints that *force* the pipeline, the mathematics of each transform (rotation, learned rotation, quantization-aware training, finite attention masking), why earlier candidates failed, and the acceptance gates that define success. The decisive acceptance metric throughout is **retrieval Rank@1**, not cosine — cosine is only a fidelity proxy (§8).
