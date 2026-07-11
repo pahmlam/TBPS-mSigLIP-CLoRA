@@ -1,0 +1,154 @@
+@startuml
+title Proposed Person Metadata Extraction Flow
+
+left to right direction
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam dpi 180
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam ArrowColor #263238
+skinparam RectangleBorderColor #263238
+skinparam RectangleBackgroundColor #FFFFFF
+skinparam ComponentBorderColor #263238
+skinparam ComponentBackgroundColor #FFFFFF
+skinparam DatabaseBorderColor #263238
+skinparam DatabaseBackgroundColor #FFFDE7
+skinparam ArtifactBorderColor #263238
+skinparam ArtifactBackgroundColor #F6F8FA
+skinparam NoteBorderColor #607D8B
+skinparam NoteBackgroundColor #F6F8FA
+skinparam PackageBorderColor #90A4AE
+skinparam PackageBackgroundColor #FFFFFF
+
+package "Offline preparation" as offline {
+  component "Metadata taxonomy" as taxonomy
+  component "Multilingual prompt templates" as templates
+  component "Optional source captions" as source_captions
+  component "mSigLIP text encoder" as text_encoder
+  component "L2 normalization" as text_norm
+
+  database "Grouped prompt bank" as prompt_bank {
+    artifact "Gender prototypes" as gender_prompts
+    artifact "Upper-body prototypes" as upper_prompts
+    artifact "Lower-body prototypes" as lower_prompts
+    artifact "Accessory prototypes" as accessory_prompts
+  }
+
+  database "Optional full-caption gallery" as caption_gallery
+
+  taxonomy --> templates
+  templates --> text_encoder
+  source_captions --> text_encoder
+  text_encoder --> text_norm
+  text_norm --> prompt_bank : cache 768-d embeddings
+  text_norm --> caption_gallery : optional caption embeddings
+  source_captions --> caption_gallery : source text + caption ID
+}
+
+rectangle "RB3 Gen2 runtime" as runtime {
+  frame "Board CPU" as cpu {
+    component "Video frame / input image" as input
+    component "Person detector" as detector
+    component "Multi-object tracker" as tracker
+    component "Full-person crop\nand preprocess" as cropper
+    artifact "Full-body crop" as full_crop
+
+    frame "Optional research branch\nnot part of the baseline" as regional_research {
+      component "Context-padded\nupper/lower crops" as region_crops
+    }
+
+    component "Per-attribute scoring\nnormalized dot product" as scorer
+    component "Group-specific calibration\nand unknown threshold" as calibration
+    component "Temporal aggregation\nby track ID" as temporal
+    component "Schema validation\nand conflict resolution" as schema
+
+    artifact "Structured metadata JSON\nwith confidence and evidence" as metadata
+  }
+
+  frame "Hexagon HTP / QNN" as htp {
+    artifact "Vision context binary\nW8A8 encoder" as vision_bin
+    component "mSigLIP vision encoder" as vision_encoder
+    component "L2 normalization" as image_norm
+    artifact "Global full-person\nimage embedding" as image_embeddings
+  }
+}
+
+input --> detector
+detector --> tracker
+tracker --> cropper : person boxes + track IDs
+cropper --> full_crop
+full_crop --> vision_encoder
+full_crop ..> region_crops : optional experiment
+region_crops ..> vision_encoder : repeated passes
+vision_bin .. vision_encoder
+vision_encoder --> image_norm
+image_norm --> image_embeddings
+
+image_embeddings --> scorer
+prompt_bank --> scorer : cached prototypes
+scorer --> calibration : scores per attribute group
+calibration --> temporal : values or unknown
+tracker --> temporal : track ID
+temporal --> schema
+taxonomy --> schema : allowed fields and values
+schema --> metadata
+
+package "Optional full-caption I2T path" as optional_path {
+  component "Rank caption embeddings" as caption_ranker
+  artifact "Nearest existing caption" as returned_caption
+  component "Runtime metadata parser" as runtime_parser
+}
+
+image_embeddings ..> caption_ranker
+caption_gallery ..> caption_ranker
+caption_ranker --> returned_caption
+returned_caption --> runtime_parser
+runtime_parser ..> schema : optional evidence
+
+note bottom of prompt_bank
+  Store independent attribute prototypes,
+  not every complete caption combination.
+
+  Positive and negative prompts are useful
+  for binary attributes such as backpack.
+end note
+
+note bottom of regional_research
+  This branch is experimental and must be
+  evaluated for distribution shift and cost.
+
+  Current Part Align is a training-only
+  auxiliary loss over contextualized patch
+  tokens from the full image. It does not
+  validate standalone crops or expose regional
+  outputs from the deployed context binary.
+end note
+
+note bottom of calibration
+  Raw cosine is not a calibrated probability.
+  Each attribute group needs its own threshold
+  and an explicit unknown state.
+end note
+
+note bottom of temporal
+  Aggregate several frames to reduce errors
+  from occlusion, blur, and viewpoint changes.
+end note
+
+note bottom of optional_path
+  This path can only retrieve captions already
+  present in the gallery. It cannot create an
+  unseen combination of person attributes.
+end note
+
+note bottom of metadata
+  Example fields:
+  upper_type, upper_color,
+  lower_type, lower_color,
+  backpack, hat, confidence,
+  source evidence, track ID.
+end note
+
+@enduml

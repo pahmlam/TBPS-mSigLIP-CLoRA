@@ -2,6 +2,7 @@ NITC: true
 nitc_loss_weight: 1.0
 
 MVS: true
+nitc_mvs_mode: baseline  # baseline preserves the 52.28 recipe; direct uses aug_images_features in N-ITC
 
 CIR: true
 circle_loss_weight: 0.1

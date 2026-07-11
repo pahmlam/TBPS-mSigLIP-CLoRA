@@ -84,7 +84,7 @@ Clipping the outliers was tried and failed: the outlier channels carry real sign
 
 ## 2. Pipeline Overview (conceptual)
 
-The deployable path is a fixed sequence of mathematically motivated transforms. Each block lists *what it does* and *the invariant it preserves*:
+The deployable path is a fixed sequence of mathematically motivated transforms. Each block lists *what it does* and *the invariant it preserves*. In command order, opset-20 fusion happens when the rotated/QAT PyTorch model is exported to ONNX; it is not a separate pre-rotation weight transform.
 
 ```text
             ┌─────────────────────────────────────────────┐
@@ -96,24 +96,24 @@ The deployable path is a fixed sequence of mathematically motivated transforms. 
             │  W ← W_base + (α/r)·B·A                    │   exact identity
             └─────────────────────┬───────────────────────┘   (no behavior change)
                                   │
-            ┌─────────────────────▼───────────────────────┐
-   [2]      │  FUSE GELU / LayerNorm  (opset-20)         │   cubic x³ & norm
-            │  hide tanh-GELU cubic + norm internals     │   internals never
-            └─────────────────────┬───────────────────────┘   exposed to quantizer
-                                  │
             ┌─────────────────────▼─────────────────────--──┐
-   [3]      │  ROTATE residual stream                      │   ‖Qx‖₂ = ‖x‖₂
+   [2]      │  ROTATE residual stream                      │   ‖Qx‖₂ = ‖x‖₂
             │  x → Qx,  Q orthogonal,  Q·1 = 1             │   LN(Qx) = Q·LN(x)
             │  folded offline into weights (no runtime op) │   ⇒ FP32-invariant
             │   |                                          │   μ ↓ to ≈√(2 ln d)
             │   └── learned Q  ◀ v9   (min Σ max|aQᵀ|²)    │   max|a|: 124 → 14.6
             └─────────────────────┬─────────────────────--──┘
-                                  │   (steps 1–3 change representation, not function)
+                                  │   (steps 1–2 change representation, not function)
             ┌─────────────────────▼───────────────────--────┐
-   [4]      │  QAT  (teacher–student distillation)         │   trains weight VALUES
+   [3]      │  QAT  (teacher–student distillation)         │   trains weight VALUES
             │  per-tensor STE fake-quant + EMA observer    │   to tolerate INT8;
             │  teacher = rotated FP32 (frozen)             │   INT8 emb ≈ FP32 emb
             └─────────────────────┬───────────────────--────┘
+                                  │
+            ┌─────────────────────▼───────────────────────┐
+   [4]      │  EXPORT OPS 20                              │   cubic x³ & norm
+            │  fused GELU / fused LayerNormalization       │   internals never
+            └─────────────────────┬───────────────────────┘   exposed to quantizer
                                   │
             ┌─────────────────────▼───────────────────--────┐
    [5]      │  W8A8 QUANTIZE → COMPILE → LINK              │   integer I/O,
@@ -132,13 +132,13 @@ The deployable path is a fixed sequence of mathematically motivated transforms. 
 In words:
 
 1. **Merge LoRA** into the base weights so the exported model is an ordinary inference network (§3).
-2. **Fuse GELU/LayerNorm via opset-20 export** so the tanh-GELU cubic and the normalization internals are never exposed as quantized tensors (§4).
-3. **Rotate the residual stream** by a mean-preserving orthogonal `Q`, folded offline into the weights, to remove channel outliers while keeping fused LayerNorm (§5–§6). The rotation is either *random* (v1–v7) or **learned** (v8/v9, §6A).
-4. **Quantization-aware finetune** (teacher–student distillation, per-tensor straight-through fake-quant, EMA observer) to train the weights to tolerate the deploy-faithful INT8 quantizer (§7).
+2. **Rotate the residual stream** by a mean-preserving orthogonal `Q`, folded offline into the weights, to remove channel outliers while preserving LayerNorm semantics (§5–§6). The rotation is either *random* (v1–v7) or **learned** (v8/v9, §6A).
+3. **Quantization-aware finetune** (teacher–student distillation, per-tensor straight-through fake-quant, EMA observer) to train the weights to tolerate the deploy-faithful INT8 quantizer (§7).
+4. **Export the rotated/QAT model at opset 20** so GELU and LayerNorm are fused in ONNX and their internals are never exposed as quantized tensors (§4, §8.1).
 5. **Quantize to W8A8, compile, and link** a context binary with integer I/O for HTP v68 (§8).
 6. **Run on board and evaluate** by retrieval Rank@1 — first as a vision-isolation test with FP32 text, then as the final board both-INT8 path with text and image contexts (§8).
 
-Every transform in steps 1–3 is **output-invariant in FP32**: it changes the *representation*, not the function. Steps 4 is the only one that changes weight *values*. This invariance is what makes each stage independently checkable (§9).
+The LoRA merge and rotation in steps 1–2 are **output-invariant in FP32**: they change the *representation*, not the function. Step 3 is the only step that changes weight *values*. Step 4 changes the exported graph representation, and must pass the static ONNX-vs-PyTorch gate before any quantized result is trusted (§9).
 
 The vision diagram above is the current interpretation used for the final report: v8 is kept as the first successful learned-rotation/QDQ reference, while v9 is the final board recipe. The phrase "text kept FP32" applies only to the vision-isolation check, not to the final both-INT8 deployment number.
 
@@ -206,7 +206,9 @@ where $W_{\text{base}}$ is the frozen pretrained weight, $A \in \mathbb{R}^{r\ti
 
 ---
 
-## 4. Stage [2] — Opset-20 Fused GELU (and Fused LayerNorm)
+## 4. Export Contract — Opset-20 Fused GELU (and Fused LayerNorm)
+
+This requirement is applied at the ONNX export step after the model has been merged, rotated, and QAT-finetuned. It is documented here before the rotation mathematics because it explains why every successful branch insists on fused operators, but it is not the second command in the deployment sequence.
 
 The mSigLIP MLP uses the tanh GELU approximation:
 
@@ -220,7 +222,7 @@ Calibration/smoke inputs must use **exactly** the training preprocessing (RGB �
 
 ---
 
-## 5. Stage [3] — Mean-Preserving Rotation Equalization
+## 5. Stage [2] — Mean-Preserving Rotation Equalization
 
 ### 5.1 The per-tensor quantization problem
 
@@ -296,7 +298,7 @@ The concentration drop is the quantization payoff: the signal is still present, 
 
 ---
 
-## 6A. Stage [3, learned variant] — Learned Rotation (SpinQuant-style, the v8/v9 method)
+## 6A. Stage [2, learned variant] — Learned Rotation (SpinQuant-style, the v8/v9 method)
 
 A random orthogonal $R_c$ achieves the *expected* incoherence $\mu \approx \sqrt{2\ln d}$ (§2A.3), but it is blind to **this** encoder's actual activation distribution. SpinQuant [12] shows that *learning* the rotation against calibration statistics beats random/Hadamard. v8 adapts this to the mean-preserving constraint, and it is what broke the random-rotation ceiling (49.30 → 50.85). v9 keeps the same objective and constraint manifold, but spends more calibration/search budget and selects the best rotation encountered during optimization.
 
@@ -374,7 +376,7 @@ The mathematical lesson is modest but useful for deployment: when the learned-ro
 
 ---
 
-## 7. Stage [4] — Quantization-Aware Finetune (the gate-passing step)
+## 7. Stage [3] — Quantization-Aware Finetune (the gate-passing step)
 
 Rotation alone reaches QDQ cosine $0.8975$ but only **R@1 = 45.42** (gate FAIL). The residual error is no longer one outlier; it is ordinary per-tensor INT8 error **accumulated across 12 blocks** (§10). QAT trains the FP32 weights to tolerate that INT8 noise.
 
@@ -443,7 +445,7 @@ QDQ cosine $0.9606$ / min $0.9447$. Drop vs the paper baseline $52.28$ is **1.43
 
 ---
 
-## 8. Stages [5–6] — Export, Quantize/Link, Board Run & Evaluation (method)
+## 8. Stages [4–6] — Export, Quantize/Link, Board Run & Evaluation (method)
 
 ### 8.1 Export
 

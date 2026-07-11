@@ -19,6 +19,15 @@ class TBPS(nn.Module):
         if not hasattr(self.backbone, "logit_bias"):
             self.backbone.logit_bias = 0
 
+        self.nitc_mvs_mode = str(config.loss.get("nitc_mvs_mode", "baseline"))
+        valid_nitc_mvs_modes = {"baseline", "direct"}
+        if self.nitc_mvs_mode not in valid_nitc_mvs_modes:
+            raise ValueError(
+                "loss.nitc_mvs_mode must be one of "
+                f"{sorted(valid_nitc_mvs_modes)}, got {self.nitc_mvs_mode!r}."
+            )
+        logger.info(f"N-ITC MVS mode: {self.nitc_mvs_mode}")
+
         self.contain_visual_projection, self.contain_text_projection = (
             self.check_contain_projection()
         )
@@ -390,8 +399,13 @@ class TBPS(nn.Module):
             if self.config.loss.get("MVS", None):
                 aug_images = batch["aug_images"]
                 aug_images_features = self.encode_image(aug_images)
+                nitc_mvs_image_features = (
+                    aug_images_features
+                    if self.nitc_mvs_mode == "direct"
+                    else image_pooler_output
+                )
                 augmented_nitc_loss = objectives.compute_constrative(
-                    image_features=image_pooler_output,
+                    image_features=nitc_mvs_image_features,
                     text_features=caption_pooler_output,
                     sim_targets=sim_targets,
                     logit_scale=logit_scale,
