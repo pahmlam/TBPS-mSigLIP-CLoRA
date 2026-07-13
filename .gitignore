@@ -67,4 +67,9 @@ artifacts/deployment/**/__pycache__/
 
 msiglip_colab_qat_v1.tar.gz
 token_embedding_v8/
+
+# Documentation kept locally but not versioned
 changelog/
+docs/
+/CLAUDE.md
+/AGENTS.md
