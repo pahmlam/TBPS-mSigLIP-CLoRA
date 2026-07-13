@@ -67,3 +67,4 @@ artifacts/deployment/**/__pycache__/
 
 msiglip_colab_qat_v1.tar.gz
 token_embedding_v8/
+changelog/
